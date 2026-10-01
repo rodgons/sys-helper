@@ -15,18 +15,16 @@ type Pinger interface {
 }
 
 type Deps struct {
-	DB            Pinger
-	Auth          Authenticator
-	Projects      ProjectStore
-	Architectures ArchitectureStore
-	Conversations ConversationStore
-	Assistant     Replier
-	Reviews       ProposalReviews
-	Knowledge     KnowledgeStore
-	Settings      SettingsStore
-	// DailyMessageLimit caps the messages a User can send per UTC day. 0 means no cap.
-	DailyMessageLimit int
-	AllowedOrigins    []string
+	DB             Pinger
+	Auth           Authenticator
+	Projects       ProjectStore
+	Architectures  ArchitectureStore
+	Conversations  ConversationStore
+	Assistant      Replier
+	Reviews        ProposalReviews
+	Knowledge      KnowledgeStore
+	Settings       SettingsStore
+	AllowedOrigins []string
 	// Allowlist admits GitHub accounts to the beta. Its zero value admits nobody.
 	Allowlist auth.Allowlist
 }
@@ -48,7 +46,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /api/projects/{slug}/architecture", user(handleGetArchitecture(deps.Architectures)))
 	mux.HandleFunc("PUT /api/projects/{slug}/architecture", user(handleSaveArchitecture(deps.Architectures)))
 	mux.HandleFunc("GET /api/projects/{slug}/messages", user(handleListMessages(deps.Conversations)))
-	mux.HandleFunc("POST /api/projects/{slug}/messages", user(handleSendMessage(deps.Conversations, deps.DailyMessageLimit)))
+	mux.HandleFunc("POST /api/projects/{slug}/messages", user(handleSendMessage(deps.Conversations)))
 	mux.HandleFunc("POST /api/projects/{slug}/reply", user(handleReply(deps.Assistant)))
 	mux.HandleFunc("POST /api/projects/{slug}/proposals/{seq}/accept", user(handleAcceptProposal(deps.Reviews)))
 	mux.HandleFunc("POST /api/projects/{slug}/proposals/{seq}/reject", user(handleRejectProposal(deps.Reviews)))

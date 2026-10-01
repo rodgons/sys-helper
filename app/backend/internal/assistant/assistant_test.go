@@ -17,6 +17,7 @@ import (
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/projects"
 	"sys-helper/backend/internal/proposal"
+	"sys-helper/backend/internal/usage"
 )
 
 type fakeConversations struct {
@@ -114,9 +115,26 @@ func (fakeKnowledge) Get(context.Context, string, string) (knowledge.Knowledge, 
 	}, nil
 }
 
+// meter counts model calls and refuses any beyond limit (0 = no cap).
+type meter struct {
+	mu    sync.Mutex
+	calls int
+	limit int
+}
+
+func (m *meter) Record(context.Context, string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.limit > 0 && m.calls >= m.limit {
+		return usage.ErrDailyLimit
+	}
+	m.calls++
+	return nil
+}
+
 func newAssistant(m llm.ChatModel, c *fakeConversations) *assistant.Assistant {
 	return &assistant.Assistant{Model: m, Conversations: c, Architectures: fakeArchitectures{}, Knowledge: fakeKnowledge{},
-		HistoryLimit: 4, Timeout: time.Second}
+		Usage: &meter{}, HistoryLimit: 4, Timeout: time.Second}
 }
 
 func TestReply(t *testing.T) {
@@ -185,6 +203,19 @@ func TestReply(t *testing.T) {
 		}
 		if !strings.HasSuffix(msg.Body, "[reply truncated]") || !strings.HasPrefix(msg.Body, "ééé") {
 			t.Errorf("body ends %q", msg.Body[len(msg.Body)-40:])
+		}
+	})
+
+	t.Run("stops at the daily limit before calling the model", func(t *testing.T) {
+		c := conv("Welcome", "Hi")
+		var req llm.Request
+		a := newAssistant(model{words: []string{"x"}, got: &req}, c)
+		a.Usage = &meter{limit: 1, calls: 1}
+
+		_, err := a.Reply(context.Background(), "u", "s", func(string) {})
+
+		if !errors.Is(err, usage.ErrDailyLimit) || len(c.msgs) != 2 || req.Messages != nil {
+			t.Fatalf("err = %v, stored = %+v, model called: %v", err, c.msgs, req.Messages != nil)
 		}
 	})
 
@@ -323,6 +354,33 @@ func TestProposals(t *testing.T) {
 		}
 		if call := retry[len(retry)-2]; call.Role != llm.RoleAssistant || len(call.ToolCalls) != 1 {
 			t.Errorf("assistant tool call = %+v", call)
+		}
+	})
+
+	t.Run("meters every model call, including the retry", func(t *testing.T) {
+		bad := `{"summary": "Add a cache", "changes": [{"op": "add_connection", "source": "ghost", "target": "db", "kind": "sync"}]}`
+		a := newAssistant(&turns{turns: []turn{{args: bad}, {args: validArgs}}}, conv("Welcome", "Add a cache"))
+		usage := &meter{}
+		a.Usage = usage
+
+		if _, err := a.Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		if usage.calls != 2 {
+			t.Errorf("metered %d calls, want 2", usage.calls)
+		}
+	})
+
+	t.Run("saves the reply without retrying when the limit is reached midway", func(t *testing.T) {
+		bad := `{"summary": "x", "changes": []}`
+		m := &turns{turns: []turn{{text: "Here goes.", args: bad}, {args: validArgs}}}
+		a := newAssistant(m, conv("Welcome", "Add a cache"))
+		a.Usage = &meter{limit: 1}
+
+		msg, err := a.Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal != nil || !strings.HasPrefix(msg.Body, "Here goes.") || len(m.reqs) != 1 {
+			t.Fatalf("message = %+v, err = %v, model calls = %d", msg, err, len(m.reqs))
 		}
 	})
 

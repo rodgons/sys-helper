@@ -116,21 +116,6 @@ func (s *Store) Append(ctx context.Context, userID, suffix string, role Role, bo
 	return insert(ctx, s.db, projectID, role, body)
 }
 
-// CountUserMessagesToday counts the Messages the User sent since midnight UTC, across all their
-// Projects. It backs the daily message cap.
-func (s *Store) CountUserMessagesToday(ctx context.Context, userID string) (int, error) {
-	var n int
-	err := s.db.QueryRow(ctx, `
-		SELECT count(*) FROM messages m JOIN projects p ON p.id = m.project_id
-		WHERE p.user_id = $1 AND m.role = 'user'
-		  AND m.created_at >= date_trunc('day', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc'`,
-		userID).Scan(&n)
-	if err != nil {
-		return 0, fmt.Errorf("count messages: %w", err)
-	}
-	return n, nil
-}
-
 func (s *Store) projectID(ctx context.Context, userID, suffix string) (string, error) {
 	var id string
 	err := s.db.QueryRow(ctx,

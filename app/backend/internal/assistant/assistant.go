@@ -17,6 +17,7 @@ import (
 	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/proposal"
+	"sys-helper/backend/internal/usage"
 )
 
 var (
@@ -40,6 +41,11 @@ type Assistant struct {
 	}
 	Knowledge interface {
 		Get(ctx context.Context, userID, suffix string) (knowledge.Knowledge, error)
+	}
+	// Usage records each model call against the User's daily cap (usage.Meter). It returns
+	// usage.ErrDailyLimit once the cap is reached.
+	Usage interface {
+		Record(ctx context.Context, userID string) error
 	}
 	// HistoryLimit is how many recent Messages the model sees. The Architecture, Requirements and
 	// Decisions carry the long-term memory, so older chat matters less.
@@ -99,8 +105,16 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	var accepted *proposal.Changes
 	var problems []string  // why each rejected propose_changes call was invalid
 	var arguments []string // and what it sent
-	gaveUp := false
+	note := ""             // appended to the reply when it ends without the Proposal the model was making
 	for attempt := 1; ; attempt++ {
+		// Every model call costs money, retries included, so each one counts against the cap.
+		if err := a.Usage.Record(ctx, userID); err != nil {
+			if attempt > 1 && errors.Is(err, usage.ErrDailyLimit) {
+				note = "(I've reached today's AI limit, so I couldn't finish this proposal. It resets at midnight UTC.)"
+				break
+			}
+			return conversation.Message{}, err
+		}
 		text, call, err := a.stream(ctx, req, onText)
 		if err != nil {
 			return conversation.Message{}, err
@@ -117,7 +131,7 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 		problems = append(problems, problem.Error())
 		arguments = append(arguments, call.Arguments)
 		if attempt == proposalAttempts {
-			gaveUp = true
+			note = "(I couldn't turn this into a valid proposal for the canvas. Ask me to try again.)"
 			// The User only sees a generic note, so tell the developer what the model got wrong.
 			slog.Warn("model gave up on a proposal: every propose_changes call was invalid",
 				"project", suffix, "attempts", attempt, "problems", problems, "arguments", arguments)
@@ -131,8 +145,8 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	}
 
 	body := strings.TrimSpace(reply.String())
-	if gaveUp {
-		body = strings.TrimSpace(body + "\n\n(I couldn't turn this into a valid proposal for the canvas. Ask me to try again.)")
+	if note != "" {
+		body = strings.TrimSpace(body + "\n\n" + note)
 	}
 	if body == "" && accepted != nil {
 		body = accepted.Summary

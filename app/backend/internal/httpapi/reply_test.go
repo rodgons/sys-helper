@@ -14,6 +14,7 @@ import (
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/httpapi"
 	"sys-helper/backend/internal/projects"
+	"sys-helper/backend/internal/usage"
 )
 
 // fakeReplier streams words and then returns err (if any) for octocat's project k3xa9q2m7p.
@@ -105,6 +106,7 @@ func TestReply(t *testing.T) {
 		{"nothing to reply to", assistant.ErrNothingToReply, path, http.StatusConflict, "nothing_to_reply"},
 		{"reply already running", assistant.ErrBusy, path, http.StatusConflict, "busy"},
 		{"no model configured", assistant.ErrUnavailable, path, http.StatusServiceUnavailable, "ai_unavailable"},
+		{"daily AI limit reached", usage.ErrDailyLimit, path, http.StatusTooManyRequests, "daily_limit"},
 		{"unknown project", nil, "/api/projects/nope-zzzzzzzzzz/reply", http.StatusNotFound, "not_found"},
 	}
 	for _, tt := range tests {

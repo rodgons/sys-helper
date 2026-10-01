@@ -34,7 +34,7 @@ type AI struct {
 	// FirstTokenTimeout is how long the primary model gets to start answering before the fallback
 	// takes over.
 	FirstTokenTimeout time.Duration
-	DailyMessageLimit int // per User per UTC day; 0 means no cap
+	DailyReplyLimit   int // model calls per User per UTC day (AI_DAILY_REPLY_LIMIT); 0 means no cap
 	// Fake replaces the model with a canned one (E2E tests, offline development).
 	Fake bool
 }
@@ -95,7 +95,7 @@ func loadAI(getenv func(string) string) (AI, error) {
 		Model:             getenv("AI_MODEL"),
 		FallbackModel:     getenv("AI_FALLBACK_MODEL"),
 		FirstTokenTimeout: 20 * time.Second,
-		DailyMessageLimit: 100,
+		DailyReplyLimit:   100,
 		Fake:              getenv("AI_FAKE") == "1",
 	}
 	if ai.APIKey != "" && !ai.Fake && ai.Model == "" {
@@ -108,12 +108,15 @@ func loadAI(getenv func(string) string) (AI, error) {
 		}
 		ai.FirstTokenTimeout = d
 	}
-	if v := getenv("AI_DAILY_MESSAGE_LIMIT"); v != "" {
+	if getenv("AI_DAILY_MESSAGE_LIMIT") != "" {
+		return AI{}, errors.New("AI_DAILY_MESSAGE_LIMIT was replaced by AI_DAILY_REPLY_LIMIT, which counts model calls (each reply, and each proposal retry) instead of messages")
+	}
+	if v := getenv("AI_DAILY_REPLY_LIMIT"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			return AI{}, fmt.Errorf("AI_DAILY_MESSAGE_LIMIT must be 0 or more, got %q", v)
+			return AI{}, fmt.Errorf("AI_DAILY_REPLY_LIMIT must be 0 or more, got %q", v)
 		}
-		ai.DailyMessageLimit = n
+		ai.DailyReplyLimit = n
 	}
 	return ai, nil
 }

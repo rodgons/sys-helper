@@ -144,12 +144,13 @@ describe('ChatPane', () => {
     expect(box()).toHaveValue('Important context');
   });
 
-  it('explains the daily limit', async () => {
-    setup({ [`POST ${API}/messages`]: { status: 429, body: { error: 'daily_limit' } } });
+  it('explains the daily AI limit and keeps the message for a later reply', async () => {
+    setup({ [`POST ${API}/reply`]: { status: 429, body: { error: 'daily_limit' } } });
 
     await send('One more');
 
-    expect(await screen.findByText(/today's message limit/i)).toBeInTheDocument();
+    expect(await screen.findByText(/today's AI limit/i)).toBeInTheDocument();
+    expect(within(messages()).getByText('One more')).toBeInTheDocument();
   });
 
   it('offers a retry when the AI fails, and saves nothing partial', async () => {

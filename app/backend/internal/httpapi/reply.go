@@ -12,6 +12,7 @@ import (
 	"sys-helper/backend/internal/assistant"
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/projects"
+	"sys-helper/backend/internal/usage"
 )
 
 // Replier generates the AI's reply to a Project's Conversation, streaming its text to onText.
@@ -61,6 +62,8 @@ func handleReply(replier Replier) http.HandlerFunc {
 			writeError(w, http.StatusConflict, "busy")
 		case errors.Is(err, assistant.ErrUnavailable):
 			writeError(w, http.StatusServiceUnavailable, "ai_unavailable")
+		case errors.Is(err, usage.ErrDailyLimit):
+			writeError(w, http.StatusTooManyRequests, "daily_limit")
 		default:
 			slog.ErrorContext(r.Context(), "reply failed", "error", err)
 			writeError(w, http.StatusBadGateway, "ai_failed")

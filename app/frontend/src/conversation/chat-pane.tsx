@@ -2,7 +2,6 @@ import * as stylex from '@stylexjs/stylex';
 import { useEffect, useRef, useState } from 'react';
 import type { Review } from '../architecture/review';
 import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
-import { ApiError } from '../lib/api';
 import { useMessages, useReply, useSendMessage } from '../lib/conversation';
 import { Button } from '../ui/button';
 import { Text } from '../ui/typography';
@@ -14,6 +13,7 @@ const MAX_LENGTH = 4000;
 const REPLY_ERRORS: Record<string, string> = {
   ai_unavailable: "The AI isn't set up on this server yet.",
   busy: 'The AI is already answering this project in another tab.',
+  daily_limit: "You've reached today's AI limit. It resets at midnight UTC.",
 };
 
 /** Right pane of the workspace: the Project's Conversation and a composer. */
@@ -78,11 +78,6 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
     setDraft(index < 0 ? '' : (sent[sent.length - 1 - index] ?? ''));
   };
   const browsing = recalled === null ? draft === '' : draft === sent[sent.length - 1 - recalled];
-
-  const sendError =
-    send.error instanceof ApiError && send.error.code === 'daily_limit'
-      ? "You've reached today's message limit. It resets at midnight UTC."
-      : "Couldn't send your message. Try again.";
 
   return (
     <div {...stylex.props(styles.pane)}>
@@ -179,7 +174,9 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
         />
         <div {...stylex.props(styles.actions)}>
           <Text size="sm" tone={send.isError ? 'accent' : 'faint'}>
-            {send.isError ? sendError : 'Enter to send · Shift+Enter for a new line'}
+            {send.isError
+              ? "Couldn't send your message. Try again."
+              : 'Enter to send · Shift+Enter for a new line'}
           </Text>
           <Button type="submit" size="sm" disabled={!canSend}>
             Send

@@ -31,16 +31,6 @@ func (f *fakeConversations) Append(_ context.Context, userID, suffix string, rol
 	return m, nil
 }
 
-func (f *fakeConversations) CountUserMessagesToday(_ context.Context, userID string) (int, error) {
-	n := 0
-	for _, m := range f.msgs {
-		if m.Role == conversation.RoleUser {
-			n++
-		}
-	}
-	return n, nil
-}
-
 type messageJSON struct {
 	Role      string `json:"role"`
 	Body      string `json:"body"`
@@ -96,22 +86,6 @@ func TestConversation(t *testing.T) {
 		}
 		if len(store.msgs) != 1 {
 			t.Errorf("stored %d messages, want 1", len(store.msgs))
-		}
-	})
-
-	t.Run("enforces the daily message cap", func(t *testing.T) {
-		deps, store := newDeps()
-		deps.DailyMessageLimit = 2
-		call(t, deps, http.MethodPost, path, `{"body":"one"}`)
-		call(t, deps, http.MethodPost, path, `{"body":"two"}`)
-
-		rec := call(t, deps, http.MethodPost, path, `{"body":"three"}`)
-
-		if rec.Code != http.StatusTooManyRequests || decode[map[string]string](t, rec)["error"] != "daily_limit" {
-			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
-		}
-		if len(store.msgs) != 3 {
-			t.Errorf("stored %d messages, want 3", len(store.msgs))
 		}
 	})
 

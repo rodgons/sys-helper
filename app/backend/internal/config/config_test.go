@@ -101,7 +101,7 @@ func TestLoad(t *testing.T) {
 			Model:             "z-ai/glm-5.3",
 			FallbackModel:     "openai/gpt-oss-20b",
 			FirstTokenTimeout: 20 * time.Second,
-			DailyMessageLimit: 100,
+			DailyReplyLimit:   100,
 		}
 		if cfg.AI != want {
 			t.Errorf("AI = %+v, want %+v", cfg.AI, want)
@@ -130,7 +130,7 @@ func TestLoad(t *testing.T) {
 		cfg, err := config.Load(env(required(map[string]string{
 			"AI_BASE_URL":            "http://models.test/v1",
 			"AI_FIRST_TOKEN_TIMEOUT": "5s",
-			"AI_DAILY_MESSAGE_LIMIT": "0",
+			"AI_DAILY_REPLY_LIMIT":   "0",
 			"AI_FAKE":                "1",
 		})))
 		if err != nil {
@@ -138,7 +138,7 @@ func TestLoad(t *testing.T) {
 		}
 		ai := cfg.AI
 		if ai.BaseURL != "http://models.test/v1" || ai.FallbackModel != "" ||
-			ai.FirstTokenTimeout != 5*time.Second || ai.DailyMessageLimit != 0 || !ai.Fake {
+			ai.FirstTokenTimeout != 5*time.Second || ai.DailyReplyLimit != 0 || !ai.Fake {
 			t.Errorf("AI = %+v", ai)
 		}
 	})
@@ -152,8 +152,9 @@ func TestLoad(t *testing.T) {
 
 	for _, bad := range []map[string]string{
 		{"AI_FIRST_TOKEN_TIMEOUT": "soon"},
-		{"AI_DAILY_MESSAGE_LIMIT": "-1"},
-		{"NVIDIA_API_KEY": "nvapi-x"}, // a key without AI_MODEL
+		{"AI_DAILY_REPLY_LIMIT": "-1"},
+		{"AI_DAILY_MESSAGE_LIMIT": "100"}, // replaced by AI_DAILY_REPLY_LIMIT
+		{"NVIDIA_API_KEY": "nvapi-x"},     // a key without AI_MODEL
 		{"AI_PROVIDER": "gemini", "GEMINI_API_KEY": "gem-x"},
 		{"AI_PROVIDER": "openai"},
 	} {

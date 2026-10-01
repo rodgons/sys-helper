@@ -20,6 +20,7 @@ import (
 	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/projects"
+	"sys-helper/backend/internal/usage"
 )
 
 func main() {
@@ -69,15 +70,15 @@ func run() error {
 				Conversations: conversations,
 				Architectures: architectures,
 				Knowledge:     knowledgeStore,
+				Usage:         usage.NewMeter(db, cfg.AI.DailyReplyLimit),
 				HistoryLimit:  30,
 				Timeout:       3 * time.Minute,
 			},
-			Reviews:           conversation.Reviews{Conversations: conversations, Architectures: architectures},
-			Knowledge:         knowledgeStore,
-			Settings:          knowledgeStore, // the default Experience Level lives with the per-Project one
-			DailyMessageLimit: cfg.AI.DailyMessageLimit,
-			AllowedOrigins:    cfg.AllowedOrigins,
-			Allowlist:         allowlist(cfg),
+			Reviews:        conversation.Reviews{Conversations: conversations, Architectures: architectures},
+			Knowledge:      knowledgeStore,
+			Settings:       knowledgeStore, // the default Experience Level lives with the per-Project one
+			AllowedOrigins: cfg.AllowedOrigins,
+			Allowlist:      allowlist(cfg),
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
