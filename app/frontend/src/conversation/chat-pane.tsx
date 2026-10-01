@@ -1,30 +1,50 @@
 import * as stylex from '@stylexjs/stylex';
 import { useEffect, useRef, useState } from 'react';
 import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
-import { useMessages, useSendMessage } from '../lib/conversation';
+import { ApiError } from '../lib/api';
+import { useMessages, useReply, useSendMessage } from '../lib/conversation';
 import { Button } from '../ui/button';
 import { Heading, Text } from '../ui/typography';
 
 const MAX_LENGTH = 4000;
 
+const REPLY_ERRORS: Record<string, string> = {
+  ai_unavailable: "The AI isn't set up on this server yet.",
+  busy: 'The AI is already answering this project in another tab.',
+};
+
 /** Right pane of the workspace: the Project's Conversation and a composer. */
 export function ChatPane({ slug }: { slug: string }) {
   const messages = useMessages(slug);
   const send = useSendMessage(slug);
+  const reply = useReply(slug);
   const [draft, setDraft] = useState('');
   const list = useRef<HTMLOListElement>(null);
   const count = messages.data?.length ?? 0;
+  const streamed = reply.state.status === 'streaming' ? reply.state.text : '';
+  const replying = reply.state.status === 'streaming';
+  const unanswered = messages.data?.at(-1)?.role === 'user';
 
-  // Keep the newest message in view.
+  // Keep the newest message (or the reply being written) in view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll whenever either changes
   useEffect(() => {
-    if (count > 0 && list.current) list.current.scrollTop = list.current.scrollHeight;
-  }, [count]);
+    if (list.current) list.current.scrollTop = list.current.scrollHeight;
+  }, [count, streamed]);
 
-  const canSend = draft.trim() !== '' && !send.isPending;
+  const canSend = draft.trim() !== '' && !send.isPending && !replying;
   const submit = () => {
     if (!canSend) return;
-    send.mutate(draft.trim(), { onSuccess: () => setDraft('') });
+    send.mutate(draft.trim(), {
+      onSuccess: () => {
+        setDraft('');
+        void reply.start();
+      },
+    });
   };
+  const sendError =
+    send.error instanceof ApiError && send.error.code === 'daily_limit'
+      ? "You've reached today's message limit. It resets at midnight UTC."
+      : "Couldn't send your message. Try again.";
 
   return (
     <div {...stylex.props(styles.pane)}>
@@ -55,6 +75,26 @@ export function ChatPane({ slug }: { slug: string }) {
             <p {...stylex.props(styles.body)}>{m.body}</p>
           </li>
         ))}
+        {replying && (
+          <li aria-busy="true" {...stylex.props(styles.message, styles.fromAi)}>
+            <span {...stylex.props(styles.author)}>AI architect</span>
+            <p {...stylex.props(styles.body, streamed === '' && styles.thinking)}>
+              {streamed || 'Thinking…'}
+            </p>
+          </li>
+        )}
+        {!replying && unanswered && (
+          <li {...stylex.props(styles.notice)}>
+            <Text size="sm" tone="muted">
+              {reply.state.status === 'failed'
+                ? (REPLY_ERRORS[reply.state.code] ?? "The AI couldn't reply.")
+                : 'This message has no reply yet.'}
+            </Text>
+            <Button size="sm" variant="outline" onClick={() => void reply.start()}>
+              {reply.state.status === 'failed' ? 'Retry' : 'Get a reply'}
+            </Button>
+          </li>
+        )}
       </ol>
 
       <form
@@ -85,9 +125,7 @@ export function ChatPane({ slug }: { slug: string }) {
         />
         <div {...stylex.props(styles.actions)}>
           <Text size="sm" tone={send.isError ? 'accent' : 'faint'}>
-            {send.isError
-              ? "Couldn't send your message. Try again."
-              : 'AI replies are coming soon. Your messages are saved.'}
+            {send.isError ? sendError : 'Enter to send · Shift+Enter for a new line'}
           </Text>
           <Button type="submit" size="sm" disabled={!canSend}>
             Send
@@ -142,6 +180,19 @@ const styles = stylex.create({
     lineHeight: 1.55,
     whiteSpace: 'pre-wrap',
     overflowWrap: 'anywhere',
+  },
+  thinking: { color: color['--color-fg-muted'], fontStyle: 'italic' },
+  notice: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space['--space-3'],
+    paddingInline: space['--space-3'],
+    paddingBlock: space['--space-2'],
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: color['--color-line-strong'],
+    borderRadius: radius['--radius-md'],
   },
   composer: {
     display: 'flex',

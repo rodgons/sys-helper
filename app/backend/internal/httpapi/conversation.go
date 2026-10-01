@@ -14,6 +14,7 @@ import (
 type ConversationStore interface {
 	List(ctx context.Context, userID, suffix string) ([]conversation.Message, error)
 	Append(ctx context.Context, userID, suffix string, role conversation.Role, body string) (conversation.Message, error)
+	CountUserMessagesToday(ctx context.Context, userID string) (int, error)
 }
 
 func handleListMessages(store ConversationStore) http.HandlerFunc {
@@ -34,7 +35,7 @@ func handleListMessages(store ConversationStore) http.HandlerFunc {
 }
 
 // handleSendMessage adds a User message. The role is never taken from the request.
-func handleSendMessage(store ConversationStore) http.HandlerFunc {
+func handleSendMessage(store ConversationStore, dailyLimit int) http.HandlerFunc {
 	return withSuffix(func(w http.ResponseWriter, r *http.Request, suffix string) {
 		var req struct {
 			Body string `json:"body"`
@@ -50,7 +51,19 @@ func handleSendMessage(store ConversationStore) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid_message")
 			return
 		}
-		m, err := store.Append(r.Context(), userFrom(r.Context()).ID, suffix, conversation.RoleUser, body)
+		userID := userFrom(r.Context()).ID
+		if dailyLimit > 0 {
+			sent, err := store.CountUserMessagesToday(r.Context(), userID)
+			if err != nil {
+				internalError(w, r, err)
+				return
+			}
+			if sent >= dailyLimit {
+				writeError(w, http.StatusTooManyRequests, "daily_limit")
+				return
+			}
+		}
+		m, err := store.Append(r.Context(), userID, suffix, conversation.RoleUser, body)
 		switch {
 		case errors.Is(err, projects.ErrNotFound):
 			writeError(w, http.StatusNotFound, "not_found")

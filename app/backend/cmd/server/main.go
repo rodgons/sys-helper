@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"sys-helper/backend/internal/architecture"
+	"sys-helper/backend/internal/assistant"
 	"sys-helper/backend/internal/auth"
 	"sys-helper/backend/internal/config"
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/database"
 	"sys-helper/backend/internal/httpapi"
+	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/projects"
 )
 
@@ -48,15 +50,25 @@ func run() error {
 
 	projectStore := projects.NewStore(db)
 	projectStore.OnCreate = conversation.AddWelcome // every Conversation opens with the Welcome Message
+	conversations := conversation.NewStore(db)
+	architectures := architecture.NewStore(db)
 
 	srv := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewRouter(httpapi.Deps{
-			DB:                 db,
-			Auth:               auth.Authenticator{Tokens: tokens, Identities: auth.Identities{DB: db}},
-			Projects:           projectStore,
-			Architectures:      architecture.NewStore(db),
-			Conversations:      conversation.NewStore(db),
+			DB:            db,
+			Auth:          auth.Authenticator{Tokens: tokens, Identities: auth.Identities{DB: db}},
+			Projects:      projectStore,
+			Architectures: architectures,
+			Conversations: conversations,
+			Assistant: &assistant.Assistant{
+				Model:         chatModel(cfg.AI),
+				Conversations: conversations,
+				Architectures: architectures,
+				HistoryLimit:  30,
+				Timeout:       3 * time.Minute,
+			},
+			DailyMessageLimit:  cfg.AI.DailyMessageLimit,
 			AllowedOrigins:     cfg.AllowedOrigins,
 			AllowedGitHubUsers: cfg.AllowedGitHubUsers,
 		}),
@@ -84,4 +96,26 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// chatModel builds the assistant's model: the fake, or the primary model with its fallback. It
+// returns nil (replies answer "AI unavailable") when no API key is set.
+func chatModel(cfg config.AI) llm.ChatModel {
+	if cfg.Fake {
+		slog.Warn("using the fake AI model (AI_FAKE=1)")
+		return llm.Fake{}
+	}
+	if cfg.APIKey == "" {
+		slog.Warn("NVIDIA_API_KEY is not set; AI replies are disabled")
+		return nil
+	}
+	primary := llm.OpenAIClient{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Model: cfg.Model}
+	if cfg.FallbackModel == "" {
+		return primary
+	}
+	return llm.Fallback{
+		Primary:           primary,
+		Secondary:         llm.OpenAIClient{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Model: cfg.FallbackModel},
+		FirstEventTimeout: cfg.FirstTokenTimeout,
+	}
 }

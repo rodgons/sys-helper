@@ -89,7 +89,7 @@ db-migration: ## Create a migration: make db-migration name=create_users
 	$(SUPABASE) migration new $(name)
 
 ##@ Testing (TDD)
-.PHONY: test test-backend test-frontend test-watch-backend test-watch-frontend test-integration test-e2e test-all coverage
+.PHONY: test test-backend test-frontend test-watch-backend test-watch-frontend test-integration test-e2e test-ai-live test-all coverage
 
 test: test-backend test-frontend ## Fast unit tests for both apps (no external deps)
 
@@ -110,6 +110,9 @@ test-integration: ## Go integration tests against local Supabase Postgres
 
 test-e2e: ## Playwright full-stack tests (needs Supabase running)
 	$(FE) test:e2e
+
+test-ai-live: ## Check the NVIDIA models stream and call tools (needs NVIDIA_API_KEY; costs credits)
+	cd $(BACKEND_DIR) && go test -tags live -run TestLiveModels -v -count=1 ./internal/llm
 
 test-all: lint test test-integration test-e2e ## Everything CI should run
 

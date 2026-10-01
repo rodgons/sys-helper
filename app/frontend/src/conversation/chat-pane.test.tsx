@@ -1,40 +1,54 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { mockApi, renderWithQuery, signedIn } from '../test/render';
+import { mockApi, renderWithQuery, signedIn, sseResponse } from '../test/render';
 import { ChatPane } from './chat-pane';
 
 const SLUG = 'shop-k3xa9q2m7p';
+const API = `/api/projects/${SLUG}`;
+const at = '2026-09-30T00:00:00Z';
 const welcome = {
   role: 'assistant',
   body: "Hi! I'm your AI architect.\n\nWhat are you building, and who is it for?",
-  createdAt: '2026-09-30T00:00:00Z',
+  createdAt: at,
 };
 
-function setup(
-  send: Parameters<typeof mockApi>[0][string] = ({ json }: { json?: unknown }) => ({
-    status: 201,
-    body: {
-      role: 'user',
-      body: (json as { body: string }).body.trim(),
-      createdAt: '2026-09-30T00:01:00Z',
-    },
-  }),
-) {
-  const post = vi.fn(send as never);
+const echoUser = ({ json }: { json?: unknown }) => ({
+  status: 201,
+  body: { role: 'user', body: (json as { body: string }).body.trim(), createdAt: at },
+});
+const aiSays = (text: string) => () =>
+  sseResponse(
+    ['delta', { text: text.slice(0, 5) }],
+    ['delta', { text: text.slice(5) }],
+    ['done', { role: 'assistant', body: text, createdAt: at }],
+  );
+
+function setup(routes: Parameters<typeof mockApi>[0] = {}, history: unknown[] = [welcome]) {
+  const post = vi.fn(echoUser);
+  const reply = vi.fn(aiSays('How many users will it have?'));
   vi.stubGlobal(
     'fetch',
     vi.fn(
       mockApi({
-        [`GET /api/projects/${SLUG}/messages`]: [welcome],
-        [`POST /api/projects/${SLUG}/messages`]: post,
+        [`GET ${API}/messages`]: history,
+        [`POST ${API}/messages`]: post,
+        [`POST ${API}/reply`]: reply,
+        ...routes,
       }),
     ),
   );
   renderWithQuery(<ChatPane slug={SLUG} />, { auth: signedIn() });
-  return post;
+  return { post, reply };
 }
 
 const messages = () => screen.getByRole('list', { name: 'Messages' });
+const box = () => screen.getByLabelText('Message');
+
+async function send(text: string) {
+  await screen.findByText(/who is it for/);
+  fireEvent.change(box(), { target: { value: text } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+}
 
 describe('ChatPane', () => {
   it('opens with the welcome message from the AI', async () => {
@@ -46,31 +60,30 @@ describe('ChatPane', () => {
     expect(within(messages()).getByText('AI architect')).toBeInTheDocument();
   });
 
-  it('sends a message and shows it in the conversation', async () => {
-    const post = setup();
-    await screen.findByText(/who is it for/);
+  it('sends a message and streams the AI reply after it', async () => {
+    const { post, reply } = setup();
 
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'A URL shortener' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await send('A URL shortener');
 
     expect(await within(messages()).findByText('A URL shortener')).toBeInTheDocument();
-    expect(within(messages()).getByText('You')).toBeInTheDocument();
+    expect(await within(messages()).findByText('How many users will it have?')).toBeInTheDocument();
     expect(post).toHaveBeenCalledWith(
       expect.objectContaining({ json: { body: 'A URL shortener' } }),
     );
-    expect(screen.getByLabelText('Message')).toHaveValue('');
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(box()).toHaveValue('');
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
   });
 
   it('sends on Enter and adds a line on Shift+Enter', async () => {
-    const post = setup();
+    const { post } = setup();
     await screen.findByText(/who is it for/);
-    const box = screen.getByLabelText('Message');
-    fireEvent.change(box, { target: { value: 'Line one' } });
+    fireEvent.change(box(), { target: { value: 'Line one' } });
 
-    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true });
+    fireEvent.keyDown(box(), { key: 'Enter', shiftKey: true });
     expect(post).not.toHaveBeenCalled();
 
-    fireEvent.keyDown(box, { key: 'Enter' });
+    fireEvent.keyDown(box(), { key: 'Enter' });
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   });
 
@@ -78,19 +91,63 @@ describe('ChatPane', () => {
     setup();
     await screen.findByText(/who is it for/);
 
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: '   ' } });
+    fireEvent.change(box(), { target: { value: '   ' } });
 
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
   });
 
   it('keeps the draft and says so when sending fails', async () => {
-    setup(() => ({ status: 500, body: { error: 'internal' } }));
-    await screen.findByText(/who is it for/);
+    setup({ [`POST ${API}/messages`]: { status: 500, body: { error: 'internal' } } });
 
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Important context' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await send('Important context');
 
     expect(await screen.findByText(/couldn't send/i)).toBeInTheDocument();
-    expect(screen.getByLabelText('Message')).toHaveValue('Important context');
+    expect(box()).toHaveValue('Important context');
+  });
+
+  it('explains the daily limit', async () => {
+    setup({ [`POST ${API}/messages`]: { status: 429, body: { error: 'daily_limit' } } });
+
+    await send('One more');
+
+    expect(await screen.findByText(/today's message limit/i)).toBeInTheDocument();
+  });
+
+  it('offers a retry when the AI fails, and saves nothing partial', async () => {
+    let fail = true;
+    setup({
+      [`POST ${API}/reply`]: () =>
+        fail
+          ? sseResponse(['delta', { text: 'Half an ans' }], ['error', { error: 'ai_failed' }])
+          : aiSays('A full answer.')(),
+    });
+
+    await send('A URL shortener');
+
+    expect(await screen.findByText(/couldn't reply/i)).toBeInTheDocument();
+    expect(screen.queryByText('Half an ans')).not.toBeInTheDocument();
+
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await within(messages()).findByText('A full answer.')).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't reply/i)).not.toBeInTheDocument();
+  });
+
+  it('says when the AI is not configured', async () => {
+    setup({ [`POST ${API}/reply`]: { status: 503, body: { error: 'ai_unavailable' } } });
+
+    await send('Hello');
+
+    expect(await screen.findByText(/isn't set up/i)).toBeInTheDocument();
+  });
+
+  it('offers to get a reply for a message left unanswered', async () => {
+    const { reply } = setup({}, [welcome, { role: 'user', body: 'Still waiting', createdAt: at }]);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Get a reply' }));
+
+    expect(await within(messages()).findByText('How many users will it have?')).toBeInTheDocument();
+    expect(reply).toHaveBeenCalledTimes(1);
   });
 });

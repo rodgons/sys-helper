@@ -13,12 +13,15 @@ type Pinger interface {
 }
 
 type Deps struct {
-	DB             Pinger
-	Auth           Authenticator
-	Projects       ProjectStore
-	Architectures  ArchitectureStore
-	Conversations  ConversationStore
-	AllowedOrigins []string
+	DB            Pinger
+	Auth          Authenticator
+	Projects      ProjectStore
+	Architectures ArchitectureStore
+	Conversations ConversationStore
+	Assistant     Replier
+	// DailyMessageLimit caps the messages a User can send per UTC day. 0 means no cap.
+	DailyMessageLimit int
+	AllowedOrigins    []string
 	// AllowedGitHubUsers is the lowercase beta allowlist. Empty lets every GitHub user in.
 	AllowedGitHubUsers []string
 }
@@ -38,7 +41,8 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /api/projects/{slug}/architecture", user(handleGetArchitecture(deps.Architectures)))
 	mux.HandleFunc("PUT /api/projects/{slug}/architecture", user(handleSaveArchitecture(deps.Architectures)))
 	mux.HandleFunc("GET /api/projects/{slug}/messages", user(handleListMessages(deps.Conversations)))
-	mux.HandleFunc("POST /api/projects/{slug}/messages", user(handleSendMessage(deps.Conversations)))
+	mux.HandleFunc("POST /api/projects/{slug}/messages", user(handleSendMessage(deps.Conversations, deps.DailyMessageLimit)))
+	mux.HandleFunc("POST /api/projects/{slug}/reply", user(handleReply(deps.Assistant)))
 	return withCORS(deps.AllowedOrigins, mux)
 }
 

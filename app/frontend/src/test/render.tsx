@@ -47,7 +47,7 @@ type Route = Reply | ((init: RequestInit & { json?: unknown }) => Reply);
 
 /**
  * A `fetch` stub that routes on `"METHOD /path"` (path relative to VITE_API_URL). A route is a JSON
- * body, `{ status, body }`, or a function of the request. Unmatched requests fail the test loudly.
+ * body, `{ status, body }`, a Response, or a function of the request. Unmatched requests fail the test loudly.
  */
 export function mockApi(routes: Record<string, Route>) {
   return async (url: string, init: RequestInit = {}) => {
@@ -56,12 +56,19 @@ export function mockApi(routes: Record<string, Route>) {
     const route = routes[key];
     const json = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     const reply = typeof route === 'function' ? route({ ...init, json }) : route;
+    if (reply instanceof Response) return reply;
     const { status, body } =
       reply !== null && typeof reply === 'object' && 'status' in reply
         ? (reply as { status: number; body?: unknown })
         : { status: 200, body: reply };
     return new Response(status === 204 ? null : JSON.stringify(body), { status });
   };
+}
+
+/** A `text/event-stream` response with the given events, as the reply endpoint sends them. */
+export function sseResponse(...events: [event: string, data: unknown][]) {
+  const body = events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join('');
+  return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } });
 }
 
 /** Renders the current router path, so tests can assert on navigation. */

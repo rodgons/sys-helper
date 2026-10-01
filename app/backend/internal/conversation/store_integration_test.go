@@ -58,6 +58,29 @@ func TestStore(t *testing.T) {
 		}
 	})
 
+	t.Run("counts the user's messages sent today across projects", func(t *testing.T) {
+		user, first := newProject(t)
+		second, err := projectStore.Create(ctx, user, "Second")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, suffix := range []string{first, first, second.SlugSuffix} {
+			if _, err := store.Append(ctx, user, suffix, conversation.RoleUser, "hi"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := pool.Exec(ctx, `UPDATE messages SET created_at = now() - interval '2 days'
+			WHERE id = (SELECT m.id FROM messages m JOIN projects p ON p.id = m.project_id
+			            WHERE p.slug_suffix = $1 AND m.role = 'user' ORDER BY m.id LIMIT 1)`, first); err != nil {
+			t.Fatal(err)
+		}
+
+		n, err := store.CountUserMessagesToday(ctx, user)
+		if err != nil || n != 2 {
+			t.Fatalf("CountUserMessagesToday = %d, %v; want 2 (welcome messages and old ones excluded)", n, err)
+		}
+	})
+
 	t.Run("hides other users' conversations", func(t *testing.T) {
 		_, suffix := newProject(t)
 		intruder := testdb.User(t, pool, "hubot")

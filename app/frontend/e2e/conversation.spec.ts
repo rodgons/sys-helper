@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 
-test('a new project opens with the welcome message and keeps what the user says', async ({
+test('a new project opens with the welcome message, and the AI answers what the user says', async ({
   page,
   signIn,
 }) => {
@@ -19,7 +19,12 @@ test('a new project opens with the welcome message and keeps what the user says'
     'A URL shortener for a marketing team',
   );
 
+  await expect(messages.getByRole('listitem').last()).toContainText(
+    'This is a fake AI reply (AI_FAKE=1). You said: A URL shortener for a marketing team',
+  );
+
   await page.reload();
-  await expect(messages.getByRole('listitem')).toHaveCount(2);
-  await expect(messages.getByRole('listitem').last()).toContainText('You');
+  await expect(messages.getByRole('listitem')).toHaveCount(3);
+  await expect(messages.getByRole('listitem').nth(1)).toContainText('You');
+  await expect(messages.getByRole('listitem').last()).toContainText('fake AI reply');
 });

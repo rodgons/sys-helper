@@ -3,6 +3,7 @@ package config_test
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"sys-helper/backend/internal/config"
 )
@@ -72,6 +73,50 @@ func TestLoad(t *testing.T) {
 			t.Errorf("SupabaseURL = %q", cfg.SupabaseURL)
 		}
 	})
+
+	t.Run("defaults the AI to Kimi K3 with a Gemma 4 fallback", func(t *testing.T) {
+		cfg, err := config.Load(env(required(nil)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := config.AI{
+			BaseURL:           "https://integrate.api.nvidia.com/v1",
+			Model:             "moonshotai/kimi-k3",
+			FallbackModel:     "google/gemma-4-31b-it",
+			FirstTokenTimeout: 20 * time.Second,
+			DailyMessageLimit: 100,
+		}
+		if cfg.AI != want {
+			t.Errorf("AI = %+v, want %+v", cfg.AI, want)
+		}
+	})
+
+	t.Run("reads AI overrides", func(t *testing.T) {
+		cfg, err := config.Load(env(required(map[string]string{
+			"NVIDIA_API_KEY":         "nvapi-x",
+			"AI_MODEL":               "z-ai/glm-5.3",
+			"AI_FALLBACK_MODEL":      "none",
+			"AI_FIRST_TOKEN_TIMEOUT": "5s",
+			"AI_DAILY_MESSAGE_LIMIT": "0",
+			"AI_FAKE":                "1",
+		})))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ai := cfg.AI
+		if ai.APIKey != "nvapi-x" || ai.Model != "z-ai/glm-5.3" || ai.FallbackModel != "" ||
+			ai.FirstTokenTimeout != 5*time.Second || ai.DailyMessageLimit != 0 || !ai.Fake {
+			t.Errorf("AI = %+v", ai)
+		}
+	})
+
+	for _, bad := range []map[string]string{{"AI_FIRST_TOKEN_TIMEOUT": "soon"}, {"AI_DAILY_MESSAGE_LIMIT": "-1"}} {
+		t.Run("rejects invalid AI settings", func(t *testing.T) {
+			if _, err := config.Load(env(required(bad))); err == nil {
+				t.Fatalf("Load(%v) succeeded", bad)
+			}
+		})
+	}
 
 	for _, key := range []string{"DATABASE_URL", "SUPABASE_URL"} {
 		t.Run("requires "+key, func(t *testing.T) {

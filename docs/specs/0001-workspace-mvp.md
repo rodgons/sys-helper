@@ -97,6 +97,6 @@ Each slice is built test-first and can ship on its own.
 3. **Projects.** (done) Migration (UUIDv7, `slug_suffix`), CRUD API, slug lookup and redirects, sidebar and empty state.
 4. **Canvas, manual editing only.** (done) Component Type catalog, Connections, the Architecture document with its version number, and autosave.
 5. **Conversation without AI.** (done) Messages, the Welcome Message on creation, and the chat pane.
-6. **Model connection.** `ChatModel`, the NVIDIA client, the fake model, SSE, Retry and the daily cap.
+6. **Model connection.** (done) `ChatModel`, the NVIDIA client, the fake model, SSE, Retry and the daily cap.
 7. **Proposals.** Tool calls, the diff overlay, accept/reject, dagre placement and stale detection.
 8. **Requirements and Decisions.** The Requirements panel, Experience Level, Decisions linked to Components and Connections, and the "needs review" flag.
