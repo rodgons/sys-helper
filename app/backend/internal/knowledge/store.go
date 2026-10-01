@@ -205,6 +205,9 @@ func AddRequirement(ctx context.Context, db DB, projectID, category, statement s
 	if err != nil {
 		return Requirement{}, err
 	}
+	if err := checkRoom(ctx, db, "requirements", projectID, MaxRequirements); err != nil {
+		return Requirement{}, err
+	}
 	r := Requirement{Category: category, Statement: statement}
 	// Numbers come from a counter that only moves forward, so a deleted R3 is never reused.
 	err = db.QueryRow(ctx, `
@@ -266,8 +269,11 @@ func AddDecision(ctx context.Context, db DB, projectID string, d Decision) (Deci
 	if err := CheckDecisionText(d.Title, d.Rationale, d.Pattern, d.Alternative); err != nil {
 		return Decision{}, err
 	}
-	if len(d.Targets) == 0 {
-		return Decision{}, fmt.Errorf("%w: a decision needs at least one component or connection", ErrInvalid)
+	if err := CheckDecisionReferences(len(d.Targets), len(d.Requirements)); err != nil {
+		return Decision{}, err
+	}
+	if err := checkRoom(ctx, db, "decisions", projectID, MaxDecisions); err != nil {
+		return Decision{}, err
 	}
 	if d.Requirements == nil {
 		d.Requirements = []int{}
@@ -290,6 +296,19 @@ func AddDecision(ctx context.Context, db DB, projectID string, d Decision) (Deci
 	return d, nil
 }
 
+// checkRoom returns ErrLimit if the Project already has max rows in table. Callers hold the
+// Project's row lock, so the count can't change before their insert.
+func checkRoom(ctx context.Context, db DB, table, projectID string, max int) error {
+	var n int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE project_id = $1`, projectID).Scan(&n); err != nil {
+		return fmt.Errorf("count %s: %w", table, err)
+	}
+	if n >= max {
+		return fmt.Errorf("%w: a project can have at most %d %s; remove one first", ErrLimit, max, table)
+	}
+	return nil
+}
+
 func updateDecision(ctx context.Context, db DB, projectID string, num int, p DecisionPatch) (Decision, error) {
 	current, err := scanDecision(db.QueryRow(ctx, `SELECT `+decisionColumns+` FROM decisions WHERE project_id = $1 AND num = $2`, projectID, num))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -307,6 +326,9 @@ func updateDecision(ctx context.Context, db DB, projectID string, num int, p Dec
 		current.Requirements = *p.Requirements
 	}
 	if err := CheckDecisionText(current.Title, current.Rationale, current.Pattern, current.Alternative); err != nil {
+		return Decision{}, err
+	}
+	if err := CheckDecisionReferences(len(current.Targets), len(current.Requirements)); err != nil {
 		return Decision{}, err
 	}
 	current.NeedsReview = false

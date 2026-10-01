@@ -55,6 +55,28 @@ describe('Projects page', () => {
     );
   });
 
+  it('explains the project limit', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        mockApi({
+          'GET /api/me': me,
+          'GET /api/projects': [],
+          'POST /api/projects': { status: 409, body: { error: 'limit_reached' } },
+        }),
+      ),
+    );
+
+    renderAt('/projects');
+
+    fireEvent.change(await screen.findByLabelText('Project name'), {
+      target: { value: 'One more' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
+
+    expect(await screen.findByText(/maximum number of projects/i)).toBeInTheDocument();
+  });
+
   it('opens the most recent project when there is one', async () => {
     vi.stubGlobal(
       'fetch',

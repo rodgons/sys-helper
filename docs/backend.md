@@ -45,9 +45,13 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | 400 | `invalid_json`, `invalid_name`, `invalid_message`, `invalid_architecture` (+detail), `invalid` (+detail, knowledge) |
 | 401 / 403 | `unauthenticated` / `github_required`, `not_allowed` (allowlist) |
 | 404 | `not_found` (also other Users' Projects, bad slugs, bad `seq`/ids) |
-| 409 | `conflict` (stale version), `not_pending` (Proposal already resolved), `busy` (reply in flight), `nothing_to_reply` |
+| 409 | `conflict` (stale version), `not_pending` (Proposal already resolved), `busy` (reply in flight), `nothing_to_reply`, `limit_reached` (+detail for knowledge; see Limits) |
 | 429 | `daily_limit` from `/reply` (`AI_DAILY_REPLY_LIMIT` model calls per User per UTC day; 0 disables). Sending a message is never capped. |
 | 502 / 503 | `ai_failed` / `ai_unavailable` (no API key) |
+
+## Limits
+
+Every Requirement and Decision goes into each AI prompt, so storage is capped: `projects.MaxProjects` (50 per User, counted under a per-User advisory lock), `knowledge.MaxRequirements` and `MaxDecisions` (200 per Project, counted under the Project row lock), and `knowledge.MaxReferences` (50 targets and 50 cited Requirements per Decision, also a SQL `check`). Over a limit → 409 `limit_reached`. `proposal.Validate` applies the same caps so the model is told before the User accepts.
 
 ## Endpoints
 

@@ -91,6 +91,38 @@ func TestValidate(t *testing.T) {
 		})
 	}
 
+	t.Run("stops at the project's requirement and decision limits, and says how to proceed", func(t *testing.T) {
+		full := known()
+		for len(full.Requirements) < knowledge.MaxRequirements {
+			full.Requirements = append(full.Requirements, knowledge.Requirement{Num: len(full.Requirements) + 1, Category: "scale", Statement: "s"})
+		}
+		for len(full.Decisions) < knowledge.MaxDecisions {
+			full.Decisions = append(full.Decisions, knowledge.Decision{Num: len(full.Decisions) + 1, Title: "t", Targets: []string{"api"}})
+		}
+		addRequirement := `{"op": "add_requirement", "ref": "r", "category": "cost", "statement": "cheap"}`
+		addDecision := `{"op": "add_decision", "title": "T", "rationale": "R", "targets": ["api"]}`
+
+		for _, changes := range []string{`[` + addRequirement + `]`, `[` + addDecision + `]`} {
+			err := parse(t, `{"summary": "s", "changes": `+changes+`}`).Validate(canvas(), full)
+			if err == nil || !strings.Contains(err.Error(), "at most") {
+				t.Errorf("%s: err = %v, want a limit error", changes, err)
+			}
+		}
+		// Removing one first makes room.
+		c := parse(t, `{"summary": "s", "changes": [{"op": "remove_requirement", "id": "R2"}, `+addRequirement+`]}`)
+		if err := c.Validate(canvas(), full); err != nil {
+			t.Errorf("remove then add: %v", err)
+		}
+	})
+
+	t.Run("caps a decision's targets and cited requirements", func(t *testing.T) {
+		targets := strings.TrimSuffix(strings.Repeat(`"api", `, knowledge.MaxReferences+1), ", ")
+		c := parse(t, `{"summary": "s", "changes": [{"op": "add_decision", "title": "T", "rationale": "R", "targets": [`+targets+`]}]}`)
+		if err := c.Validate(canvas(), known()); err == nil {
+			t.Error("expected an error for too many targets")
+		}
+	})
+
 	t.Run("accepts requirement, decision and experience changes", func(t *testing.T) {
 		c := parse(t, `{"summary": "Record what we know", "changes": [
 			{"op": "set_experience_level", "level": "beginner"},

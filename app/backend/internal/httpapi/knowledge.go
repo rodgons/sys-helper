@@ -167,6 +167,8 @@ func respond(w http.ResponseWriter, r *http.Request, status int, body any, err e
 		writeError(w, http.StatusNotFound, "not_found")
 	case errors.Is(err, knowledge.ErrInvalid):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid", "detail": err.Error()})
+	case errors.Is(err, knowledge.ErrLimit):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "limit_reached", "detail": err.Error()})
 	case err != nil:
 		internalError(w, r, err)
 	case status == http.StatusNoContent:

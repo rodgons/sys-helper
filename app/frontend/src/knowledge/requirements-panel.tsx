@@ -1,6 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
 import { useState } from 'react';
 import { color, font, radius, space, text } from '../design/tokens.stylex';
+import { isLimit } from '../lib/api';
 import {
   CATEGORIES,
   categoryLabel,
@@ -80,6 +81,13 @@ export function RequirementsPanel({ slug }: { slug: string }) {
           maxLength={300}
           onChange={(e) => setStatement(e.target.value)}
         />
+        {actions.addRequirement.isError && (
+          <Text size="sm" tone="accent">
+            {isLimit(actions.addRequirement.error)
+              ? 'This project has the most requirements it can hold. Remove one to add another.'
+              : "Couldn't add the requirement. Try again."}
+          </Text>
+        )}
         <div>
           <Button
             type="submit"

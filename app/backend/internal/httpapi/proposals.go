@@ -8,6 +8,7 @@ import (
 
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/conversation"
+	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/projects"
 )
 
@@ -64,6 +65,8 @@ func writeReviewError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusConflict, "not_pending")
 	case errors.Is(err, architecture.ErrConflict):
 		writeError(w, http.StatusConflict, "conflict")
+	case errors.Is(err, knowledge.ErrLimit):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "limit_reached", "detail": err.Error()})
 	default:
 		internalError(w, r, err)
 	}

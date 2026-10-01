@@ -84,6 +84,51 @@ func TestStore(t *testing.T) {
 		}
 	})
 
+	t.Run("caps requirements and decisions per project", func(t *testing.T) {
+		user, suffix := newProject(t)
+		// Fill the project to the limits directly, as many adds would be slow.
+		if _, err := pool.Exec(ctx, `
+			WITH p AS (SELECT id FROM projects WHERE slug_suffix = $1),
+			     r AS (INSERT INTO requirements (id, project_id, num, category, statement)
+			           SELECT gen_random_uuid(), p.id, n, 'scale', 'r' || n FROM p, generate_series(1, $2::int) n),
+			     d AS (INSERT INTO decisions (id, project_id, num, title, rationale, targets, author)
+			           SELECT gen_random_uuid(), p.id, n, 'd' || n, 'why', '{api}', 'user' FROM p, generate_series(1, $3::int) n)
+			UPDATE projects SET next_requirement_num = $2 + 1, next_decision_num = $3 + 1 WHERE id = (SELECT id FROM p)`,
+			suffix, knowledge.MaxRequirements, knowledge.MaxDecisions); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := store.AddRequirement(ctx, user, suffix, "cost", "cheap"); !errors.Is(err, knowledge.ErrLimit) {
+			t.Errorf("requirement over the limit: err = %v, want ErrLimit", err)
+		}
+		if _, err := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "T", Rationale: "R", Targets: []string{"db"}}); !errors.Is(err, knowledge.ErrLimit) {
+			t.Errorf("decision over the limit: err = %v, want ErrLimit", err)
+		}
+	})
+
+	t.Run("caps a decision's targets and cited requirements", func(t *testing.T) {
+		user, suffix := newProject(t)
+		r1, _ := store.AddRequirement(ctx, user, suffix, "scale", "10k rps")
+		many := func(n int) []int {
+			nums := make([]int, n)
+			for i := range nums {
+				nums[i] = r1.Num
+			}
+			return nums
+		}
+
+		_, err := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "T", Rationale: "R", Targets: []string{"db"},
+			Requirements: many(knowledge.MaxReferences + 1)})
+		if !errors.Is(err, knowledge.ErrInvalid) {
+			t.Errorf("too many cited requirements: err = %v, want ErrInvalid", err)
+		}
+		d, _ := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "T", Rationale: "R", Targets: []string{"db"}})
+		reqs := many(knowledge.MaxReferences + 1)
+		if _, err := store.UpdateDecision(ctx, user, suffix, d.Num, knowledge.DecisionPatch{Requirements: &reqs}); !errors.Is(err, knowledge.ErrInvalid) {
+			t.Errorf("update with too many cited requirements: err = %v, want ErrInvalid", err)
+		}
+	})
+
 	t.Run("rejects user decisions on missing items or requirements", func(t *testing.T) {
 		user, suffix := newProject(t)
 

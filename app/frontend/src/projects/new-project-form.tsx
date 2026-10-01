@@ -2,6 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { space } from '../design/tokens.stylex';
+import { isLimit } from '../lib/api';
 import { useCreateProject } from '../lib/projects';
 import { Button } from '../ui/button';
 import { TextField } from '../ui/text-field';
@@ -40,7 +41,9 @@ export function NewProjectForm({ onCancel }: { onCancel?: () => void }) {
       />
       {create.isError && (
         <Text size="sm" tone="accent">
-          Couldn't create the project. Try again.
+          {isLimit(create.error)
+            ? "You've reached the maximum number of projects. Delete one to create another."
+            : "Couldn't create the project. Try again."}
         </Text>
       )}
       <div {...stylex.props(styles.actions, onCancel && styles.dialogActions)}>

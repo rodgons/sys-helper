@@ -143,6 +143,7 @@ export function DecisionForm({
   requirements,
   submitLabel,
   busy,
+  error = null,
   onSubmit,
   onCancel,
 }: {
@@ -150,6 +151,8 @@ export function DecisionForm({
   requirements: Requirement[];
   submitLabel: string;
   busy: boolean;
+  /** Why the last submit failed, if it did. */
+  error?: string | null;
   onSubmit: (input: DecisionInput) => void;
   onCancel: () => void;
 }) {
@@ -212,6 +215,11 @@ export function DecisionForm({
             </label>
           ))}
         </fieldset>
+      )}
+      {error && (
+        <Text size="sm" tone="accent">
+          {error}
+        </Text>
       )}
       <div {...stylex.props(styles.actions)}>
         <Button

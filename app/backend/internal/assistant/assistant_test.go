@@ -132,6 +132,12 @@ func (m *meter) Record(context.Context, string) error {
 	return nil
 }
 
+type staticKnowledge knowledge.Knowledge
+
+func (k staticKnowledge) Get(context.Context, string, string) (knowledge.Knowledge, error) {
+	return knowledge.Knowledge(k), nil
+}
+
 func newAssistant(m llm.ChatModel, c *fakeConversations) *assistant.Assistant {
 	return &assistant.Assistant{Model: m, Conversations: c, Architectures: fakeArchitectures{}, Knowledge: fakeKnowledge{},
 		Usage: &meter{}, HistoryLimit: 4, Timeout: time.Second}
@@ -176,6 +182,33 @@ func TestReply(t *testing.T) {
 		history := req.Messages[1:]
 		if len(history) != 4 || history[0].Content != "two" || history[3].Content != "five" || history[3].Role != llm.RoleUser {
 			t.Errorf("history = %+v", history)
+		}
+	})
+
+	t.Run("trims a large project's knowledge to a budget, saying what it left out", func(t *testing.T) {
+		var k knowledge.Knowledge
+		for i := 1; i <= knowledge.MaxRequirements; i++ {
+			k.Requirements = append(k.Requirements, knowledge.Requirement{Num: i, Category: "scale", Statement: strings.Repeat("x", knowledge.MaxStatement)})
+		}
+		for i := 1; i <= knowledge.MaxDecisions; i++ {
+			k.Decisions = append(k.Decisions, knowledge.Decision{Num: i, Title: strings.Repeat("t", knowledge.MaxTitle), Targets: []string{"db"}, Author: knowledge.AuthorAI})
+		}
+		var req llm.Request
+		a := newAssistant(model{words: []string{"ok"}, got: &req}, conv("Welcome", "Hi"))
+		a.Knowledge = staticKnowledge(k)
+
+		if _, err := a.Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+
+		system := req.Messages[0].Content
+		if n := utf8.RuneCountInString(system); n > 30000 {
+			t.Errorf("system message is %d characters", n)
+		}
+		for _, want := range []string{"R1 [scale]", "D1 ", "more requirements not shown", "more decisions not shown"} {
+			if !strings.Contains(system, want) {
+				t.Errorf("system message lacks %q", want)
+			}
 		}
 	})
 

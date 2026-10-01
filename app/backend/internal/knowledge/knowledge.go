@@ -24,9 +24,18 @@ const (
 	MaxRationale   = 2000
 	MaxPattern     = 120
 	MaxAlternative = 1000
+
+	// Every Requirement and Decision goes into each AI prompt, so a Project's knowledge is capped.
+	MaxRequirements = 200
+	MaxDecisions    = 200
+	// MaxReferences caps a Decision's targets, and the Requirements it cites, separately.
+	MaxReferences = 50
 )
 
 var ErrInvalid = errors.New("invalid")
+
+// ErrLimit means the Project already has as many Requirements or Decisions as it may.
+var ErrLimit = errors.New("limit reached")
 
 type Requirement struct {
 	Num       int
@@ -125,6 +134,20 @@ func CheckDecisionText(title, rationale, pattern, alternative string) error {
 }
 
 // CheckLevel validates an Experience Level.
+// CheckDecisionReferences checks how many items a Decision is attached to and how many
+// Requirements it cites.
+func CheckDecisionReferences(targets, requirements int) error {
+	switch {
+	case targets == 0:
+		return fmt.Errorf("%w: a decision needs at least one component or connection", ErrInvalid)
+	case targets > MaxReferences:
+		return fmt.Errorf("%w: a decision can be attached to at most %d components or connections", ErrInvalid, MaxReferences)
+	case requirements > MaxReferences:
+		return fmt.Errorf("%w: a decision can cite at most %d requirements", ErrInvalid, MaxReferences)
+	}
+	return nil
+}
+
 func CheckLevel(level string) error {
 	if !slices.Contains(Levels, level) {
 		return fmt.Errorf("%w: experience level must be one of %s", ErrInvalid, strings.Join(Levels, ", "))

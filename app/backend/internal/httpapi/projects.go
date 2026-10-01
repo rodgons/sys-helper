@@ -53,6 +53,10 @@ func handleCreateProject(store ProjectStore) http.HandlerFunc {
 			return
 		}
 		p, err := store.Create(r.Context(), userFrom(r.Context()).ID, name)
+		if errors.Is(err, projects.ErrLimit) {
+			writeError(w, http.StatusConflict, "limit_reached")
+			return
+		}
 		if err != nil {
 			internalError(w, r, err)
 			return

@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -30,6 +31,9 @@ func (f *fakeKnowledge) AddRequirement(_ context.Context, userID, suffix, catego
 	}
 	if err := knowledge.CheckRequirement(&category, &statement); err != nil {
 		return knowledge.Requirement{}, err
+	}
+	if len(f.k.Requirements) >= knowledge.MaxRequirements {
+		return knowledge.Requirement{}, fmt.Errorf("%w: at most %d", knowledge.ErrLimit, knowledge.MaxRequirements)
 	}
 	r := knowledge.Requirement{Num: len(f.k.Requirements) + 1, Category: category, Statement: statement}
 	f.k.Requirements = append(f.k.Requirements, r)
@@ -157,6 +161,17 @@ func TestKnowledge(t *testing.T) {
 
 		if rec.Code != http.StatusOK || f.k.Decisions[0].NeedsReview {
 			t.Fatalf("status = %d, decision = %+v", rec.Code, f.k.Decisions[0])
+		}
+	})
+
+	t.Run("refuses a requirement over the project's limit", func(t *testing.T) {
+		deps, f := newDeps()
+		f.k.Requirements = make([]knowledge.Requirement, knowledge.MaxRequirements)
+
+		rec := call(t, deps, http.MethodPost, base+"/requirements", `{"category":"cost","statement":"cheap"}`)
+
+		if body := decode[map[string]string](t, rec); rec.Code != http.StatusConflict || body["error"] != "limit_reached" || body["detail"] == "" {
+			t.Fatalf("status = %d, body = %v", rec.Code, body)
 		}
 	})
 

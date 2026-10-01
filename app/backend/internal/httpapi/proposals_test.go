@@ -2,12 +2,14 @@ package httpapi_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/httpapi"
+	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/projects"
 )
 
@@ -15,6 +17,7 @@ import (
 type fakeReviews struct {
 	status   map[int]string
 	accepted architecture.Document
+	full     bool // the project has no room for the proposal's requirements
 }
 
 func (f *fakeReviews) Accept(_ context.Context, userID, suffix string, seq, base int, doc architecture.Document) (int, error) {
@@ -26,6 +29,9 @@ func (f *fakeReviews) Accept(_ context.Context, userID, suffix string, seq, base
 	}
 	if f.status[seq] != "pending" {
 		return 0, conversation.ErrNotPending
+	}
+	if f.full {
+		return 0, fmt.Errorf("apply add_requirement: %w: at most 200", knowledge.ErrLimit)
 	}
 	f.status[seq], f.accepted = "accepted", doc
 	return 4, nil
@@ -60,6 +66,17 @@ func TestProposalReviews(t *testing.T) {
 		}
 		if f.status[2] != "accepted" || f.accepted.Components[0].Name != "Cache" {
 			t.Errorf("fake = %+v", f)
+		}
+	})
+
+	t.Run("refuses an accept that would exceed the project's limits", func(t *testing.T) {
+		deps, f := newDeps()
+		f.full = true
+
+		rec := call(t, deps, http.MethodPost, base+"2/accept", `{"version":3,"document":`+doc+`}`)
+
+		if body := decode[map[string]string](t, rec); rec.Code != http.StatusConflict || body["error"] != "limit_reached" || body["detail"] == "" {
+			t.Fatalf("status = %d, body = %v", rec.Code, body)
 		}
 	})
 

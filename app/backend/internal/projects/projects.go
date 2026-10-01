@@ -4,6 +4,7 @@ package projects
 import (
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -24,7 +25,11 @@ const (
 var (
 	ErrNotFound    = errors.New("project not found")
 	ErrInvalidName = errors.New("project name must be 1 to 100 characters")
+	ErrLimit       = fmt.Errorf("a user can have at most %d projects", MaxProjects)
 )
+
+// MaxProjects caps how many Projects one User can have.
+const MaxProjects = 50
 
 type Project struct {
 	ID string

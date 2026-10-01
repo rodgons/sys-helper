@@ -33,6 +33,23 @@ func TestStore(t *testing.T) {
 		}
 	})
 
+	t.Run("caps how many projects a user can have", func(t *testing.T) {
+		user := testdb.User(t, pool, "octocat")
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO projects (id, user_id, slug_suffix, name)
+			SELECT gen_random_uuid(), $1, substr(md5(random()::text), 1, 10), 'p' || n FROM generate_series(1, $2::int) n`,
+			user, projects.MaxProjects); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := store.Create(ctx, user, "One too many"); !errors.Is(err, projects.ErrLimit) {
+			t.Fatalf("err = %v, want ErrLimit", err)
+		}
+		if _, err := store.Create(ctx, testdb.User(t, pool, "hubot"), "Mine"); err != nil {
+			t.Errorf("another user: %v", err)
+		}
+	})
+
 	t.Run("lists only the user's projects, most recently updated first", func(t *testing.T) {
 		user := testdb.User(t, pool, "octocat")
 		other := testdb.User(t, pool, "hubot")

@@ -11,6 +11,9 @@ export class ApiError extends Error {
   }
 }
 
+/** The API refused because a Project or User is at one of its limits (409 `limit_reached`). */
+export const isLimit = (err: unknown) => err instanceof ApiError && err.code === 'limit_reached';
+
 /** Calls the Go API. Pass `token` (the Supabase access token) for endpoints that need a User. */
 export async function apiFetch<T>(
   path: string,

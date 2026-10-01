@@ -191,6 +191,8 @@ func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) erro
 		requirements[knowledge.RequirementID(r.Num)] = true
 	}
 	removed := map[string]bool{}
+	// Running totals, to stay within the Project's limits.
+	requirementCount, decisionCount := len(k.Requirements), len(k.Decisions)
 	// Ids and refs share one namespace, so a ref can't shadow anything.
 	taken := func(ref string) bool {
 		_, isComponent := types[ref]
@@ -276,6 +278,9 @@ func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) erro
 			if err := knowledge.CheckRequirement(ch.Category, ch.Statement); err != nil {
 				return invalid("%s: %v", at, err)
 			}
+			if requirementCount++; requirementCount > knowledge.MaxRequirements {
+				return invalid("%s: the project already has the most requirements it may have (at most %d); update or remove existing ones instead of adding", at, knowledge.MaxRequirements)
+			}
 			requirements[ch.Ref] = true
 		case "update_requirement", "remove_requirement":
 			if !requirements[ch.ID] || removed[ch.ID] {
@@ -283,6 +288,7 @@ func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) erro
 			}
 			if ch.Op == "remove_requirement" {
 				removed[ch.ID] = true
+				requirementCount--
 				break
 			}
 			if ch.Category == nil && ch.Statement == nil {
@@ -297,6 +303,12 @@ func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) erro
 			}
 			if len(ch.Targets) == 0 {
 				return invalid("%s: attach the decision to at least one component or connection (targets)", at)
+			}
+			if err := knowledge.CheckDecisionReferences(len(ch.Targets), len(ch.Requirements)); err != nil {
+				return invalid("%s: %v", at, err)
+			}
+			if decisionCount++; decisionCount > knowledge.MaxDecisions {
+				return invalid("%s: the project already has the most decisions it may have (at most %d); don't record new decisions", at, knowledge.MaxDecisions)
 			}
 			for _, target := range ch.Targets {
 				_, isComponent := types[target]

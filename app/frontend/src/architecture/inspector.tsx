@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { color, motion, radius, space } from '../design/tokens.stylex';
 import { DecisionCard, DecisionForm } from '../knowledge/decisions';
+import { isLimit } from '../lib/api';
 import { useKnowledge, useKnowledgeActions } from '../lib/knowledge';
 import { Button } from '../ui/button';
 import { SelectField } from '../ui/select-field';
@@ -156,6 +157,13 @@ function ItemDecisions({ slug, target, saved }: { slug: string; target: string; 
           requirements={requirements}
           submitLabel="Add decision"
           busy={actions.addDecision.isPending}
+          error={
+            !actions.addDecision.isError
+              ? null
+              : isLimit(actions.addDecision.error)
+                ? 'This project has the most decisions it can hold. Remove one to add another.'
+                : "Couldn't add the decision. Try again."
+          }
           onCancel={() => setAdding(false)}
           onSubmit={(input) =>
             actions.addDecision.mutate(

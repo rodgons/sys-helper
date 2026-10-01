@@ -527,6 +527,9 @@ function reviewError(err: unknown, refreshMessages: () => void): string | null {
     refreshMessages();
     return 'This proposal was already accepted or rejected elsewhere.';
   }
+  if (code === 'limit_reached') {
+    return 'Accepting this would go over the project’s limit of requirements or decisions. Remove some, then try again.';
+  }
   return "Couldn't update the proposal. Try again.";
 }
 

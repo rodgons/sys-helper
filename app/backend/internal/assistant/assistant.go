@@ -271,6 +271,10 @@ func describeStatus(s conversation.ProposalStatus) string {
 	}
 }
 
+// knowledgeBudget caps the characters of Requirements and Decisions in each prompt. A Project can
+// hold far more (knowledge.MaxRequirements, MaxDecisions); past the budget the lists are trimmed.
+const knowledgeBudget = 24000
+
 // describeKnowledge writes the Project's knowledge as plain text for the system prompt.
 func describeKnowledge(k knowledge.Knowledge) string {
 	var b strings.Builder
@@ -279,29 +283,57 @@ func describeKnowledge(k knowledge.Knowledge) string {
 		level = "unknown (ask early, then record it with set_experience_level)"
 	}
 	fmt.Fprintf(&b, "The user's experience level: %s.\n\nRequirements:\n", level)
-	if len(k.Requirements) == 0 {
-		b.WriteString("(none recorded yet)\n")
+
+	requirements := make([]string, len(k.Requirements))
+	for i, r := range k.Requirements {
+		requirements[i] = fmt.Sprintf("- %s [%s] %s\n", knowledge.RequirementID(r.Num), r.Category, r.Statement)
 	}
-	for _, r := range k.Requirements {
-		fmt.Fprintf(&b, "- %s [%s] %s\n", knowledge.RequirementID(r.Num), r.Category, r.Statement)
-	}
-	b.WriteString("\nDecisions:\n")
-	if len(k.Decisions) == 0 {
-		b.WriteString("(none recorded yet)\n")
-	}
-	for _, d := range k.Decisions {
+	decisions := make([]string, len(k.Decisions))
+	for i, d := range k.Decisions {
 		cites := make([]string, len(d.Requirements))
-		for i, n := range d.Requirements {
-			cites[i] = knowledge.RequirementID(n)
+		for j, n := range d.Requirements {
+			cites[j] = knowledge.RequirementID(n)
 		}
-		fmt.Fprintf(&b, "- %s %s (on %s; serves %s; by %s)", knowledge.DecisionID(d.Num), d.Title,
+		line := fmt.Sprintf("- %s %s (on %s; serves %s; by %s)", knowledge.DecisionID(d.Num), d.Title,
 			strings.Join(d.Targets, ", "), orNone(strings.Join(cites, ", ")), d.Author)
 		if d.NeedsReview {
-			b.WriteString(" NEEDS REVIEW: a requirement it cites changed")
+			line += " NEEDS REVIEW: a requirement it cites changed"
 		}
-		b.WriteString("\n")
+		decisions[i] = line + "\n"
 	}
+	// Each list gets half the budget, plus whatever the other one doesn't need.
+	requirementBudget := max(knowledgeBudget/2, knowledgeBudget-length(decisions))
+	decisionBudget := knowledgeBudget - min(length(requirements), requirementBudget)
+
+	writeList(&b, requirements, requirementBudget, "requirements")
+	b.WriteString("\nDecisions:\n")
+	writeList(&b, decisions, decisionBudget, "decisions")
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// writeList writes lines in order until the next one would exceed budget, then notes how many it
+// left out.
+func writeList(b *strings.Builder, lines []string, budget int, noun string) {
+	if len(lines) == 0 {
+		b.WriteString("(none recorded yet)\n")
+		return
+	}
+	used := 0
+	for i, line := range lines {
+		if used += len(line); used > budget {
+			fmt.Fprintf(b, "- (%d more %s not shown, to keep this prompt short)\n", len(lines)-i, noun)
+			return
+		}
+		b.WriteString(line)
+	}
+}
+
+func length(lines []string) int {
+	n := 0
+	for _, l := range lines {
+		n += len(l)
+	}
+	return n
 }
 
 func orNone(s string) string {

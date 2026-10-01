@@ -27,6 +27,9 @@ func (f *fakeProjects) List(_ context.Context, userID string) ([]projects.Projec
 }
 
 func (f *fakeProjects) Create(_ context.Context, userID, name string) (projects.Project, error) {
+	if len(f.byOwner[userID]) >= projects.MaxProjects {
+		return projects.Project{}, projects.ErrLimit
+	}
 	f.next++
 	p := projects.Project{ID: "id", SlugSuffix: strings.Repeat(string(rune('a'+f.next)), 10), Name: name, UpdatedAt: time.Unix(0, 0).UTC()}
 	f.byOwner[userID] = append([]projects.Project{p}, f.byOwner[userID]...)
@@ -100,6 +103,17 @@ func TestProjects(t *testing.T) {
 
 		if rec := serve(t, deps, req); rec.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("refuses a project over the user's limit", func(t *testing.T) {
+		deps, store := newDeps()
+		store.byOwner[octocat.ID] = make([]projects.Project, projects.MaxProjects)
+
+		rec := call(t, deps, http.MethodPost, "/api/projects", `{"name":"One too many"}`)
+
+		if rec.Code != http.StatusConflict || decode[map[string]string](t, rec)["error"] != "limit_reached" {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 		}
 	})
 

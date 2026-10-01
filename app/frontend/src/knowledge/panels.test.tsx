@@ -100,6 +100,23 @@ describe('RequirementsPanel', () => {
     await waitFor(() => expect(remove).toHaveBeenCalled());
   });
 
+  it('explains when the project has no room for another requirement', async () => {
+    stub({
+      [`POST ${API}/requirements`]: {
+        status: 409,
+        body: { error: 'limit_reached', detail: 'limit reached' },
+      },
+    });
+    renderWithQuery(<RequirementsPanel slug={SLUG} />, { auth: signedIn() });
+
+    const form = await screen.findByRole('form', { name: 'Add requirement' });
+    fireEvent.change(within(form).getByLabelText('Requirement'), { target: { value: 'SSO' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Add requirement' }));
+
+    expect(await within(form).findByText(/most requirements it can hold/i)).toBeInTheDocument();
+    expect(within(form).getByLabelText('Requirement')).toHaveValue('SSO');
+  });
+
   it('sets the experience level', async () => {
     const put = vi.fn(() => ({ experienceLevel: 'expert' }));
     stub({ [`PUT ${API}/experience-level`]: put });

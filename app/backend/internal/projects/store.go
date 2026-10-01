@@ -50,6 +50,17 @@ func (s *Store) Create(ctx context.Context, userID, name string) (Project, error
 		}
 		var p Project
 		err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+			// Count and insert under a per-User lock, so concurrent creates can't pass the cap.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('projects:' || $1, 0))`, userID); err != nil {
+				return err
+			}
+			var n int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM projects WHERE user_id = $1`, userID).Scan(&n); err != nil {
+				return err
+			}
+			if n >= MaxProjects {
+				return ErrLimit
+			}
 			var err error
 			p, err = one(tx.Query(ctx, `
 				INSERT INTO projects (id, user_id, slug_suffix, name) VALUES ($1, $2, $3, $4)
@@ -62,6 +73,9 @@ func (s *Store) Create(ctx context.Context, userID, name string) (Project, error
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "projects_slug_suffix_key" {
 			continue
+		}
+		if errors.Is(err, ErrLimit) {
+			return Project{}, err
 		}
 		if err != nil {
 			return Project{}, fmt.Errorf("create project: %w", err)
