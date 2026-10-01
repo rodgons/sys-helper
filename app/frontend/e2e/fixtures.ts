@@ -1,12 +1,14 @@
 import { test as base, type Page } from '@playwright/test';
 import postgres from 'postgres';
 
-// Real GitHub OAuth can't run in tests. Instead: sign up a throwaway email user through Supabase
-// Auth (local email confirmation is off), link a GitHub identity row directly in the database, and
-// hand the session to supabase-js through localStorage. The API still verifies the token and reads
-// the identity for real. Make exports these from the root .env.
+// Real GitHub OAuth can't run in tests, and email sign-up is off (the product is GitHub-only).
+// Instead: create a throwaway user with the Auth admin API, sign it in through an admin-generated
+// magic link, link a GitHub identity row directly in the database, and hand the session to
+// supabase-js through localStorage. The API still verifies the token and reads the identity for
+// real. Make exports these from the root .env.
 const supabaseUrl = required('VITE_SUPABASE_URL');
 const publishableKey = required('VITE_SUPABASE_PUBLISHABLE_KEY');
+const secretKey = required('SUPABASE_SECRET_KEY');
 const sql = postgres(required('DATABASE_URL'), { max: 1, onnotice: () => {} });
 
 // supabase-js stores the session under `sb-<first label of the Supabase host>-auth-token`.
@@ -22,7 +24,7 @@ export const test = base.extend<Fixtures>({
     const userIds: string[] = [];
     await use(async (target = page) => {
       const username = `e2e-${crypto.randomUUID().slice(0, 8)}`;
-      const session = await signUp(`${username}@e2e.test`);
+      const session = await createSession(`${username}@e2e.test`);
       userIds.push(session.user.id);
       await sql`
         INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, created_at, updated_at)
@@ -39,14 +41,32 @@ export { expect } from '@playwright/test';
 
 type Session = { access_token: string; user: { id: string } };
 
-async function signUp(email: string): Promise<Session> {
-  const res = await fetch(`${supabaseUrl}/auth/v1/signup`, {
-    method: 'POST',
-    headers: { apikey: publishableKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: crypto.randomUUID() }),
+/** Creates a confirmed user with the admin API and signs it in via a magic link it generates. */
+async function createSession(email: string): Promise<Session> {
+  const admin = { apikey: secretKey, Authorization: `Bearer ${secretKey}` };
+  await post('/auth/v1/admin/users', admin, { email, email_confirm: true });
+  const link = await post<{ hashed_token: string }>('/auth/v1/admin/generate_link', admin, {
+    type: 'magiclink',
+    email,
   });
-  if (!res.ok) throw new Error(`sign up failed: ${res.status} ${await res.text()}`);
-  return (await res.json()) as Session;
+  return post<Session>(
+    '/auth/v1/verify',
+    { apikey: publishableKey },
+    {
+      type: 'magiclink',
+      token_hash: link.hashed_token,
+    },
+  );
+}
+
+async function post<T>(path: string, headers: Record<string, string>, body: unknown): Promise<T> {
+  const res = await fetch(`${supabaseUrl}${path}`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${path} failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as T;
 }
 
 async function injectSession(page: Page, session: Session) {

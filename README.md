@@ -83,6 +83,8 @@ make build   # → sys-helper/backend:latest, sys-helper/frontend:latest
   make build-frontend VITE_API_URL=https://api.example.com VITE_SUPABASE_URL=… VITE_SUPABASE_PUBLISHABLE_KEY=…
   ```
 
+**Hosted Supabase:** `supabase/config.toml` only configures the local stack. In the hosted project's Auth settings, keep GitHub as the only provider and turn the **Email** provider off. Otherwise an email/password account could end up linked to someone's GitHub identity.
+
 To run the images locally against local Supabase:
 
 ```sh
