@@ -11,17 +11,22 @@ import (
 	"time"
 
 	"sys-helper/backend/internal/architecture"
+	"sys-helper/backend/internal/config"
 	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/proposal"
 )
 
-// Calls the real NVIDIA API: `make test-ai-live` (needs NVIDIA_API_KEY and AI_MODEL). It checks each model
-// streams text and makes a tool call, and logs how long the first token took.
+// Calls the real API of the provider in .env: `make test-ai-live` (needs AI_PROVIDER's key and
+// AI_MODEL). It checks each model streams text and makes a tool call, and logs how long the first
+// token took.
 func TestLiveModels(t *testing.T) {
-	key := os.Getenv("NVIDIA_API_KEY")
-	if key == "" {
-		t.Fatal("NVIDIA_API_KEY is required")
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AI.APIKey == "" {
+		t.Fatalf("%s is required", cfg.AI.KeyVar)
 	}
 	// The models configured in .env, or AI_LIVE_MODELS=a,b to try others.
 	var models []string
@@ -41,7 +46,7 @@ func TestLiveModels(t *testing.T) {
 		t.Fatal("set AI_MODEL in .env, or AI_LIVE_MODELS")
 	}
 	for _, model := range models {
-		client := llm.OpenAIClient{BaseURL: "https://integrate.api.nvidia.com/v1", APIKey: key, Model: model}
+		client := llm.OpenAIClient{BaseURL: cfg.AI.BaseURL, APIKey: cfg.AI.APIKey, Model: model}
 
 		t.Run(model+"/streams text", func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -94,6 +99,26 @@ func TestLiveModels(t *testing.T) {
 				t.Fatalf("arguments %q: %v", calls[0].Arguments, err)
 			}
 			t.Logf("tool call: %s(%s)", calls[0].Name, calls[0].Arguments)
+
+			// The assistant replays a rejected call with the error so the model can fix it. Gemini
+			// requires the call's thought signature on that replay.
+			var retried []llm.ToolCall
+			for ev, err := range client.Stream(ctx, llm.Request{MaxTokens: 1024, Tools: []llm.Tool{tool}, Messages: []llm.Message{
+				{Role: llm.RoleUser, Content: "Add a Redis cache named Session Cache to the canvas."},
+				{Role: llm.RoleAssistant, ToolCalls: calls[:1]},
+				{Role: llm.RoleTool, ToolCallID: calls[0].ID, Content: "Not saved: the name must end in \"(Redis)\". Call add_component again."},
+			}}) {
+				if err != nil {
+					t.Fatalf("retry stream: %v", err)
+				}
+				if ev.ToolCall != nil {
+					retried = append(retried, *ev.ToolCall)
+				}
+			}
+			if len(retried) == 0 {
+				t.Fatal("no tool call after the error")
+			}
+			t.Logf("retried: %s(%s)", retried[0].Name, retried[0].Arguments)
 		})
 
 		t.Run(model+"/proposes valid changes", func(t *testing.T) {

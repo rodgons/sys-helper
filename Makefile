@@ -111,7 +111,7 @@ test-integration: ## Go integration tests against local Supabase Postgres
 test-e2e: ## Playwright full-stack tests (needs Supabase running)
 	$(FE) test:e2e
 
-test-ai-live: ## Check the NVIDIA models stream and call tools (needs NVIDIA_API_KEY; costs credits)
+test-ai-live: ## Check the AI_PROVIDER models stream and call tools (needs its API key; costs credits)
 	cd $(BACKEND_DIR) && go test -tags live -run TestLiveModels -v -count=1 ./internal/llm
 
 test-all: lint test test-integration test-e2e ## Everything CI should run

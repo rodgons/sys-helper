@@ -84,6 +84,8 @@ func TestLoad(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := config.AI{
+			Provider:          "nvidia",
+			KeyVar:            "NVIDIA_API_KEY",
 			BaseURL:           "https://integrate.api.nvidia.com/v1",
 			APIKey:            "nvapi-x",
 			Model:             "z-ai/glm-5.3",
@@ -93,6 +95,24 @@ func TestLoad(t *testing.T) {
 		}
 		if cfg.AI != want {
 			t.Errorf("AI = %+v, want %+v", cfg.AI, want)
+		}
+	})
+
+	t.Run("uses Gemini when AI_PROVIDER is gemini", func(t *testing.T) {
+		cfg, err := config.Load(env(required(map[string]string{
+			"AI_PROVIDER":       "gemini",
+			"GEMINI_API_KEY":    "gem-x",
+			"NVIDIA_API_KEY":    "nvapi-x",
+			"AI_MODEL":          "gemini-3.8-flash",
+			"AI_FALLBACK_MODEL": "gemini-3.5-flash-lite",
+		})))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ai := cfg.AI
+		if ai.Provider != "gemini" || ai.APIKey != "gem-x" || ai.KeyVar != "GEMINI_API_KEY" ||
+			ai.BaseURL != "https://generativelanguage.googleapis.com/v1beta/openai" || ai.Model != "gemini-3.8-flash" {
+			t.Errorf("AI = %+v", ai)
 		}
 	})
 
@@ -124,6 +144,8 @@ func TestLoad(t *testing.T) {
 		{"AI_FIRST_TOKEN_TIMEOUT": "soon"},
 		{"AI_DAILY_MESSAGE_LIMIT": "-1"},
 		{"NVIDIA_API_KEY": "nvapi-x"}, // a key without AI_MODEL
+		{"AI_PROVIDER": "gemini", "GEMINI_API_KEY": "gem-x"},
+		{"AI_PROVIDER": "openai"},
 	} {
 		t.Run("rejects invalid AI settings", func(t *testing.T) {
 			if _, err := config.Load(env(required(bad))); err == nil {

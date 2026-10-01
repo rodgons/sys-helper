@@ -10,12 +10,11 @@ import (
 	"io"
 	"iter"
 	"net/http"
-	"sort"
 	"strings"
 )
 
 // OpenAIClient streams from an OpenAI-compatible /chat/completions endpoint, such as NVIDIA's API
-// catalog (https://integrate.api.nvidia.com/v1).
+// catalog or Gemini's compatibility layer (see config.AI).
 type OpenAIClient struct {
 	BaseURL string
 	APIKey  string
@@ -33,10 +32,12 @@ type wireMessage struct {
 }
 
 type wireToolCall struct {
-	Index    int    `json:"index"`
-	ID       string `json:"id,omitempty"`
-	Type     string `json:"type,omitempty"`
-	Function struct {
+	Index int    `json:"index"`
+	ID    string `json:"id,omitempty"`
+	Type  string `json:"type,omitempty"`
+	// ExtraContent carries provider data, e.g. Gemini's {"google": {"thought_signature": …}}.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
+	Function     struct {
 		Name      string `json:"name,omitempty"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
@@ -71,7 +72,8 @@ func (c OpenAIClient) Stream(ctx context.Context, req Request) iter.Seq2[Event, 
 		}
 		defer res.Body.Close()
 
-		calls := map[int]*ToolCall{}
+		var calls []*ToolCall            // in order of arrival
+		streaming := map[int]*ToolCall{} // index → the call its fragments extend
 		scanner := bufio.NewScanner(res.Body)
 		scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
 		for scanner.Scan() {
@@ -82,8 +84,8 @@ func (c OpenAIClient) Stream(ctx context.Context, req Request) iter.Seq2[Event, 
 			data = strings.TrimSpace(data)
 			if data == "[DONE]" {
 				// Tool call arguments arrive in fragments; emit each call once it is complete.
-				for _, i := range sortedKeys(calls) {
-					if !yield(Event{ToolCall: calls[i]}, nil) {
+				for _, call := range calls {
+					if !yield(Event{ToolCall: call}, nil) {
 						return
 					}
 				}
@@ -97,10 +99,12 @@ func (c OpenAIClient) Stream(ctx context.Context, req Request) iter.Seq2[Event, 
 			for _, choice := range ch.Choices {
 				d := choice.Delta
 				for _, tc := range d.ToolCalls {
-					call := calls[tc.Index]
-					if call == nil {
+					// A new id at a known index is a new call: Gemini sends whole calls without an index.
+					call := streaming[tc.Index]
+					if call == nil || (tc.ID != "" && call.ID != "" && tc.ID != call.ID) {
 						call = &ToolCall{}
-						calls[tc.Index] = call
+						streaming[tc.Index] = call
+						calls = append(calls, call)
 					}
 					if tc.ID != "" {
 						call.ID = tc.ID
@@ -109,6 +113,9 @@ func (c OpenAIClient) Stream(ctx context.Context, req Request) iter.Seq2[Event, 
 						call.Name = tc.Function.Name
 					}
 					call.Arguments += tc.Function.Arguments
+					if len(tc.ExtraContent) > 0 {
+						call.Extra = string(tc.ExtraContent)
+					}
 				}
 				ev := Event{Text: d.Content, Reasoning: d.ReasoningContent + d.Reasoning}
 				if ev.Text != "" || ev.Reasoning != "" {
@@ -179,17 +186,11 @@ func toWire(msgs []Message) []wireMessage {
 			w := wireToolCall{Index: j, ID: tc.ID, Type: "function"}
 			w.Function.Name = tc.Name
 			w.Function.Arguments = tc.Arguments
+			if tc.Extra != "" {
+				w.ExtraContent = json.RawMessage(tc.Extra)
+			}
 			out[i].ToolCalls = append(out[i].ToolCalls, w)
 		}
 	}
 	return out
-}
-
-func sortedKeys(m map[int]*ToolCall) []int {
-	keys := make([]int, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Ints(keys)
-	return keys
 }

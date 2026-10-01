@@ -112,9 +112,10 @@ func chatModel(cfg config.AI) llm.ChatModel {
 		return llm.Fake{}
 	}
 	if cfg.APIKey == "" {
-		slog.Warn("NVIDIA_API_KEY is not set; AI replies are disabled")
+		slog.Warn(cfg.KeyVar+" is not set; AI replies are disabled", "provider", cfg.Provider)
 		return nil
 	}
+	slog.Info("AI model", "provider", cfg.Provider, "model", cfg.Model, "fallback", cfg.FallbackModel)
 	primary := llm.OpenAIClient{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Model: cfg.Model}
 	if cfg.FallbackModel == "" {
 		return primary

@@ -36,6 +36,9 @@ type ToolCall struct {
 	ID        string
 	Name      string
 	Arguments string // JSON, as the model produced it
+	// Extra is provider data to send back with the call unchanged, as raw JSON (Gemini's thought
+	// signature, which it requires when the call is replayed). Empty when there is none.
+	Extra string
 }
 
 type Request struct {

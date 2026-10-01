@@ -18,7 +18,7 @@ export default defineConfig({
     {
       command: 'go run ./cmd/server',
       cwd: '../backend',
-      // The fake model: E2E never calls NVIDIA. (A server already running is reused as is.)
+      // The fake model: E2E never calls a real model. (A server already running is reused as is.)
       env: { AI_FAKE: '1' },
       url: 'http://localhost:8080/health',
       reuseExistingServer: !isCI,

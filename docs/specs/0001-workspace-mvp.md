@@ -70,7 +70,7 @@ A **User** signs in with GitHub and opens a **Project**. They design its **Archi
 - **Auth:** Supabase Auth with the GitHub provider. The Go API checks the Supabase JWT on every request and scopes all data by user ID. GitHub is used only for identity.
 - **Access control:** an optional allowlist of GitHub usernames (empty means anyone can sign in) and a daily per-User message cap, both set in `.env`.
 - **AI:**
-  - The Go API calls an NVIDIA (build.nvidia.com) OpenAI-compatible endpoint behind a `ChatModel` interface. The base URL, model and key come from `.env`.
+  - The Go API calls an OpenAI-compatible endpoint behind a `ChatModel` interface: NVIDIA (build.nvidia.com) or Gemini, chosen by `AI_PROVIDER`. The base URL, model and key come from `.env`.
   - Only models that support tool calling are allowed. Tool calls are how the AI produces Proposals, Decisions and Requirements.
 - **Storage:** the Architecture is a JSON document, and Messages, Proposals, Decisions and Requirements are relational tables.
 
@@ -78,7 +78,7 @@ A **User** signs in with GitHub and opens a **Project**. They design its **Archi
 
 - **Unit tests** use a fake `ChatModel` that returns scripted tool calls.
 - **Integration tests** run against real Postgres.
-- **E2E tests** run against the real API with the fake model switched on by an env flag. They never call NVIDIA.
+- **E2E tests** run against the real API with the fake model switched on by an env flag. They never call a real model.
 
 ## Out of scope for the MVP
 

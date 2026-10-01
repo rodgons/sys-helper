@@ -20,11 +20,13 @@ type Config struct {
 	AI                 AI
 }
 
-// AI configures the chat model behind the assistant: an OpenAI-compatible endpoint (NVIDIA's API
-// catalog by default), a primary model, and a fallback used when the primary is slow to start.
+// AI configures the chat model behind the assistant: a provider's OpenAI-compatible endpoint, a
+// primary model, and a fallback used when the primary is slow to start.
 type AI struct {
-	BaseURL       string
-	APIKey        string
+	Provider      string // AI_PROVIDER: "nvidia" (default) or "gemini"
+	BaseURL       string // AI_BASE_URL, defaulting to the provider's endpoint
+	APIKey        string // read from KeyVar
+	KeyVar        string // the provider's key variable, e.g. GEMINI_API_KEY
 	Model         string // AI_MODEL, required with an API key
 	FallbackModel string // AI_FALLBACK_MODEL; empty disables the fallback
 	// FirstTokenTimeout is how long the primary model gets to start answering before the fallback
@@ -61,10 +63,23 @@ func Load(getenv func(string) string) (Config, error) {
 	return cfg, nil
 }
 
+// providers maps each AI_PROVIDER to its key variable and OpenAI-compatible endpoint.
+var providers = map[string]struct{ keyVar, baseURL, exampleModel string }{
+	"nvidia": {"NVIDIA_API_KEY", "https://integrate.api.nvidia.com/v1", "z-ai/glm-5.3"},
+	"gemini": {"GEMINI_API_KEY", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.8-flash"},
+}
+
 func loadAI(getenv func(string) string) (AI, error) {
+	name := or(getenv("AI_PROVIDER"), "nvidia")
+	p, ok := providers[name]
+	if !ok {
+		return AI{}, fmt.Errorf("AI_PROVIDER must be nvidia or gemini, got %q", name)
+	}
 	ai := AI{
-		BaseURL:           or(getenv("AI_BASE_URL"), "https://integrate.api.nvidia.com/v1"),
-		APIKey:            getenv("NVIDIA_API_KEY"),
+		Provider:          name,
+		BaseURL:           or(getenv("AI_BASE_URL"), p.baseURL),
+		APIKey:            getenv(p.keyVar),
+		KeyVar:            p.keyVar,
 		Model:             getenv("AI_MODEL"),
 		FallbackModel:     getenv("AI_FALLBACK_MODEL"),
 		FirstTokenTimeout: 20 * time.Second,
@@ -72,7 +87,7 @@ func loadAI(getenv func(string) string) (AI, error) {
 		Fake:              getenv("AI_FAKE") == "1",
 	}
 	if ai.APIKey != "" && !ai.Fake && ai.Model == "" {
-		return AI{}, errors.New("AI_MODEL is required when NVIDIA_API_KEY is set (e.g. AI_MODEL=z-ai/glm-5.3)")
+		return AI{}, fmt.Errorf("AI_MODEL is required when %s is set (e.g. AI_MODEL=%s)", p.keyVar, p.exampleModel)
 	}
 	if v := getenv("AI_FIRST_TOKEN_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)

@@ -92,6 +92,52 @@ func TestOpenAIClient(t *testing.T) {
 		}
 	})
 
+	t.Run("keeps whole tool calls apart when they arrive without an index", func(t *testing.T) {
+		// Gemini's OpenAI-compatible stream sends each call complete and may leave out "index".
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sse(w, `{"choices":[{"delta":{"tool_calls":[`+
+				`{"id":"a","type":"function","function":{"name":"one","arguments":"{}"}},`+
+				`{"id":"b","type":"function","function":{"name":"two","arguments":"{\"x\":1}"}}]}}]}`)
+		}))
+		defer srv.Close()
+
+		events, err := collect(t, llm.OpenAIClient{BaseURL: srv.URL, Model: "gemini-3.8-flash"}, llm.Request{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) != 2 || events[0].ToolCall.Arguments != "{}" || events[1].ToolCall.Name != "two" || events[1].ToolCall.Arguments != `{"x":1}` {
+			t.Errorf("events = %+v", events)
+		}
+	})
+
+	t.Run("hands back a tool call's provider data, such as Gemini's thought signature", func(t *testing.T) {
+		const extra = `{"google":{"thought_signature":"sig-A"}}`
+		var sent map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&sent)
+			sse(w, `{"choices":[{"delta":{"tool_calls":[{"id":"a","extra_content":`+extra+`,"function":{"name":"one","arguments":"{}"}}]}}]}`)
+		}))
+		defer srv.Close()
+		client := llm.OpenAIClient{BaseURL: srv.URL, Model: "gemini-3.8-flash"}
+
+		events, err := collect(t, client, llm.Request{})
+		if err != nil || len(events) != 1 {
+			t.Fatalf("events = %+v, err = %v", events, err)
+		}
+		call := *events[0].ToolCall
+		if _, err := collect(t, client, llm.Request{Messages: []llm.Message{
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
+			{Role: llm.RoleTool, ToolCallID: "a", Content: "invalid"},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+
+		returned := sent["messages"].([]any)[0].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)
+		if got, _ := json.Marshal(returned["extra_content"]); string(got) != extra {
+			t.Errorf("extra_content sent back = %s, want %s", got, extra)
+		}
+	})
+
 	t.Run("omits tools when there are none", func(t *testing.T) {
 		var got map[string]any
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
