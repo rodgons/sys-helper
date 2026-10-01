@@ -1,4 +1,5 @@
 import { Graph, layout } from '@dagrejs/dagre';
+import { categoryLabel, levelLabel } from '../lib/knowledge';
 import {
   type ComponentNode,
   type ConnectionEdge,
@@ -16,7 +17,12 @@ export type ProposalChange = {
     | 'remove_component'
     | 'add_connection'
     | 'update_connection'
-    | 'remove_connection';
+    | 'remove_connection'
+    | 'add_requirement'
+    | 'update_requirement'
+    | 'remove_requirement'
+    | 'add_decision'
+    | 'set_experience_level';
   id?: string;
   ref?: string;
   type?: string;
@@ -26,6 +32,15 @@ export type ProposalChange = {
   target?: string;
   kind?: ConnectionKind;
   label?: string;
+  category?: string;
+  statement?: string;
+  title?: string;
+  rationale?: string;
+  pattern?: string;
+  alternative?: string;
+  requirements?: string[];
+  targets?: string[];
+  level?: string;
 };
 
 export type Proposal = {
@@ -38,7 +53,8 @@ export type Proposal = {
 
 /** Ids new items get once applied. Stable per Proposal, so the preview and the result match. */
 const componentId = (p: Proposal, ref: string) => `p${p.seq}-${ref}`;
-const connectionId = (p: Proposal, index: number) => `p${p.seq}-k${index}`;
+const connectionId = (p: Proposal, c: ProposalChange, index: number) =>
+  c.ref ? `p${p.seq}-${c.ref}` : `p${p.seq}-k${index}`;
 
 /**
  * Why the Proposal can no longer be applied: it refers to a component or connection the User has
@@ -57,6 +73,12 @@ export function staleReason(
   const missing = (c: ProposalChange): string[] => {
     switch (c.op) {
       case 'add_component':
+      case 'add_requirement':
+      case 'update_requirement':
+      case 'remove_requirement':
+      case 'add_decision':
+      case 'set_experience_level':
+        // Not canvas changes; the server applies them leniently on accept.
         return [];
       case 'update_component':
       case 'remove_component':
@@ -129,7 +151,7 @@ export function applyProposal(
         break;
       case 'add_connection':
         nextEdges.push({
-          id: connectionId(p, i),
+          id: connectionId(p, c, i),
           type: 'connection',
           source: resolve(c.source),
           target: resolve(c.target),
@@ -203,10 +225,15 @@ export function describeChange(
   names: Record<string, string>,
   all: ProposalChange[],
 ): string {
-  const name = (idOrRef = '') =>
-    names[idOrRef] ??
-    all.find((o) => o.op === 'add_component' && o.ref === idOrRef)?.name ??
-    idOrRef;
+  const name = (idOrRef = ''): string => {
+    if (names[idOrRef]) return names[idOrRef];
+    const added = all.find(
+      (o) => o.ref === idOrRef && (o.op === 'add_component' || o.op === 'add_connection'),
+    );
+    if (added?.op === 'add_component') return added.name ?? idOrRef;
+    if (added?.op === 'add_connection') return `${name(added.source)} → ${name(added.target)}`;
+    return idOrRef;
+  };
   const props = (p?: Record<string, string>) =>
     Object.entries(p ?? {})
       .map(([k, v]) => `${k}: ${v}`)
@@ -228,6 +255,16 @@ export function describeChange(
       return `Update connection ${name(c.id)}${details(c.kind && `kind: ${c.kind}`, c.label !== undefined ? `label: ${c.label}` : '')}`;
     case 'remove_connection':
       return `Remove connection ${name(c.id)}`;
+    case 'add_requirement':
+      return `Note requirement (${categoryLabel(c.category ?? '')}): ${c.statement}`;
+    case 'update_requirement':
+      return `Update ${c.id}${details(c.category && categoryLabel(c.category), c.statement)}`;
+    case 'remove_requirement':
+      return `Remove requirement ${c.id}`;
+    case 'add_decision':
+      return `Record decision “${c.title}” on ${(c.targets ?? []).map(name).join(', ')}`;
+    case 'set_experience_level':
+      return `Set your experience level to ${levelLabel(c.level ?? '')}`;
   }
 }
 

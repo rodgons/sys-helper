@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"sys-helper/backend/internal/architecture"
+	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/proposal"
 )
@@ -105,9 +106,9 @@ func TestLiveModels(t *testing.T) {
 			doc.Connections = append(doc.Connections, architecture.Connection{ID: "k-1", Source: "c-api", Target: "c-db", Kind: "sync"})
 			canvas, _ := json.Marshal(doc)
 			var call *llm.ToolCall
-			for ev, err := range client.Stream(ctx, llm.Request{MaxTokens: 2048, Tools: []llm.Tool{proposal.Tool}, Messages: []llm.Message{
+			for ev, err := range client.Stream(ctx, llm.Request{MaxTokens: 8192, Tools: []llm.Tool{proposal.Tool}, Messages: []llm.Message{
 				{Role: llm.RoleSystem, Content: "You are a software architect. Change the canvas only by calling propose_changes. Current canvas JSON: " + string(canvas)},
-				{Role: llm.RoleUser, Content: "Reads are 100x writes and the database is overloaded. Propose adding a Redis cache between the API and the database."},
+				{Role: llm.RoleUser, Content: "Reads are 100x writes and the database is overloaded. Propose adding a Redis cache between the API and the database. Record that read ratio as a requirement and record your decision, attached to the cache and citing that requirement."},
 			}}) {
 				if err != nil {
 					t.Fatalf("stream: %v", err)
@@ -123,8 +124,16 @@ func TestLiveModels(t *testing.T) {
 			if err := json.Unmarshal([]byte(call.Arguments), &changes); err != nil {
 				t.Fatalf("arguments %q: %v", call.Arguments, err)
 			}
-			if err := changes.Validate(doc); err != nil {
+			changes.Normalize() // as the assistant does
+			if err := changes.Validate(doc, knowledge.Knowledge{}); err != nil {
 				t.Fatalf("invalid proposal %s: %v", call.Arguments, err)
+			}
+			ops := map[string]bool{}
+			for _, c := range changes.Changes {
+				ops[c.Op] = true
+			}
+			if !ops["add_requirement"] || !ops["add_decision"] {
+				t.Errorf("expected a requirement and a decision, got ops %v", ops)
 			}
 			t.Logf("proposal: %s", call.Arguments)
 		})

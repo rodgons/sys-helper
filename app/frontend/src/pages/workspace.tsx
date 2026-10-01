@@ -5,6 +5,7 @@ import { ArchitectureCanvas } from '../architecture/canvas';
 import type { Review } from '../architecture/review';
 import { ChatPane } from '../conversation/chat-pane';
 import { color, layout, media, space } from '../design/tokens.stylex';
+import { SidePanel } from '../knowledge/side-panel';
 import { ApiError } from '../lib/api';
 import { useArchitecture } from '../lib/architecture';
 import { usePendingProposal } from '../lib/conversation';
@@ -27,6 +28,8 @@ function Workspace({ slug, username }: { slug: string; username: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // The pending Proposal's review, published by the canvas so the chat can offer Accept too.
   const [review, setReview] = useState<Review | null>(null);
+  // Current names of canvas items, for showing what Decisions explain.
+  const [names, setNames] = useState<Record<string, string>>({});
 
   if (project.isError) {
     const notFound = project.error instanceof ApiError && project.error.status === 404;
@@ -70,10 +73,15 @@ function Workspace({ slug, username }: { slug: string; username: string }) {
           <div {...stylex.props(styles.bar)}>
             <ProjectTitle key={project.data.slug} project={project.data} />
           </div>
-          <CanvasPane slug={project.data.slug} onReview={setReview} />
+          <CanvasPane slug={project.data.slug} onReview={setReview} onNames={setNames} />
         </section>
-        <aside aria-label="Conversation" {...stylex.props(styles.pane, styles.right)}>
-          <ChatPane key={slugSuffix(slug)} slug={project.data.slug} review={review} />
+        <aside aria-label="Project panel" {...stylex.props(styles.pane, styles.right)}>
+          <SidePanel
+            key={slugSuffix(slug)}
+            slug={project.data.slug}
+            names={names}
+            conversation={<ChatPane slug={project.data.slug} review={review} />}
+          />
         </aside>
       </div>
     </main>
@@ -83,9 +91,11 @@ function Workspace({ slug, username }: { slug: string; username: string }) {
 function CanvasPane({
   slug,
   onReview,
+  onNames,
 }: {
   slug: string;
   onReview: (review: Review | null) => void;
+  onNames: (names: Record<string, string>) => void;
 }) {
   const proposal = usePendingProposal(slug);
   const architecture = useArchitecture(slug);
@@ -105,6 +115,7 @@ function CanvasPane({
       initial={architecture.data}
       proposal={proposal}
       onReview={onReview}
+      onNames={onNames}
     />
   );
 }

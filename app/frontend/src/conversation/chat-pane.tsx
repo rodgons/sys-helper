@@ -5,7 +5,7 @@ import { color, font, motion, radius, space, text } from '../design/tokens.style
 import { ApiError } from '../lib/api';
 import { useMessages, useReply, useSendMessage } from '../lib/conversation';
 import { Button } from '../ui/button';
-import { Heading, Text } from '../ui/typography';
+import { Text } from '../ui/typography';
 import { ProposalCard } from './proposal-card';
 
 const MAX_LENGTH = 4000;
@@ -50,12 +50,6 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
 
   return (
     <div {...stylex.props(styles.pane)}>
-      <div {...stylex.props(styles.head)}>
-        <Heading as="h2" size="sm">
-          Conversation
-        </Heading>
-      </div>
-
       <ol ref={list} aria-label="Messages" {...stylex.props(styles.list)}>
         {messages.isError && (
           <li>
@@ -146,13 +140,6 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
 
 const styles = stylex.create({
   pane: { display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 },
-  head: {
-    paddingInline: space['--space-4'],
-    paddingBlock: space['--space-4'],
-    borderBottomWidth: 1,
-    borderBottomStyle: 'solid',
-    borderBottomColor: color['--color-line'],
-  },
   list: {
     display: 'flex',
     flexDirection: 'column',

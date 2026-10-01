@@ -8,6 +8,7 @@ import { CommandLine } from '../ui/command-line';
 import { Cluster, Grid, Section, Stack } from '../ui/layout';
 import { ArrowLink, TextLink } from '../ui/link';
 import { MeterList } from '../ui/meter';
+import { TextArea } from '../ui/text-area';
 import { TextField } from '../ui/text-field';
 import { Display, Heading, InlineCode, Label, Readout, Text } from '../ui/typography';
 
@@ -246,6 +247,7 @@ export function UiKitPage() {
         <Grid columns={2} gap={6}>
           <TextField label="Project name" placeholder="e.g. URL shortener" />
           <TextField label="Hidden label" hideLabel placeholder="Label kept for screen readers" />
+          <TextArea label="Text area" placeholder="Several lines, e.g. a decision's rationale" />
         </Grid>
       </DocSection>
     </main>

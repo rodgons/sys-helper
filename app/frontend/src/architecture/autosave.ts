@@ -11,7 +11,7 @@ const DELAY_MS = 1000;
  * Saves the Architecture 1s after the last change. Each save sends the version it is based on; a
  * 409 means another tab (or a Proposal) saved first, and autosave stops so nothing is overwritten.
  */
-export function useAutosave(slug: string, initialVersion: number) {
+export function useAutosave(slug: string, initialVersion: number, onSaved?: () => void) {
   const auth = useAuth();
   const token = auth.status === 'signedIn' ? auth.token : undefined;
   const [status, setStatus] = useState<SaveStatus>('saved');
@@ -26,9 +26,11 @@ export function useAutosave(slug: string, initialVersion: number) {
     conflict: false,
     token,
     slug,
+    onSaved,
   });
   s.current.token = token;
   s.current.slug = slug;
+  s.current.onSaved = onSaved;
 
   const flush = useCallback(async (keepalive = false): Promise<void> => {
     const st = s.current;
@@ -49,6 +51,7 @@ export function useAutosave(slug: string, initialVersion: number) {
       });
       st.version = res.version;
       st.saving = false;
+      st.onSaved?.();
       if (st.pending) {
         // Changes arrived while saving: save them on the normal schedule.
         setStatus('pending');

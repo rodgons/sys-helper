@@ -17,6 +17,7 @@ import (
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/database"
 	"sys-helper/backend/internal/httpapi"
+	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/projects"
 )
@@ -52,6 +53,8 @@ func run() error {
 	projectStore.OnCreate = conversation.AddWelcome // every Conversation opens with the Welcome Message
 	conversations := conversation.NewStore(db)
 	architectures := architecture.NewStore(db)
+	architectures.AfterSave = knowledge.PruneDecisions // Decisions follow the items they explain
+	knowledgeStore := knowledge.NewStore(db)
 
 	srv := &http.Server{
 		Addr: ":" + cfg.Port,
@@ -65,10 +68,12 @@ func run() error {
 				Model:         chatModel(cfg.AI),
 				Conversations: conversations,
 				Architectures: architectures,
+				Knowledge:     knowledgeStore,
 				HistoryLimit:  30,
 				Timeout:       3 * time.Minute,
 			},
 			Reviews:            conversation.Reviews{Conversations: conversations, Architectures: architectures},
+			Knowledge:          knowledgeStore,
 			DailyMessageLimit:  cfg.AI.DailyMessageLimit,
 			AllowedOrigins:     cfg.AllowedOrigins,
 			AllowedGitHubUsers: cfg.AllowedGitHubUsers,

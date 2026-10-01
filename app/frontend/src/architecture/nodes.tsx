@@ -35,6 +35,12 @@ export function ComponentNodeView({ data, selected }: NodeProps<ComponentNode>) 
         {data.name}
       </span>
       {summary && <span {...stylex.props(styles.summary)}>{summary}</span>}
+      {data.decisions ? (
+        <span {...stylex.props(styles.badge, data.needsReview && styles.badgeReview)}>
+          {data.decisions} {data.decisions === 1 ? 'decision' : 'decisions'}
+          {data.needsReview && ' · needs review'}
+        </span>
+      ) : null}
       <Handle type="source" position={Position.Right} {...stylex.props(styles.handle)} />
     </div>
   );
@@ -114,6 +120,17 @@ const styles = stylex.create({
     boxShadow: `0 0 0 3px ${color['--color-accent-soft']}`,
   },
   diffTag: { fontWeight: 700 },
+  badge: {
+    alignSelf: 'flex-start',
+    marginTop: 2,
+    paddingInline: space['--space-2'],
+    borderRadius: radius['--radius-full'],
+    backgroundColor: color['--color-accent-soft'],
+    fontFamily: font['--font-mono'],
+    fontSize: '0.625rem',
+    color: color['--color-accent-strong'],
+  },
+  badgeReview: { backgroundColor: color['--color-subtle'], color: color['--color-warning'] },
   struck: { textDecorationLine: 'line-through' },
   type: {
     fontFamily: font['--font-mono'],

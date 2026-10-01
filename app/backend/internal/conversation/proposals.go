@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/projects"
 	"sys-helper/backend/internal/proposal"
 )
@@ -99,12 +100,94 @@ func (s *Store) Reject(ctx context.Context, userID, suffix string, seq int) erro
 	return resolve(ctx, s.db, projectID, seq, ProposalRejected)
 }
 
-// Accept returns an architecture.Store.SaveWith hook that marks Proposal seq as accepted in the
-// same transaction that saves the Architecture it produced.
+// Accept returns an architecture.Store.SaveWith hook that, in the transaction saving the
+// Architecture the client built from Proposal seq, marks it accepted and applies its other changes:
+// Requirements, Decisions and the Experience Level.
 func Accept(seq int) func(ctx context.Context, tx pgx.Tx, projectID string) error {
 	return func(ctx context.Context, tx pgx.Tx, projectID string) error {
-		return resolve(ctx, tx, projectID, seq, ProposalAccepted)
+		if err := resolve(ctx, tx, projectID, seq, ProposalAccepted); err != nil {
+			return err
+		}
+		var changes []proposal.Change
+		if err := tx.QueryRow(ctx, `SELECT changes FROM proposals WHERE project_id = $1 AND seq = $2`,
+			projectID, seq).Scan(&changes); err != nil {
+			return fmt.Errorf("load proposal: %w", err)
+		}
+		return applyKnowledge(ctx, tx, projectID, seq, changes)
 	}
+}
+
+// applyKnowledge applies a Proposal's non-canvas changes. It is lenient where the User moved on
+// since the Proposal was made: a Requirement they deleted is skipped, and Decisions on items no
+// longer on the canvas are pruned when the canvas is saved (architecture.Store.AfterSave).
+func applyKnowledge(ctx context.Context, tx pgx.Tx, projectID string, seq int, changes []proposal.Change) error {
+	itemIDs := map[string]string{} // refs of new components and connections → their ids
+	for i, c := range changes {
+		switch {
+		case c.Op == "add_component":
+			itemIDs[c.Ref] = proposal.ComponentID(seq, c.Ref)
+		case c.Op == "add_connection" && c.Ref != "":
+			itemIDs[c.Ref] = proposal.ConnectionID(seq, c, i)
+		}
+	}
+	existing, err := knowledge.Load(ctx, tx, projectID)
+	if err != nil {
+		return err
+	}
+	requirementNums := map[string]int{} // requirement ids (R1) and refs → numbers
+	for _, r := range existing.Requirements {
+		requirementNums[knowledge.RequirementID(r.Num)] = r.Num
+	}
+
+	for _, c := range changes {
+		var err error
+		switch c.Op {
+		case "add_requirement":
+			var r knowledge.Requirement
+			r, err = knowledge.AddRequirement(ctx, tx, projectID, deref(c.Category), deref(c.Statement))
+			requirementNums[c.Ref] = r.Num
+		case "update_requirement":
+			if n, ok := requirementNums[c.ID]; ok {
+				_, err = knowledge.UpdateRequirement(ctx, tx, projectID, n, c.Category, c.Statement)
+			}
+		case "remove_requirement":
+			if n, ok := requirementNums[c.ID]; ok {
+				err = knowledge.RemoveRequirement(ctx, tx, projectID, n)
+				delete(requirementNums, c.ID)
+			}
+		case "add_decision":
+			d := knowledge.Decision{Title: c.Title, Rationale: c.Rationale, Pattern: c.Pattern,
+				Alternative: c.Alternative, Author: knowledge.AuthorAI, Requirements: []int{}}
+			for _, req := range c.Requirements {
+				if n, ok := requirementNums[req]; ok {
+					d.Requirements = append(d.Requirements, n)
+				}
+			}
+			for _, t := range c.Targets {
+				if id, ok := itemIDs[t]; ok {
+					t = id
+				}
+				d.Targets = append(d.Targets, t)
+			}
+			_, err = knowledge.AddDecision(ctx, tx, projectID, d)
+		case "set_experience_level":
+			err = knowledge.SetExperienceLevel(ctx, tx, projectID, c.Level)
+		}
+		if errors.Is(err, knowledge.ErrNotFound) {
+			err = nil
+		}
+		if err != nil {
+			return fmt.Errorf("apply %s: %w", c.Op, err)
+		}
+	}
+	return nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func resolve(ctx context.Context, db querier, projectID string, seq int, status ProposalStatus) error {

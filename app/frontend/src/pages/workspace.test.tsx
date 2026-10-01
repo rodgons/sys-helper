@@ -9,6 +9,7 @@ const shortener = {
   name: 'URL Shortener',
   updatedAt: '2026-09-30T00:00:00Z',
 };
+const noKnowledge = { experienceLevel: '', requirements: [], decisions: [] };
 const emptyArchitecture = { version: 0, document: { components: [], connections: [] } };
 const chat = { slug: 'chat-app-a1b2c3d4e5', name: 'Chat App', updatedAt: '2026-09-29T00:00:00Z' };
 
@@ -32,6 +33,8 @@ function stubApi(extra: Parameters<typeof mockApi>[0] = {}) {
       'GET /api/projects/url-shortener-k3xa9q2m7p/architecture': emptyArchitecture,
       'GET /api/projects/chat-app-a1b2c3d4e5/architecture': emptyArchitecture,
       'GET /api/projects/url-shortener-k3xa9q2m7p/messages': [],
+      'GET /api/projects/url-shortener-k3xa9q2m7p/knowledge': noKnowledge,
+      'GET /api/projects/chat-app-a1b2c3d4e5/knowledge': noKnowledge,
       'GET /api/projects/chat-app-a1b2c3d4e5/messages': [],
       ...extra,
     }),
@@ -59,7 +62,8 @@ describe('Workspace', () => {
       'page',
     );
     expect(screen.getByRole('region', { name: 'Canvas' })).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: 'Conversation' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Conversation', selected: true })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Requirements/ })).toBeInTheDocument();
   });
 
   it('redirects an outdated slug to the canonical one', async () => {

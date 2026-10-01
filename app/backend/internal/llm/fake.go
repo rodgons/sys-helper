@@ -13,9 +13,13 @@ type Fake struct{}
 
 // FakeProposal is the propose_changes arguments Fake sends.
 const FakeProposal = `{"summary": "Add an API service backed by a cache", "changes": [
+	{"op": "set_experience_level", "level": "beginner"},
+	{"op": "add_requirement", "ref": "reads", "category": "performance", "statement": "Reads outnumber writes 100 to 1"},
 	{"op": "add_component", "ref": "api", "type": "service", "name": "Fake API", "properties": {"runtime": "Go"}},
 	{"op": "add_component", "ref": "cache", "type": "cache", "name": "Fake Cache", "properties": {"engine": "Redis"}},
-	{"op": "add_connection", "source": "api", "target": "cache", "kind": "sync", "label": "reads"}]}`
+	{"op": "add_connection", "ref": "api-cache", "source": "api", "target": "cache", "kind": "sync", "label": "reads"},
+	{"op": "add_decision", "title": "Cache reads in Redis", "rationale": "Most traffic is reads, so serving them from memory keeps the database idle.",
+	 "pattern": "Cache-aside", "alternative": "Read replicas: more to operate for the same win", "requirements": ["reads"], "targets": ["cache", "api-cache"]}]}`
 
 func (Fake) Stream(_ context.Context, req Request) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {

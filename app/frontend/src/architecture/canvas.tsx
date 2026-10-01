@@ -21,6 +21,7 @@ import { ApiError, apiFetch } from '../lib/api';
 import type { VersionedArchitecture } from '../lib/architecture';
 import { useAuth } from '../lib/auth';
 import { useRefreshMessages, useSetProposalStatus } from '../lib/conversation';
+import { useKnowledge, useRefreshKnowledge } from '../lib/knowledge';
 import { Button } from '../ui/button';
 import { SelectField } from '../ui/select-field';
 import { Label, Text } from '../ui/typography';
@@ -49,6 +50,8 @@ type CanvasProps = {
   proposal?: Proposal;
   /** Receives the review state of the pending Proposal (null when there is none). */
   onReview?: (review: Review | null) => void;
+  /** Receives the current names of components and connections, by id, whenever they change. */
+  onNames?: (names: Record<string, string>) => void;
 };
 
 /** The editable Architecture canvas. Every change is autosaved; see useAutosave. */
@@ -70,13 +73,15 @@ const changesDocument = (c: NodeChange | EdgeChange) =>
   c.type === 'replace' ||
   (c.type === 'position' && !c.dragging);
 
-function Editor({ slug, initial, proposal, onReview }: CanvasProps) {
+function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
   const [flow, setFlow] = useState(() => toFlow(initial.document));
   // Fit a saved architecture into view on load. An empty canvas must not fit: React Flow would wait
   // for the first component added and then re-centre the view on it, under the inspector.
   const [fitOnLoad] = useState(initial.document.components.length > 0);
   const latest = useRef(flow);
-  const autosave = useAutosave(slug, initial.version);
+  const refreshKnowledge = useRefreshKnowledge(slug);
+  // A save can prune Decisions whose components are gone, so reload them after each one.
+  const autosave = useAutosave(slug, initial.version, refreshKnowledge);
   const reactFlow = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
 
@@ -96,7 +101,21 @@ function Editor({ slug, initial, proposal, onReview }: CanvasProps) {
     autosave,
     update,
   });
-  const shown = review.preview ?? flow;
+  useEffect(() => onNames?.(review.names), [onNames, review.names]);
+
+  // Badge each component with its Decisions; flag it when one needs review.
+  const knowledge = useKnowledge(slug);
+  const decorate = (n: ComponentNode): ComponentNode => {
+    const ds = knowledge.data?.decisions.filter((d) => d.targets.includes(n.id)) ?? [];
+    return ds.length === 0
+      ? n
+      : {
+          ...n,
+          data: { ...n.data, decisions: ds.length, needsReview: ds.some((d) => d.needsReview) },
+        };
+  };
+  const base = review.preview ?? flow;
+  const shown = { nodes: base.nodes.map(decorate), edges: base.edges };
 
   // Bring a new Proposal into view once its components have been measured.
   const fitted = useRef(0);
@@ -218,6 +237,8 @@ function Editor({ slug, initial, proposal, onReview }: CanvasProps) {
         </Panel>
         <Panel position="top-right">
           <Inspector
+            slug={slug}
+            saved={autosave.status === 'saved'}
             nodes={nodes.filter((n) => n.selected)}
             edges={edges.filter((e) => e.selected)}
             onEditComponent={editComponent}
@@ -276,6 +297,7 @@ function useProposalReview({
   const auth = useAuth();
   const token = auth.status === 'signedIn' ? auth.token : undefined;
   const setStatus = useSetProposalStatus(slug);
+  const refreshKnowledge = useRefreshKnowledge(slug);
   const refreshMessages = useRefreshMessages(slug);
   const [progress, setProgress] = useState<{ busy: boolean; error: string | null }>({
     busy: false,
@@ -353,6 +375,7 @@ function useProposalReview({
       });
       update(n, e, false);
       setStatus(proposal.seq, 'accepted');
+      void refreshKnowledge();
       setProgress({ busy: false, error: null });
     } catch (err) {
       setProgress({ busy: false, error: reviewError(err, refreshMessages) });
@@ -396,7 +419,7 @@ function useProposalReview({
   useEffect(() => onReview?.(state), [onReview, state]);
   useEffect(() => () => onReview?.(null), [onReview]);
 
-  return { preview, state, measureGhosts };
+  return { preview, state, measureGhosts, names };
 }
 
 function reviewError(err: unknown, refreshMessages: () => void): string | null {

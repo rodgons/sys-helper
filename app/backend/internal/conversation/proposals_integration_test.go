@@ -9,6 +9,7 @@ import (
 
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/conversation"
+	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/projects"
 	"sys-helper/backend/internal/proposal"
 	"sys-helper/backend/internal/testdb"
@@ -141,6 +142,46 @@ func TestProposals(t *testing.T) {
 		}
 		if _, err := store.AppendReply(ctx, intruder, suffix, "x", &changes, 0); !errors.Is(err, projects.ErrNotFound) {
 			t.Errorf("AppendReply: err = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("accepting applies requirements, decisions and the experience level", func(t *testing.T) {
+		user, suffix := newProject(t)
+		cat, stmt := "performance", "p99 reads under 50 ms"
+		cacheName := "Cache"
+		changes := proposal.Changes{Summary: "Cache and record why", Changes: []proposal.Change{
+			{Op: "set_experience_level", Level: "beginner"},
+			{Op: "add_requirement", Ref: "reads", Category: &cat, Statement: &stmt},
+			{Op: "add_component", Ref: "cache", Type: "cache", Name: &cacheName},
+			{Op: "add_decision", Title: "Read-through cache", Rationale: "Reads dominate", Pattern: "Cache-aside",
+				Requirements: []string{"reads"}, Targets: []string{"cache"}},
+		}}
+		m, err := store.AppendReply(ctx, user, suffix, "Here.", &changes, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc := architecture.Empty()
+		doc.Components = append(doc.Components, architecture.Component{ID: proposal.ComponentID(m.Proposal.Seq, "cache"), Type: "cache", Name: "Cache"})
+		architectures.AfterSave = knowledge.PruneDecisions
+		defer func() { architectures.AfterSave = nil }()
+
+		if _, err := architectures.SaveWith(ctx, user, suffix, 0, doc, conversation.Accept(m.Proposal.Seq)); err != nil {
+			t.Fatalf("accept: %v", err)
+		}
+
+		k, err := knowledge.NewStore(pool).Get(ctx, user, suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if k.ExperienceLevel != "beginner" || len(k.Requirements) != 1 || k.Requirements[0].Statement != stmt {
+			t.Fatalf("knowledge = %+v", k)
+		}
+		if len(k.Decisions) != 1 {
+			t.Fatalf("decisions = %+v", k.Decisions)
+		}
+		d := k.Decisions[0]
+		if d.Author != knowledge.AuthorAI || d.Targets[0] != "p1-cache" || len(d.Requirements) != 1 || d.Requirements[0] != k.Requirements[0].Num {
+			t.Errorf("decision = %+v", d)
 		}
 	})
 }

@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"sys-helper/backend/internal/architecture"
+	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 )
 
@@ -24,12 +25,18 @@ const (
 )
 
 // Change is one operation. Which fields apply depends on Op:
-//   - add_component: Ref (a temporary id later Changes can connect to), Type, Name, Properties
+//   - add_component: Ref (a temporary id later Changes can use), Type, Name, Properties
 //   - update_component: ID, and Name and/or Properties (merged into the existing ones)
 //   - remove_component: ID (its connections go with it)
-//   - add_connection: Source, Target (existing ids or refs), Kind, Label
+//   - add_connection: Source, Target (component ids or refs), Kind, Label, and an optional Ref
 //   - update_connection: ID, and Kind and/or Label
 //   - remove_connection: ID
+//   - add_requirement: Ref, Category, Statement
+//   - update_requirement: ID ("R1"), and Category and/or Statement
+//   - remove_requirement: ID
+//   - add_decision: Title, Rationale, Pattern, Alternative, Requirements (ids or refs) and
+//     Targets (component or connection ids or refs; at least one)
+//   - set_experience_level: Level
 type Change struct {
 	Op         string            `json:"op"`
 	ID         string            `json:"id,omitempty"`
@@ -41,6 +48,16 @@ type Change struct {
 	Target     string            `json:"target,omitempty"`
 	Kind       string            `json:"kind,omitempty"`
 	Label      *string           `json:"label,omitempty"`
+
+	Category     *string  `json:"category,omitempty"`
+	Statement    *string  `json:"statement,omitempty"`
+	Title        string   `json:"title,omitempty"`
+	Rationale    string   `json:"rationale,omitempty"`
+	Pattern      string   `json:"pattern,omitempty"`
+	Alternative  string   `json:"alternative,omitempty"`
+	Requirements []string `json:"requirements,omitempty"`
+	Targets      []string `json:"targets,omitempty"`
+	Level        string   `json:"level,omitempty"`
 }
 
 // Changes is what the model submits through the propose_changes tool.
@@ -49,36 +66,64 @@ type Changes struct {
 	Changes []Change `json:"changes"`
 }
 
+// ComponentID and ConnectionID are the ids items added by Proposal seq get once accepted. The
+// client applies Proposals with the same scheme (src/architecture/proposal.ts), so Decisions can be
+// attached to new items by these ids.
+func ComponentID(seq int, ref string) string { return fmt.Sprintf("p%d-%s", seq, ref) }
+
+func ConnectionID(seq int, c Change, index int) string {
+	if c.Ref != "" {
+		return fmt.Sprintf("p%d-%s", seq, c.Ref)
+	}
+	return fmt.Sprintf("p%d-k%d", seq, index)
+}
+
 var ErrInvalid = errors.New("invalid proposal")
 
-// Validate checks every Change against doc (the Architecture the Proposal is based on). Errors are
-// written for the model, which gets a chance to correct them.
-func (c Changes) Validate(doc architecture.Document) error {
+// Normalize forgives a common slip: naming a new item in `id` instead of `ref`. Call it before
+// Validate.
+func (c *Changes) Normalize() {
+	for i, ch := range c.Changes {
+		if strings.HasPrefix(ch.Op, "add_") && ch.Op != "add_decision" && ch.Ref == "" && ch.ID != "" {
+			c.Changes[i].Ref, c.Changes[i].ID = ch.ID, ""
+		}
+	}
+}
+
+// Validate checks every Change against doc and k (what the Project has when the Proposal is made).
+// Errors are written for the model, which gets a chance to correct them.
+func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) error {
 	if s := strings.TrimSpace(c.Summary); s == "" || utf8.RuneCountInString(s) > maxSummary {
 		return invalid("summary must be 1 to %d characters", maxSummary)
 	}
 	if len(c.Changes) == 0 || len(c.Changes) > maxChanges {
 		return invalid("propose 1 to %d changes", maxChanges)
 	}
-	types := map[string]string{} // existing ids and refs → component type
+	types := map[string]string{} // component ids and refs → component type
 	for _, comp := range doc.Components {
 		types[comp.ID] = comp.Type
 	}
-	connections := map[string]bool{}
+	connections := map[string]bool{} // connection ids and refs
 	for _, conn := range doc.Connections {
 		connections[conn.ID] = true
 	}
+	requirements := map[string]bool{} // requirement ids (R1) and refs
+	for _, r := range k.Requirements {
+		requirements[knowledge.RequirementID(r.Num)] = true
+	}
 	removed := map[string]bool{}
+	// Ids and refs share one namespace, so a ref can't shadow anything.
+	taken := func(ref string) bool {
+		_, isComponent := types[ref]
+		return isComponent || connections[ref] || requirements[ref]
+	}
 
 	for i, ch := range c.Changes {
 		at := fmt.Sprintf("change %d (%s)", i+1, ch.Op)
 		switch ch.Op {
 		case "add_component":
-			if ch.Ref == "" || len(ch.Ref) > maxRefOrID {
-				return invalid("%s: needs a ref, a short temporary id that connections can use", at)
-			}
-			if _, taken := types[ch.Ref]; taken {
-				return invalid("%s: ref %q is already used", at, ch.Ref)
+			if err := newRef(at, ch.Ref, taken); err != nil {
+				return err
 			}
 			if _, ok := architecture.ComponentTypes[ch.Type]; !ok {
 				return invalid("%s: unknown type %q; use one of %s", at, ch.Type, typeList())
@@ -118,21 +163,87 @@ func (c Changes) Validate(doc architecture.Document) error {
 			if err := checkConnection(at, ch.Kind, true, ch.Label); err != nil {
 				return err
 			}
-		case "update_connection", "remove_connection":
-			if !connections[ch.ID] {
-				return invalid("%s: no connection with id %q", at, ch.ID)
-			}
-			if ch.Op == "update_connection" {
-				if ch.Kind == "" && ch.Label == nil {
-					return invalid("%s: change the kind or label of %q", at, ch.ID)
-				}
-				if err := checkConnection(at, ch.Kind, false, ch.Label); err != nil {
+			if ch.Ref != "" {
+				if err := newRef(at, ch.Ref, taken); err != nil {
 					return err
 				}
+				connections[ch.Ref] = true
+			}
+		case "update_connection", "remove_connection":
+			if !connections[ch.ID] || removed[ch.ID] {
+				return invalid("%s: no connection with id %q", at, ch.ID)
+			}
+			if ch.Op == "remove_connection" {
+				removed[ch.ID] = true
+				break
+			}
+			if ch.Kind == "" && ch.Label == nil {
+				return invalid("%s: change the kind or label of %q", at, ch.ID)
+			}
+			if err := checkConnection(at, ch.Kind, false, ch.Label); err != nil {
+				return err
+			}
+		case "add_requirement":
+			if err := newRef(at, ch.Ref, taken); err != nil {
+				return err
+			}
+			if ch.Category == nil || ch.Statement == nil {
+				return invalid("%s: needs a category and a statement", at)
+			}
+			if err := knowledge.CheckRequirement(ch.Category, ch.Statement); err != nil {
+				return invalid("%s: %v", at, err)
+			}
+			requirements[ch.Ref] = true
+		case "update_requirement", "remove_requirement":
+			if !requirements[ch.ID] || removed[ch.ID] {
+				return invalid("%s: no requirement %q", at, ch.ID)
+			}
+			if ch.Op == "remove_requirement" {
+				removed[ch.ID] = true
+				break
+			}
+			if ch.Category == nil && ch.Statement == nil {
+				return invalid("%s: change the category or statement of %q", at, ch.ID)
+			}
+			if err := knowledge.CheckRequirement(ch.Category, ch.Statement); err != nil {
+				return invalid("%s: %v", at, err)
+			}
+		case "add_decision":
+			if err := knowledge.CheckDecisionText(ch.Title, ch.Rationale, ch.Pattern, ch.Alternative); err != nil {
+				return invalid("%s: %v", at, err)
+			}
+			if len(ch.Targets) == 0 {
+				return invalid("%s: attach the decision to at least one component or connection (targets)", at)
+			}
+			for _, target := range ch.Targets {
+				_, isComponent := types[target]
+				if (!isComponent && !connections[target]) || removed[target] {
+					return invalid("%s: no component or connection with id or ref %q", at, target)
+				}
+			}
+			for _, req := range ch.Requirements {
+				if !requirements[req] || removed[req] {
+					return invalid("%s: no requirement %q (cite requirement ids like R1, or refs added in this proposal)", at, req)
+				}
+			}
+		case "set_experience_level":
+			if err := knowledge.CheckLevel(ch.Level); err != nil {
+				return invalid("%s: %v", at, err)
 			}
 		default:
-			return invalid("%s: unknown op; use add_component, update_component, remove_component, add_connection, update_connection or remove_connection", at)
+			return invalid("%s: unknown op", at)
 		}
+	}
+	return nil
+}
+
+// newRef checks a ref for a new item is present, short, and not already an id or ref.
+func newRef(at, ref string, taken func(string) bool) error {
+	if ref == "" || len(ref) > maxRefOrID {
+		return invalid("%s: needs a ref, a short temporary id that later changes can use", at)
+	}
+	if taken(ref) {
+		return invalid("%s: ref %q is already used", at, ref)
 	}
 	return nil
 }
@@ -185,16 +296,19 @@ func invalid(format string, args ...any) error {
 // Tool is how the model submits a Proposal.
 var Tool = llm.Tool{
 	Name: "propose_changes",
-	Description: "Propose changes to the architecture canvas. The user reviews them as one proposal and " +
-		"accepts or rejects it; nothing changes until they accept. Call this at most once per reply, with " +
-		"every change for this step. Refer to existing components and connections by their id; give new " +
-		"components a short ref and use that ref to connect them.",
+	Description: "Propose changes for the user to review as one proposal: to the architecture canvas, the " +
+		"requirements, the decisions that explain the design, and the user's experience level. Nothing " +
+		"changes until the user accepts. Call this at most once per reply, with every change for this step. " +
+		"Refer to existing items by id (components and connections by their canvas id, requirements as R1, " +
+		"R2, …); give new items a short ref and use that ref in later changes of the same proposal.",
 	Parameters: json.RawMessage(toolSchema()),
 }
 
 func toolSchema() string {
 	types, _ := json.Marshal(sortedTypes())
 	kinds, _ := json.Marshal(architecture.ConnectionKinds)
+	categories, _ := json.Marshal(knowledge.Categories)
+	levels, _ := json.Marshal(knowledge.Levels)
 	return `{
   "type": "object",
   "properties": {
@@ -204,16 +318,25 @@ func toolSchema() string {
       "items": {
         "type": "object",
         "properties": {
-          "op": {"type": "string", "enum": ["add_component", "update_component", "remove_component", "add_connection", "update_connection", "remove_connection"]},
-          "id": {"type": "string", "description": "Existing component or connection id (update_*, remove_*)."},
-          "ref": {"type": "string", "description": "Temporary id for a new component (add_component)."},
+          "op": {"type": "string", "enum": ["add_component", "update_component", "remove_component", "add_connection", "update_connection", "remove_connection", "add_requirement", "update_requirement", "remove_requirement", "add_decision", "set_experience_level"]},
+          "id": {"type": "string", "description": "Existing item id (update_*, remove_*): a component or connection id, or a requirement id like R1."},
+          "ref": {"type": "string", "description": "Temporary id for a new component, connection or requirement (add_*), usable by later changes."},
           "type": {"type": "string", "enum": ` + string(types) + `, "description": "Component type (add_component)."},
           "name": {"type": "string", "description": "Component name (add_component, update_component)."},
           "properties": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Component properties allowed by its type (e.g. database: engine, replicas, sharding)."},
           "source": {"type": "string", "description": "Connection start: component id or ref (add_connection)."},
           "target": {"type": "string", "description": "Connection end: component id or ref (add_connection)."},
           "kind": {"type": "string", "enum": ` + string(kinds) + `, "description": "Connection kind."},
-          "label": {"type": "string", "description": "Connection label, e.g. what flows over it."}
+          "label": {"type": "string", "description": "Connection label, e.g. what flows over it."},
+          "category": {"type": "string", "enum": ` + string(categories) + `, "description": "Requirement category (add_requirement, update_requirement)."},
+          "statement": {"type": "string", "description": "Requirement as one line, e.g. '10k requests/s at peak' (add_requirement, update_requirement)."},
+          "title": {"type": "string", "description": "Decision title, e.g. 'Redis read-through cache' (add_decision)."},
+          "rationale": {"type": "string", "description": "Why this choice fits the requirements (add_decision)."},
+          "pattern": {"type": "string", "description": "The pattern or technique applied, e.g. 'Cache-aside' (add_decision)."},
+          "alternative": {"type": "string", "description": "The main alternative rejected and why (add_decision)."},
+          "requirements": {"type": "array", "items": {"type": "string"}, "description": "Requirement ids or refs the decision serves (add_decision)."},
+          "targets": {"type": "array", "items": {"type": "string"}, "description": "Component or connection ids or refs the decision explains; at least one (add_decision)."},
+          "level": {"type": "string", "enum": ` + string(levels) + `, "description": "The user's experience level (set_experience_level)."}
         },
         "required": ["op"]
       }

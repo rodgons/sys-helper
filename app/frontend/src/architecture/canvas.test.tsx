@@ -204,4 +204,53 @@ describe('ArchitectureCanvas', () => {
       expect(onReview.mock.lastCall?.[0].stale).toMatch(/gone/);
     });
   });
+
+  it('adds a decision to the selected component once it is saved', async () => {
+    const decide = vi.fn((_req: { json?: unknown }) => ({ status: 201, body: {} }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        mockApi({
+          'PUT /api/projects/shop-k3xa9q2m7p/architecture': ({ json }: { json?: unknown }) => ({
+            version: (json as { version: number }).version + 1,
+          }),
+          'GET /api/projects/shop-k3xa9q2m7p/knowledge': {
+            experienceLevel: '',
+            requirements: [{ id: 'R1', category: 'scale', statement: '10k rps' }],
+            decisions: [],
+          },
+          'POST /api/projects/shop-k3xa9q2m7p/decisions': decide,
+        }),
+      ),
+    );
+    renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
+      auth: signedIn(),
+    });
+    fireEvent.change(screen.getByLabelText('Add component'), { target: { value: 'cache' } });
+
+    const inspector = screen.getByRole('region', { name: 'Inspector' });
+    await act(() => vi.advanceTimersByTimeAsync(0)); // load the knowledge
+    expect(within(inspector).getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    fireEvent.click(within(inspector).getByRole('button', { name: '+ Add decision' }));
+    fireEvent.change(within(inspector).getByLabelText('Decision'), {
+      target: { value: 'Redis for sessions' },
+    });
+    fireEvent.change(within(inspector).getByLabelText('Why'), {
+      target: { value: 'Fast and simple' },
+    });
+    fireEvent.click(within(inspector).getByLabelText(/R1/));
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Add decision' }));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    const body = decide.mock.calls[0]?.[0].json as {
+      targets: string[];
+      requirements: string[];
+      title: string;
+    };
+    expect(body.title).toBe('Redis for sessions');
+    expect(body.requirements).toEqual(['R1']);
+    expect(body.targets).toHaveLength(1);
+    expect(body.targets[0]).toMatch(/^c-/);
+  });
 });

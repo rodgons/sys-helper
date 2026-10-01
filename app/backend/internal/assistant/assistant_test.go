@@ -12,6 +12,7 @@ import (
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/assistant"
 	"sys-helper/backend/internal/conversation"
+	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/projects"
 	"sys-helper/backend/internal/proposal"
@@ -100,8 +101,21 @@ func conv(msgs ...string) *fakeConversations {
 	return f
 }
 
+// fakeKnowledge: a beginner with requirement R1, and decision D1 on "db" needing review.
+type fakeKnowledge struct{}
+
+func (fakeKnowledge) Get(context.Context, string, string) (knowledge.Knowledge, error) {
+	return knowledge.Knowledge{
+		ExperienceLevel: "beginner",
+		Requirements:    []knowledge.Requirement{{Num: 1, Category: "scale", Statement: "10k orders per minute"}},
+		Decisions: []knowledge.Decision{{Num: 1, Title: "Postgres for orders", Rationale: "ACID", Requirements: []int{1},
+			Targets: []string{"db"}, Author: knowledge.AuthorAI, NeedsReview: true}},
+	}, nil
+}
+
 func newAssistant(m llm.ChatModel, c *fakeConversations) *assistant.Assistant {
-	return &assistant.Assistant{Model: m, Conversations: c, Architectures: fakeArchitectures{}, HistoryLimit: 4, Timeout: time.Second}
+	return &assistant.Assistant{Model: m, Conversations: c, Architectures: fakeArchitectures{}, Knowledge: fakeKnowledge{},
+		HistoryLimit: 4, Timeout: time.Second}
 }
 
 func TestReply(t *testing.T) {
@@ -134,8 +148,11 @@ func TestReply(t *testing.T) {
 		if req.Messages[0].Role != llm.RoleSystem || !strings.Contains(req.Messages[0].Content, "architect") {
 			t.Errorf("first message = %+v", req.Messages[0])
 		}
-		if !strings.Contains(req.Messages[0].Content, "Orders DB") {
-			t.Errorf("system message lacks the architecture: %+v", req.Messages[0])
+		system := req.Messages[0].Content
+		for _, want := range []string{"Orders DB", "R1 [scale] 10k orders per minute", "D1 Postgres for orders", "NEEDS REVIEW", "beginner"} {
+			if !strings.Contains(system, want) {
+				t.Errorf("system message lacks %q:\n%s", want, system)
+			}
 		}
 		history := req.Messages[1:]
 		if len(history) != 4 || history[0].Content != "two" || history[3].Content != "five" || history[3].Role != llm.RoleUser {
@@ -314,6 +331,16 @@ func TestProposals(t *testing.T) {
 		history := m.reqs[0].Messages
 		if got := history[len(history)-2].Content; !strings.Contains(got, "Add a cache") || !strings.Contains(got, "rejected") {
 			t.Errorf("assistant history = %q", got)
+		}
+	})
+
+	t.Run("validates decisions against the project's requirements", func(t *testing.T) {
+		cites := `{"summary": "Explain the DB", "changes": [{"op": "add_decision", "title": "T", "rationale": "R", "targets": ["db"], "requirements": ["R1"]}]}`
+		msg, err := newAssistant(&turns{turns: []turn{{text: "Recorded.", args: cites}}}, conv("Welcome", "Why Postgres?")).
+			Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal == nil {
+			t.Fatalf("message = %+v, err = %v", msg, err)
 		}
 	})
 }

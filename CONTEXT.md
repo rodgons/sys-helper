@@ -49,19 +49,22 @@ _Avoid_: Chat, thread, session
 The fixed first Message of every new Conversation. It tells the User the AI will ask about what they want to build and ends with the first question.
 
 **Requirement**:
-A stated need or constraint of the Project that design choices answer to, such as expected users, read/write ratio, latency target, consistency needs, or budget.
+A stated need or constraint of the Project that design choices answer to, such as expected users, read/write ratio, latency target, consistency needs, or budget. It has a category (Scale, Performance, Availability, Consistency, Security, Cost, Constraints or Functional) and a one-line statement, and is numbered R1, R2, … within its Project.
 _Avoid_: Spec, constraint, NFR
 
 **Experience Level**:
-How experienced the User says they are, recorded per Project. It sets how deeply the AI explains its Decisions.
+How experienced the User says they are, recorded per Project: Beginner, Intermediate or Expert. It sets how deeply the AI explains its Decisions.
 _Avoid_: Skill level, persona
 
 **Decision**:
-A recorded design choice, the reasoning behind it, and the Requirements it cites. It is attached to one or more Components or Connections, and it records whether the User or the AI wrote it. When a cited Requirement changes, the Decision needs review.
+A recorded design choice: a title, the rationale, the pattern it applies, the main alternative it rejected, and the Requirements it cites. It is attached to one or more Components or Connections, records whether the User or the AI wrote it, and is numbered D1, D2, … within its Project. It is deleted once none of the items it is attached to remain.
 _Avoid_: Rationale, note, explanation
 
+**Needs Review**:
+The flag a Decision gets when a Requirement it cites changes or is removed. The User clears it by confirming the Decision is still valid, or by editing or deleting it.
+
 **Proposal**:
-A set of changes to an Architecture, and any Decisions and Requirements that come with them, that the AI suggests. The User accepts or rejects it as a whole. A Project has at most one pending Proposal. The AI changes the Architecture only through Proposals.
+A set of changes that the AI suggests: to the Architecture, and to the Requirements, Decisions and Experience Level that come with them. A Proposal can change Requirements alone. The User accepts or rejects it as a whole. A Project has at most one pending Proposal. The AI changes the Architecture only through Proposals.
 _Avoid_: Suggestion, patch, diff
 
 **Stale Proposal**:

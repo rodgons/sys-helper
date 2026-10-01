@@ -134,4 +134,48 @@ describe('describeChange', () => {
       'Remove Orders DB',
     );
   });
+
+  it('describes requirement, decision and experience changes', () => {
+    const changes: Proposal['changes'] = [
+      { op: 'set_experience_level', level: 'beginner' },
+      {
+        op: 'add_requirement',
+        ref: 'reads',
+        category: 'performance',
+        statement: 'Reads outnumber writes 100 to 1',
+      },
+      { op: 'add_component', ref: 'cache', type: 'cache', name: 'Fake Cache' },
+      { op: 'add_connection', ref: 'api-cache', source: 'api', target: 'cache', kind: 'sync' },
+      {
+        op: 'add_decision',
+        title: 'Cache reads',
+        rationale: 'r',
+        targets: ['cache', 'api-cache'],
+        requirements: ['reads'],
+      },
+      { op: 'update_requirement', id: 'R1', statement: '20k rps' },
+      { op: 'remove_requirement', id: 'R2' },
+    ];
+
+    expect(changes.map((c) => describeChange(c, { api: 'API' }, changes))).toEqual([
+      'Set your experience level to Beginner',
+      'Note requirement (Performance): Reads outnumber writes 100 to 1',
+      'Add Cache “Fake Cache”',
+      'Connect API → Fake Cache (sync)',
+      'Record decision “Cache reads” on Fake Cache, API → Fake Cache',
+      'Update R1 (20k rps)',
+      'Remove requirement R2',
+    ]);
+  });
+
+  it('gives a new connection with a ref an id the server agrees on', () => {
+    const { nodes, edges } = toFlow(doc);
+    const p = proposal([
+      { op: 'add_connection', ref: 'api-db', source: 'db', target: 'api', kind: 'async' },
+    ]);
+
+    const [, applied] = applyProposal(nodes, edges, p);
+
+    expect(applied.map((e) => e.id)).toContain('p1-api-db');
+  });
 });

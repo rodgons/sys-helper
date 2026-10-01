@@ -13,6 +13,7 @@ import (
 
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/conversation"
+	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/proposal"
 )
@@ -35,8 +36,11 @@ type Assistant struct {
 	Architectures interface {
 		Get(ctx context.Context, userID, suffix string) (architecture.Versioned, error)
 	}
-	// HistoryLimit is how many recent Messages the model sees. The Architecture (and later the
-	// Requirements and Decisions) carry the long-term memory, so older chat matters less.
+	Knowledge interface {
+		Get(ctx context.Context, userID, suffix string) (knowledge.Knowledge, error)
+	}
+	// HistoryLimit is how many recent Messages the model sees. The Architecture, Requirements and
+	// Decisions carry the long-term memory, so older chat matters less.
 	HistoryLimit int
 	// Timeout bounds a whole reply.
 	Timeout time.Duration
@@ -72,7 +76,11 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	if err != nil {
 		return conversation.Message{}, err
 	}
-	req, err := a.request(msgs, arch.Document)
+	known, err := a.Knowledge.Get(ctx, userID, suffix)
+	if err != nil {
+		return conversation.Message{}, err
+	}
+	req, err := a.request(msgs, arch.Document, known)
 	if err != nil {
 		return conversation.Message{}, err
 	}
@@ -91,7 +99,7 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 		if call == nil {
 			break
 		}
-		changes, problem := parseChanges(call.Arguments, arch.Document)
+		changes, problem := parseChanges(call.Arguments, arch.Document, known)
 		if problem == nil {
 			accepted = &changes
 			break
@@ -141,25 +149,28 @@ func (a *Assistant) stream(ctx context.Context, req llm.Request, onText func(str
 	return text.String(), call, nil
 }
 
-func parseChanges(arguments string, doc architecture.Document) (proposal.Changes, error) {
+func parseChanges(arguments string, doc architecture.Document, known knowledge.Knowledge) (proposal.Changes, error) {
 	var changes proposal.Changes
 	if err := json.Unmarshal([]byte(arguments), &changes); err != nil {
 		return proposal.Changes{}, fmt.Errorf("arguments are not valid JSON for this tool: %w", err)
 	}
-	return changes, changes.Validate(doc)
+	changes.Normalize()
+	return changes, changes.Validate(doc, known)
 }
 
-func (a *Assistant) request(msgs []conversation.Message, doc architecture.Document) (llm.Request, error) {
+func (a *Assistant) request(msgs []conversation.Message, doc architecture.Document, known knowledge.Knowledge) (llm.Request, error) {
 	canvas, err := json.Marshal(doc)
 	if err != nil {
 		return llm.Request{}, err
 	}
 	req := llm.Request{
-		MaxTokens: 4096,
+		// Generous: thinking models (e.g. GLM-5.3) spend thousands of tokens reasoning before they
+		// call propose_changes, and run out of budget otherwise.
+		MaxTokens: 16384,
 		Tools:     []llm.Tool{proposal.Tool},
 		// One system message: some chat templates (e.g. Gemma's) accept only one.
 		Messages: []llm.Message{
-			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + architectureNote + string(canvas)},
+			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + describeKnowledge(known) + "\n\n" + architectureNote + string(canvas)},
 		},
 	}
 	if len(msgs) > a.HistoryLimit {
@@ -189,4 +200,44 @@ func describeStatus(s conversation.ProposalStatus) string {
 	default:
 		return string(s)
 	}
+}
+
+// describeKnowledge writes the Project's knowledge as plain text for the system prompt.
+func describeKnowledge(k knowledge.Knowledge) string {
+	var b strings.Builder
+	level := k.ExperienceLevel
+	if level == "" {
+		level = "unknown (ask early, then record it with set_experience_level)"
+	}
+	fmt.Fprintf(&b, "The user's experience level: %s.\n\nRequirements:\n", level)
+	if len(k.Requirements) == 0 {
+		b.WriteString("(none recorded yet)\n")
+	}
+	for _, r := range k.Requirements {
+		fmt.Fprintf(&b, "- %s [%s] %s\n", knowledge.RequirementID(r.Num), r.Category, r.Statement)
+	}
+	b.WriteString("\nDecisions:\n")
+	if len(k.Decisions) == 0 {
+		b.WriteString("(none recorded yet)\n")
+	}
+	for _, d := range k.Decisions {
+		cites := make([]string, len(d.Requirements))
+		for i, n := range d.Requirements {
+			cites[i] = knowledge.RequirementID(n)
+		}
+		fmt.Fprintf(&b, "- %s %s (on %s; serves %s; by %s)", knowledge.DecisionID(d.Num), d.Title,
+			strings.Join(d.Targets, ", "), orNone(strings.Join(cites, ", ")), d.Author)
+		if d.NeedsReview {
+			b.WriteString(" NEEDS REVIEW: a requirement it cites changed")
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "no requirement"
+	}
+	return s
 }

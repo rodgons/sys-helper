@@ -20,6 +20,7 @@ type Deps struct {
 	Conversations ConversationStore
 	Assistant     Replier
 	Reviews       ProposalReviews
+	Knowledge     KnowledgeStore
 	// DailyMessageLimit caps the messages a User can send per UTC day. 0 means no cap.
 	DailyMessageLimit int
 	AllowedOrigins    []string
@@ -46,6 +47,14 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /api/projects/{slug}/reply", user(handleReply(deps.Assistant)))
 	mux.HandleFunc("POST /api/projects/{slug}/proposals/{seq}/accept", user(handleAcceptProposal(deps.Reviews)))
 	mux.HandleFunc("POST /api/projects/{slug}/proposals/{seq}/reject", user(handleRejectProposal(deps.Reviews)))
+	mux.HandleFunc("GET /api/projects/{slug}/knowledge", user(handleGetKnowledge(deps.Knowledge)))
+	mux.HandleFunc("POST /api/projects/{slug}/requirements", user(handleAddRequirement(deps.Knowledge)))
+	mux.HandleFunc("PATCH /api/projects/{slug}/requirements/{id}", user(handleUpdateRequirement(deps.Knowledge)))
+	mux.HandleFunc("DELETE /api/projects/{slug}/requirements/{id}", user(handleRemoveRequirement(deps.Knowledge)))
+	mux.HandleFunc("POST /api/projects/{slug}/decisions", user(handleAddDecision(deps.Knowledge)))
+	mux.HandleFunc("PATCH /api/projects/{slug}/decisions/{id}", user(handleUpdateDecision(deps.Knowledge)))
+	mux.HandleFunc("DELETE /api/projects/{slug}/decisions/{id}", user(handleRemoveDecision(deps.Knowledge)))
+	mux.HandleFunc("PUT /api/projects/{slug}/experience-level", user(handleSetExperienceLevel(deps.Knowledge)))
 	return withCORS(deps.AllowedOrigins, mux)
 }
 

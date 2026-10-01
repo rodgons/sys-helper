@@ -21,7 +21,12 @@ type Versioned struct {
 }
 
 // Store keeps each Project's Architecture, scoped to the Project's owner like projects.Store.
-type Store struct{ db *pgxpool.Pool }
+type Store struct {
+	db *pgxpool.Pool
+	// AfterSave, if set, runs in every save's transaction once the new document is stored (main
+	// uses it to keep Decisions attached to items that still exist).
+	AfterSave func(ctx context.Context, tx pgx.Tx, projectID string, doc Document) error
+}
 
 func NewStore(db *pgxpool.Pool) *Store { return &Store{db: db} }
 
@@ -89,8 +94,13 @@ func (s *Store) SaveWith(ctx context.Context, userID, suffix string, base int, d
 			projectID, doc, base+1); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `UPDATE projects SET updated_at = now() WHERE id = $1`, projectID)
-		return err
+		if _, err := tx.Exec(ctx, `UPDATE projects SET updated_at = now() WHERE id = $1`, projectID); err != nil {
+			return err
+		}
+		if s.AfterSave != nil {
+			return s.AfterSave(ctx, tx, projectID, doc)
+		}
+		return nil
 	})
 	if errors.Is(err, projects.ErrNotFound) || errors.Is(err, ErrConflict) {
 		return 0, err

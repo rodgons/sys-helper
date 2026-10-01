@@ -112,7 +112,10 @@ export type ComponentData = {
   type: string;
   name: string;
   properties: Record<string, string>;
+  // Display only, never saved: the Proposal preview marker and the Decision badge.
   diff?: Diff;
+  decisions?: number;
+  needsReview?: boolean;
 };
 export type ConnectionData = { kind: ConnectionKind; label: string; diff?: Diff };
 export type ComponentNode = Node<ComponentData, 'component'>;
