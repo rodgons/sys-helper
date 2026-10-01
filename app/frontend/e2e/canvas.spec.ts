@@ -15,9 +15,9 @@ test('build an architecture by hand and find it again after a reload', async ({ 
   await signIn();
   await newProject(page, 'Shop');
 
-  await page.getByLabel('Add component').selectOption('service');
+  await page.getByRole('button', { name: 'Add Service', exact: true }).click();
   await page.getByLabel('Name').fill('Orders API');
-  await page.getByLabel('Add component').selectOption('database');
+  await page.getByRole('button', { name: 'Add Database', exact: true }).click();
   await page.getByLabel('Engine').fill('PostgreSQL');
 
   // Drag from the service's right handle to the database's left handle.
@@ -49,12 +49,12 @@ test('a stale tab stops saving instead of overwriting newer work', async ({
   await newProject(page, 'Two tabs');
   const other = await context.newPage();
   await other.goto(page.url());
-  await expect(other.getByLabel('Add component')).toBeVisible();
+  await expect(other.getByRole('toolbar', { name: 'Add component' })).toBeVisible();
 
-  await page.getByLabel('Add component').selectOption('cache');
+  await page.getByRole('button', { name: 'Add Cache', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText('All changes saved', { timeout: 5000 });
 
-  await other.getByLabel('Add component').selectOption('queue');
+  await other.getByRole('button', { name: 'Add Queue / Stream', exact: true }).click();
 
   await expect(other.getByRole('alert')).toContainText('changed in another tab', { timeout: 5000 });
   await page.reload();

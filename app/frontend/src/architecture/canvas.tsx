@@ -23,12 +23,11 @@ import { useAuth } from '../lib/auth';
 import { useRefreshMessages, useSetProposalStatus } from '../lib/conversation';
 import { useKnowledge, useRefreshKnowledge } from '../lib/knowledge';
 import { Button } from '../ui/button';
-import { SelectField } from '../ui/select-field';
 import { Label, Text } from '../ui/typography';
 import { type SaveStatus, useAutosave } from './autosave';
+import { ComponentDock, DRAG_TYPE } from './dock';
 import { Inspector } from './inspector';
 import {
-  COMPONENT_TYPES,
   type ComponentData,
   type ComponentNode,
   type ConnectionData,
@@ -139,14 +138,18 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
     );
   };
 
-  const addComponent = (type: string) => {
+  /** Adds a Component centred on `at` (a screen point), or in free space mid-view without one. */
+  const addComponent = (type: string, at?: XY) => {
     // Aim for the middle of the visible area left of the inspector, which floats over the right edge.
     const box = wrapper.current?.getBoundingClientRect();
-    const center = reactFlow.screenToFlowPosition({
-      x: (box?.left ?? 0) + Math.max((box?.width ?? 0) - INSPECTOR_SPACE, 0) / 2,
-      y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
-    });
-    const position = freeSpot({ x: center.x - 90, y: center.y - 45 }, latest.current.nodes);
+    const center = reactFlow.screenToFlowPosition(
+      at ?? {
+        x: (box?.left ?? 0) + Math.max((box?.width ?? 0) - INSPECTOR_SPACE, 0) / 2,
+        y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
+      },
+    );
+    const wanted = { x: center.x - 90, y: center.y - 32 };
+    const position = at ? wanted : freeSpot(wanted, latest.current.nodes);
     const node = newComponentNode(type, position, latest.current.nodes);
     update(
       [
@@ -209,6 +212,17 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
           );
         }}
         onConnect={onConnect}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+        }}
+        onDrop={(e) => {
+          const type = e.dataTransfer.getData(DRAG_TYPE);
+          if (!type) return;
+          e.preventDefault();
+          addComponent(type, { x: e.clientX, y: e.clientY });
+        }}
         connectionMode={ConnectionMode.Loose}
         defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
         colorMode="system"
@@ -219,21 +233,7 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
         <Background gap={24} />
         <Controls showInteractive={false} />
         <Panel position="top-left">
-          <div {...stylex.props(styles.toolbar)}>
-            <SelectField
-              label="Add component"
-              hideLabel
-              value=""
-              onChange={(e) => {
-                if (e.target.value) addComponent(e.target.value);
-              }}
-              options={[
-                { value: '', label: 'Add component…' },
-                ...COMPONENT_TYPES.map((t) => ({ value: t.type, label: t.label })),
-              ]}
-            />
-            <SaveIndicator status={autosave.status} />
-          </div>
+          <SaveIndicator status={autosave.status} />
         </Panel>
         <Panel position="top-right">
           <Inspector
@@ -260,6 +260,7 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
                 </Button>
               </div>
             )}
+            <ComponentDock onAdd={(type) => addComponent(type)} />
           </div>
         </Panel>
       </ReactFlow>
@@ -492,7 +493,6 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 
 const styles = stylex.create({
   wrapper: { flexGrow: 1, minHeight: 0, position: 'relative' },
-  toolbar: { display: 'flex', alignItems: 'center', gap: space['--space-3'] },
   status: { fontSize: text['--text-xs'], color: color['--color-fg-muted'] },
   statusError: { color: color['--color-danger'] },
   bottom: {

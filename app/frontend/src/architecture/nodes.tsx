@@ -10,24 +10,53 @@ import {
 } from '@xyflow/react';
 import { color, font, radius, space, text } from '../design/tokens.stylex';
 import { type ComponentNode, type ConnectionEdge, typeDef } from './model';
+import { lookOf, SHAPES } from './shapes';
 
-/** A Component on the canvas: its type as a caption, its name, and a summary of its properties. */
-export function ComponentNodeView({ data, selected }: NodeProps<ComponentNode>) {
+/**
+ * A Component on the canvas, drawn in its type's shape (see shapes.tsx): its type as a caption with
+ * an icon, its name, and a summary of its properties.
+ */
+export function ComponentNodeView({ data, selected, width, height }: NodeProps<ComponentNode>) {
   const summary = typeDef(data.type)
     .properties.map((p) => data.properties[p.key])
     .filter(Boolean)
     .join(' · ');
+  const look = lookOf(data.type);
+  const shape = SHAPES[look.shape];
+  const Icon = look.icon;
+  // Before React Flow measures the node, draw the outline at a typical size.
+  const w = width ?? 180;
+  const h = height ?? 64;
+  const outline = shape.outline(w, h);
+  const [insetLeft, insetRight] = shape.inset?.(w, h) ?? [0, 0];
+  const stroke = [
+    styles.stroke,
+    selected && styles.strokeSelected,
+    data.diff && diffStrokes[data.diff],
+  ];
   return (
     <div
+      data-shape={look.shape}
       data-diff={data.diff}
       {...stylex.props(
         styles.node,
-        selected && styles.selected,
-        data.diff && diffStyles[data.diff],
+        styles.pad(...shape.pad),
+        data.diff === 'removed' && styles.faded,
       )}
     >
-      <Handle type="target" position={Position.Left} {...stylex.props(styles.handle)} />
+      <svg aria-hidden="true" {...stylex.props(styles.outline)}>
+        {selected && <path d={outline} {...stylex.props(styles.halo)} />}
+        <path d={outline} {...stylex.props(styles.fill, ...stroke)} />
+        {shape.detail && <path d={shape.detail(w, h)} {...stylex.props(styles.rim, ...stroke)} />}
+      </svg>
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ left: insetLeft }}
+        {...stylex.props(styles.handle)}
+      />
       <span {...stylex.props(styles.type)}>
+        <Icon size={12} strokeWidth={2.25} aria-hidden="true" />
         {typeDef(data.type).label}
         {data.diff && <span {...stylex.props(styles.diffTag)}> · {DIFF_LABEL[data.diff]}</span>}
       </span>
@@ -41,7 +70,12 @@ export function ComponentNodeView({ data, selected }: NodeProps<ComponentNode>) 
           {data.needsReview && ' · needs review'}
         </span>
       ) : null}
-      <Handle type="source" position={Position.Right} {...stylex.props(styles.handle)} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ right: insetRight }}
+        {...stylex.props(styles.handle)}
+      />
     </div>
   );
 }
@@ -101,26 +135,37 @@ export const edgeTypes = { connection: ConnectionEdgeView };
 
 const styles = stylex.create({
   node: {
+    position: 'relative',
     display: 'flex',
     flexDirection: 'column',
     gap: 2,
     minWidth: 150,
-    maxWidth: 220,
-    paddingInline: space['--space-3'],
-    paddingBlock: space['--space-2'],
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: color['--color-line-strong'],
-    borderRadius: radius['--radius-md'],
-    backgroundColor: color['--color-surface'],
+    maxWidth: 240,
     color: color['--color-fg'],
   },
-  selected: {
-    borderColor: color['--color-accent'],
-    boxShadow: `0 0 0 3px ${color['--color-accent-soft']}`,
+  pad: (top: number, right: number, bottom: number, left: number) => ({
+    paddingTop: top,
+    paddingRight: right,
+    paddingBottom: bottom,
+    paddingLeft: left,
+  }),
+  faded: { opacity: 0.5 },
+  outline: {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    overflow: 'visible',
+    pointerEvents: 'none',
   },
+  fill: { fill: color['--color-surface'] },
+  rim: { fill: 'none' },
+  stroke: { stroke: color['--color-line-strong'], strokeWidth: 1, strokeLinejoin: 'round' },
+  strokeSelected: { stroke: color['--color-accent'], strokeWidth: 2 },
+  halo: { fill: 'none', stroke: color['--color-accent-soft'], strokeWidth: 7 },
   diffTag: { fontWeight: 700 },
   badge: {
+    position: 'relative',
     alignSelf: 'flex-start',
     marginTop: 2,
     paddingInline: space['--space-2'],
@@ -133,14 +178,23 @@ const styles = stylex.create({
   badgeReview: { backgroundColor: color['--color-subtle'], color: color['--color-warning'] },
   struck: { textDecorationLine: 'line-through' },
   type: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
     fontFamily: font['--font-mono'],
     fontSize: '0.625rem',
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
     color: color['--color-accent-strong'],
   },
-  name: { fontSize: text['--text-sm'], fontWeight: 600, overflowWrap: 'anywhere' },
-  summary: { fontSize: text['--text-xs'], color: color['--color-fg-muted'] },
+  name: {
+    position: 'relative',
+    fontSize: text['--text-sm'],
+    fontWeight: 600,
+    overflowWrap: 'anywhere',
+  },
+  summary: { position: 'relative', fontSize: text['--text-xs'], color: color['--color-fg-muted'] },
   handle: {
     width: 8,
     height: 8,
@@ -161,19 +215,9 @@ const styles = stylex.create({
   at: (x: number, y: number) => ({ transform: `translate(-50%, -50%) translate(${x}px, ${y}px)` }),
 });
 
-// Proposal preview: green dashed for new, amber for changed, faded red for removed.
-const diffStyles = stylex.create({
-  added: {
-    borderStyle: 'dashed',
-    borderWidth: 2,
-    borderColor: color['--color-success'],
-  },
-  changed: {
-    borderWidth: 2,
-    borderColor: color['--color-warning'],
-  },
-  removed: {
-    borderColor: color['--color-danger'],
-    opacity: 0.5,
-  },
+// Proposal preview: green dashed for new, amber for changed, red for removed (faded as a whole).
+const diffStrokes = stylex.create({
+  added: { stroke: color['--color-success'], strokeWidth: 2, strokeDasharray: '6 4' },
+  changed: { stroke: color['--color-warning'], strokeWidth: 2 },
+  removed: { stroke: color['--color-danger'] },
 });

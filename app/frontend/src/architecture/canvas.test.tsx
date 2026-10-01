@@ -53,13 +53,13 @@ describe('ArchitectureCanvas', () => {
     expect(screen.getByRole('status')).toHaveTextContent('All changes saved');
   });
 
-  it('adds a component from the catalog, selects it and autosaves', async () => {
+  it('adds a component from the dock, selects it and autosaves', async () => {
     const save = stubSave();
     renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
       auth: signedIn(),
     });
 
-    fireEvent.change(screen.getByLabelText('Add component'), { target: { value: 'cache' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Cache' }));
 
     expect(screen.getByRole('region', { name: 'Inspector' })).toHaveTextContent('Cache');
     expect(screen.getByLabelText('Name')).toHaveValue('Cache');
@@ -73,12 +73,61 @@ describe('ArchitectureCanvas', () => {
     ]);
   });
 
+  it('offers every component type in the dock at the bottom', () => {
+    stubSave();
+    renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
+      auth: signedIn(),
+    });
+
+    const dock = screen.getByRole('toolbar', { name: 'Add component' });
+    expect(within(dock).getAllByRole('button')).toHaveLength(13);
+    expect(within(dock).getByRole('button', { name: 'Add Load Balancer' })).toBeInTheDocument();
+  });
+
+  it('adds a component where it is dropped from the dock', async () => {
+    const save = stubSave();
+    renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
+      auth: signedIn(),
+    });
+    const data = new Map<string, string>();
+    const dataTransfer = {
+      setData: (k: string, v: string) => data.set(k, v),
+      getData: (k: string) => data.get(k) ?? '',
+      types: [] as string[],
+      effectAllowed: '',
+      dropEffect: '',
+    };
+
+    fireEvent.dragStart(screen.getByRole('button', { name: 'Add Queue / Stream' }), {
+      dataTransfer,
+    });
+    dataTransfer.types = [...data.keys()];
+    fireEvent.dragOver(screen.getByTestId('rf__wrapper'), { dataTransfer });
+    fireEvent.drop(screen.getByTestId('rf__wrapper'), { dataTransfer, clientX: 40, clientY: 50 });
+
+    expect(screen.getByLabelText('Name')).toHaveValue('Queue / Stream');
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(savedDocument(save).components.map((c) => c.type)).toContain('queue');
+  });
+
+  it('draws each component in the shape of its type', () => {
+    stubSave();
+    renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
+      auth: signedIn(),
+    });
+
+    const shapeOf = (name: string) =>
+      screen.getByText(name).closest('[data-shape]')?.getAttribute('data-shape');
+    expect(shapeOf('Orders DB')).toBe('cylinder');
+    expect(shapeOf('Orders API')).toBe('rounded');
+  });
+
   it('edits and deletes the selected component through the inspector', async () => {
     const save = stubSave();
     renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
       auth: signedIn(),
     });
-    fireEvent.change(screen.getByLabelText('Add component'), { target: { value: 'queue' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Queue / Stream' }));
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Order events' } });
     fireEvent.change(screen.getByLabelText('Engine'), { target: { value: 'Kafka' } });
@@ -226,7 +275,7 @@ describe('ArchitectureCanvas', () => {
     renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
       auth: signedIn(),
     });
-    fireEvent.change(screen.getByLabelText('Add component'), { target: { value: 'cache' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Cache' }));
 
     const inspector = screen.getByRole('region', { name: 'Inspector' });
     await act(() => vi.advanceTimersByTimeAsync(0)); // load the knowledge

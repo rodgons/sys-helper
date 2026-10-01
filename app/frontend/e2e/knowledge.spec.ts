@@ -58,7 +58,7 @@ test('changing a requirement flags the decisions citing it until confirmed', asy
   await add.getByRole('button', { name: 'Add requirement' }).click();
   await expect(page.getByRole('region', { name: 'Scale' })).toContainText('R1');
 
-  await page.getByLabel('Add component').selectOption('database');
+  await page.getByRole('button', { name: 'Add Database', exact: true }).click();
   const inspector = page.getByRole('region', { name: 'Inspector' });
   await inspector.getByRole('button', { name: '+ Add decision' }).click();
   await inspector.getByLabel('Decision', { exact: true }).fill('Postgres for orders');
