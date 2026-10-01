@@ -3,7 +3,7 @@
 | Part     | Stack                                                                 | Path            |
 | -------- | --------------------------------------------------------------------- | --------------- |
 | Backend  | Go (stdlib `net/http` ServeMux), pgx → Supabase Postgres               | `app/backend`   |
-| Frontend | Preact + Vite, TypeScript, StyleX, TanStack Query, supabase-js, Biome | `app/frontend`  |
+| Frontend | React + Vite, TypeScript, React Router, StyleX, TanStack Query, supabase-js, Biome | `app/frontend`  |
 | Database | Supabase local stack via Supabase CLI (Docker)                        | `supabase`      |
 
 The root only holds shared config (`Makefile`, `.env`, `biome.json`, pnpm workspace). Run `make` to list every command.

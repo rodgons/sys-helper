@@ -1,6 +1,9 @@
-import * as stylex from '@stylexjs/stylex';
-import { useQuery } from '@tanstack/preact-query';
+import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from './lib/api';
+import { Badge, type BadgeTone } from './ui/badge';
+import { Cluster, Section, Stack } from './ui/layout';
+import { ArrowLink } from './ui/link';
+import { Display, Label, Text } from './ui/typography';
 
 type Readiness = { status: string; database: string };
 
@@ -10,23 +13,33 @@ export function App() {
     queryFn: () => apiFetch<Readiness>('/ready'),
   });
 
+  const [tone, badge]: [BadgeTone, string] = ready.isSuccess
+    ? ['success', 'Online']
+    : ready.isError
+      ? ['danger', 'Offline']
+      : ['neutral', 'Checking'];
+
   return (
-    <main {...stylex.props(styles.main)}>
-      <h1>sys-helper</h1>
-      <p role="status">
-        {ready.isPending && 'API: checking…'}
-        {ready.isError && 'API: unavailable'}
-        {ready.isSuccess && `API: ${ready.data.status} · database: ${ready.data.database}`}
-      </p>
+    <main>
+      <Section>
+        <Stack gap={6}>
+          <Label tone="accent">Status</Label>
+          <Display as="h1" size="lg">
+            sys-helper
+          </Display>
+          <Cluster gap={3}>
+            <Badge tone={tone}>{badge}</Badge>
+            <Text as="span" tone="muted">
+              <span role="status">
+                {ready.isPending && 'API: checking…'}
+                {ready.isError && 'API: unavailable'}
+                {ready.isSuccess && `API: ${ready.data.status} · database: ${ready.data.database}`}
+              </span>
+            </Text>
+          </Cluster>
+          <ArrowLink href="/ui-kit">Explore the design system</ArrowLink>
+        </Stack>
+      </Section>
     </main>
   );
 }
-
-const styles = stylex.create({
-  main: {
-    fontFamily: 'system-ui, sans-serif',
-    marginInline: 'auto',
-    maxWidth: 720,
-    padding: 24,
-  },
-});

@@ -5,7 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "jsxImportSource": "preact",
+    "jsxImportSource": "react",
     "types": ["vite/client", "@testing-library/jest-dom/vitest"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
