@@ -1,0 +1,36 @@
+{
+  "name": "frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@stylexjs/stylex": "^0.19.1",
+    "@supabase/supabase-js": "^2.117.2",
+    "@tanstack/preact-query": "^5.104.0",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@playwright/test": "^1.63.0",
+    "@preact/preset-vite": "^2.10.6",
+    "@stylexjs/unplugin": "^0.19.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/preact": "^3.2.4",
+    "@types/node": "^26.6.3",
+    "@vitest/coverage-v8": "5.0.2",
+    "happy-dom": "^20.14.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}

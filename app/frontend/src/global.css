@@ -1,0 +1,10 @@
+/* Global reset. Component styles live in StyleX; its build output is appended to this asset. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}

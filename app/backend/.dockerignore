@@ -1,0 +1,6 @@
+*_test.go
+Dockerfile
+.dockerignore
+.air.toml
+tmp/
+bin/

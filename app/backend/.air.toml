@@ -1,0 +1,24 @@
+# Live reload for `make dev` / `make dev-backend` (https://github.com/air-verse/air).
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/server ./cmd/server"
+  entrypoint = ["./tmp/server"]
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "bin", "testdata"]
+  exclude_regex = ["_test\\.go$"]
+  delay = 200
+  log = "build-errors.log"
+  # SIGINT lets the server drain requests; SIGKILL only if it takes longer than this.
+  send_interrupt = true
+  kill_delay = "12s"
+
+[log]
+  main_only = true
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = false

@@ -1,0 +1,24 @@
+# Env
+.env
+.env.*
+!.env.example
+
+# Node / frontend
+node_modules/
+app/frontend/dist/
+app/frontend/test-results/
+app/frontend/playwright-report/
+app/frontend/blob-report/
+app/frontend/coverage/
+app/frontend/playwright/.cache/
+
+# Go / backend
+app/backend/bin/
+app/backend/tmp/
+coverage.out
+*.test
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
