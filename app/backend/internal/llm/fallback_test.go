@@ -59,27 +59,27 @@ func TestFallback(t *testing.T) {
 	t.Run("uses the primary model when it answers in time", func(t *testing.T) {
 		var secondaryCalled bool
 		m := llm.Fallback{
-			Primary:           scripted{events: []string{"kimi ", "here"}},
-			Secondary:         scripted{events: []string{"gemma"}, called: &secondaryCalled},
+			Primary:           scripted{events: []string{"primary ", "here"}},
+			Secondary:         scripted{events: []string{"secondary"}, called: &secondaryCalled},
 			FirstEventTimeout: timeout,
 		}
 
 		got, err := text(t, m)
-		if err != nil || got != "kimi here" || secondaryCalled {
+		if err != nil || got != "primary here" || secondaryCalled {
 			t.Fatalf("got %q, %v (secondary called: %v)", got, err, secondaryCalled)
 		}
 	})
 
 	t.Run("switches to the secondary when the primary is slow to start", func(t *testing.T) {
 		m := llm.Fallback{
-			Primary:           scripted{delay: time.Second, events: []string{"kimi"}},
-			Secondary:         scripted{events: []string{"gemma"}},
+			Primary:           scripted{delay: time.Second, events: []string{"primary"}},
+			Secondary:         scripted{events: []string{"secondary"}},
 			FirstEventTimeout: timeout,
 		}
 
 		start := time.Now()
 		got, err := text(t, m)
-		if err != nil || got != "gemma" {
+		if err != nil || got != "secondary" {
 			t.Fatalf("got %q, %v", got, err)
 		}
 		if time.Since(start) > 500*time.Millisecond {
@@ -90,11 +90,11 @@ func TestFallback(t *testing.T) {
 	t.Run("switches to the secondary when the primary fails before answering", func(t *testing.T) {
 		m := llm.Fallback{
 			Primary:           scripted{err: errors.New("HTTP 503")},
-			Secondary:         scripted{events: []string{"gemma"}},
+			Secondary:         scripted{events: []string{"secondary"}},
 			FirstEventTimeout: timeout,
 		}
 
-		if got, err := text(t, m); err != nil || got != "gemma" {
+		if got, err := text(t, m); err != nil || got != "secondary" {
 			t.Fatalf("got %q, %v", got, err)
 		}
 	})
@@ -103,7 +103,7 @@ func TestFallback(t *testing.T) {
 		var secondaryCalled bool
 		m := llm.Fallback{
 			Primary:           scripted{events: []string{"half"}, err: errors.New("connection reset")},
-			Secondary:         scripted{events: []string{"gemma"}, called: &secondaryCalled},
+			Secondary:         scripted{events: []string{"secondary"}, called: &secondaryCalled},
 			FirstEventTimeout: timeout,
 		}
 

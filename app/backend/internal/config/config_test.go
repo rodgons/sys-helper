@@ -74,15 +74,15 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
-	t.Run("defaults the AI to Kimi K3 with a Gemma 4 fallback", func(t *testing.T) {
+	t.Run("defaults the AI to GLM-5.3 with a GPT-OSS-20B fallback", func(t *testing.T) {
 		cfg, err := config.Load(env(required(nil)))
 		if err != nil {
 			t.Fatal(err)
 		}
 		want := config.AI{
 			BaseURL:           "https://integrate.api.nvidia.com/v1",
-			Model:             "moonshotai/kimi-k3",
-			FallbackModel:     "google/gemma-4-31b-it",
+			Model:             "z-ai/glm-5.3",
+			FallbackModel:     "openai/gpt-oss-20b",
 			FirstTokenTimeout: 20 * time.Second,
 			DailyMessageLimit: 100,
 		}

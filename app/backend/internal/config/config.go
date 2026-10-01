@@ -65,8 +65,8 @@ func loadAI(getenv func(string) string) (AI, error) {
 	ai := AI{
 		BaseURL:           or(getenv("AI_BASE_URL"), "https://integrate.api.nvidia.com/v1"),
 		APIKey:            getenv("NVIDIA_API_KEY"),
-		Model:             or(getenv("AI_MODEL"), "moonshotai/kimi-k3"),
-		FallbackModel:     or(getenv("AI_FALLBACK_MODEL"), "google/gemma-4-31b-it"),
+		Model:             or(getenv("AI_MODEL"), "z-ai/glm-5.3"),
+		FallbackModel:     or(getenv("AI_FALLBACK_MODEL"), "openai/gpt-oss-20b"),
 		FirstTokenTimeout: 20 * time.Second,
 		DailyMessageLimit: 100,
 		Fake:              getenv("AI_FAKE") == "1",

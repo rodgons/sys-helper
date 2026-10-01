@@ -20,7 +20,7 @@ func TestLiveModels(t *testing.T) {
 	if key == "" {
 		t.Fatal("NVIDIA_API_KEY is required")
 	}
-	models := []string{"moonshotai/kimi-k3", "google/gemma-4-31b-it"}
+	models := []string{"z-ai/glm-5.3", "openai/gpt-oss-20b"}
 	if m := os.Getenv("AI_LIVE_MODELS"); m != "" {
 		models = strings.Split(m, ",")
 	}

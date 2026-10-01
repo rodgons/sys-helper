@@ -54,7 +54,7 @@ func TestOpenAIClient(t *testing.T) {
 			)
 		}))
 		defer srv.Close()
-		client := llm.OpenAIClient{BaseURL: srv.URL + "/v1", APIKey: "key-1", Model: "moonshotai/kimi-k3"}
+		client := llm.OpenAIClient{BaseURL: srv.URL + "/v1", APIKey: "key-1", Model: "z-ai/glm-5.3"}
 
 		events, err := collect(t, client, llm.Request{
 			Messages: []llm.Message{{Role: llm.RoleSystem, Content: "Be brief"}, {Role: llm.RoleUser, Content: "Hi"}},
@@ -64,7 +64,7 @@ func TestOpenAIClient(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if auth != "Bearer key-1" || got["model"] != "moonshotai/kimi-k3" || got["stream"] != true {
+		if auth != "Bearer key-1" || got["model"] != "z-ai/glm-5.3" || got["stream"] != true {
 			t.Errorf("request: auth=%q body=%v", auth, got)
 		}
 		msgs := got["messages"].([]any)
