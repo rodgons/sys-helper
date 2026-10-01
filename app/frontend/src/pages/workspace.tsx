@@ -1,9 +1,11 @@
 import * as stylex from '@stylexjs/stylex';
 import { useState } from 'react';
 import { Navigate, useParams } from 'react-router';
+import { ArchitectureCanvas } from '../architecture/canvas';
 import { color, layout, media, space } from '../design/tokens.stylex';
 import { ApiError } from '../lib/api';
-import { useProject } from '../lib/projects';
+import { useArchitecture } from '../lib/architecture';
+import { slugSuffix, useProject } from '../lib/projects';
 import { ProjectSidebar } from '../projects/project-sidebar';
 import { ProjectTitle } from '../projects/project-title';
 import { Section, Stack } from '../ui/layout';
@@ -63,9 +65,7 @@ function Workspace({ slug, username }: { slug: string; username: string }) {
           <div {...stylex.props(styles.bar)}>
             <ProjectTitle key={project.data.slug} project={project.data} />
           </div>
-          <div {...stylex.props(styles.placeholder)}>
-            <Text tone="faint">The architecture canvas goes here.</Text>
-          </div>
+          <CanvasPane slug={project.data.slug} />
         </section>
         <aside aria-label="Conversation" {...stylex.props(styles.pane, styles.right)}>
           <Heading as="h2" size="sm">
@@ -75,6 +75,20 @@ function Workspace({ slug, username }: { slug: string; username: string }) {
       </div>
     </main>
   );
+}
+
+function CanvasPane({ slug }: { slug: string }) {
+  const architecture = useArchitecture(slug);
+  if (architecture.isError) {
+    return (
+      <div {...stylex.props(styles.placeholder)}>
+        <Text tone="muted">Couldn't load the architecture. Refresh to try again.</Text>
+      </div>
+    );
+  }
+  if (!architecture.isSuccess) return <div {...stylex.props(styles.placeholder)} />;
+  // Keyed by suffix: the editor owns its state, so another Project needs a fresh one.
+  return <ArchitectureCanvas key={slugSuffix(slug)} slug={slug} initial={architecture.data} />;
 }
 
 const styles = stylex.create({

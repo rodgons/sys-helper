@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/auth"
 	"sys-helper/backend/internal/config"
 	"sys-helper/backend/internal/database"
@@ -50,6 +51,7 @@ func run() error {
 			DB:                 db,
 			Auth:               auth.Authenticator{Tokens: tokens, Identities: auth.Identities{DB: db}},
 			Projects:           projects.NewStore(db),
+			Architectures:      architecture.NewStore(db),
 			AllowedOrigins:     cfg.AllowedOrigins,
 			AllowedGitHubUsers: cfg.AllowedGitHubUsers,
 		}),

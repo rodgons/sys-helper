@@ -16,6 +16,7 @@ type Deps struct {
 	DB             Pinger
 	Auth           Authenticator
 	Projects       ProjectStore
+	Architectures  ArchitectureStore
 	AllowedOrigins []string
 	// AllowedGitHubUsers is the lowercase beta allowlist. Empty lets every GitHub user in.
 	AllowedGitHubUsers []string
@@ -33,6 +34,8 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /api/projects/{slug}", user(handleGetProject(deps.Projects)))
 	mux.HandleFunc("PATCH /api/projects/{slug}", user(handleRenameProject(deps.Projects)))
 	mux.HandleFunc("DELETE /api/projects/{slug}", user(handleDeleteProject(deps.Projects)))
+	mux.HandleFunc("GET /api/projects/{slug}/architecture", user(handleGetArchitecture(deps.Architectures)))
+	mux.HandleFunc("PUT /api/projects/{slug}/architecture", user(handleSaveArchitecture(deps.Architectures)))
 	return withCORS(deps.AllowedOrigins, mux)
 }
 

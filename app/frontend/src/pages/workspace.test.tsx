@@ -9,6 +9,7 @@ const shortener = {
   name: 'URL Shortener',
   updatedAt: '2026-09-30T00:00:00Z',
 };
+const emptyArchitecture = { version: 0, document: { components: [], connections: [] } };
 const chat = { slug: 'chat-app-a1b2c3d4e5', name: 'Chat App', updatedAt: '2026-09-29T00:00:00Z' };
 
 function renderAt(route: string) {
@@ -28,6 +29,8 @@ function stubApi(extra: Parameters<typeof mockApi>[0] = {}) {
       'GET /api/projects': [shortener, chat],
       'GET /api/projects/url-shortener-k3xa9q2m7p': shortener,
       'GET /api/projects/chat-app-a1b2c3d4e5': chat,
+      'GET /api/projects/url-shortener-k3xa9q2m7p/architecture': emptyArchitecture,
+      'GET /api/projects/chat-app-a1b2c3d4e5/architecture': emptyArchitecture,
       ...extra,
     }),
   );
