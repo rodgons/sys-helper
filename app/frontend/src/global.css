@@ -77,6 +77,24 @@ samp {
   font-family: var(--font-mono);
 }
 
+/* react-toastify, themed with our tokens. */
+:root {
+  --toastify-color-light: var(--color-raised);
+  --toastify-text-color-light: var(--color-fg);
+  --toastify-color-success: var(--color-success);
+  --toastify-color-error: var(--color-danger);
+  --toastify-color-info: var(--color-info);
+  --toastify-color-warning: var(--color-warning);
+  --toastify-font-family: var(--font-sans);
+  --toastify-toast-bd-radius: var(--radius-lg);
+}
+
+.Toastify__toast {
+  border: 1px solid var(--color-line);
+  box-shadow: none;
+  font-size: 0.875rem;
+}
+
 ::selection {
   background: color-mix(in srgb, var(--color-accent) 25%, transparent);
   color: var(--color-fg);

@@ -138,7 +138,7 @@ describe('Workspace', () => {
     );
   });
 
-  it('deletes the project only after confirmation', async () => {
+  it('deletes the project only after confirming in a dialog, then says so', async () => {
     let list = [shortener, chat];
     const remove = vi.fn(() => {
       list = [chat];
@@ -151,17 +151,21 @@ describe('Workspace', () => {
     renderAt('/p/url-shortener-k3xa9q2m7p');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const dialog = screen.getByRole('dialog', { name: /delete “URL Shortener”/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(remove).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    expect(screen.getByText(/delete “URL Shortener”/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete project' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete project' }),
+    );
 
     await waitFor(() => expect(remove).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getByTestId('location')).not.toHaveTextContent('url-shortener'),
     );
+    expect(await screen.findByText('“URL Shortener” was deleted.')).toBeInTheDocument();
   });
 
   it('tells small screens the workspace is built for desktop', async () => {

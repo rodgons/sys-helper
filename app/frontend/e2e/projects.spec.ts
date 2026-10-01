@@ -23,9 +23,10 @@ test('create, rename, revisit by old slug, and delete a project', async ({ page,
   await expect(page).toHaveURL(`/p/link-service-${suffix}`);
 
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
-  await page.getByRole('button', { name: 'Delete project' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete project' }).click();
 
   await expect(page).toHaveURL('/projects');
+  await expect(page.getByText('“Link Service” was deleted.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'No projects yet' })).toBeVisible();
 });
 

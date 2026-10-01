@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router';
 import { space } from '../design/tokens.stylex';
 import { type Project, useDeleteProject, useRenameProject } from '../lib/projects';
 import { Button } from '../ui/button';
+import { Dialog } from '../ui/dialog';
 import { TextField } from '../ui/text-field';
+import { toast } from '../ui/toaster';
 import { Heading, Text } from '../ui/typography';
 
 /** The Project's name with rename and (confirmed) delete actions. */
@@ -69,27 +71,36 @@ export function ProjectTitle({ project }: { project: Project }) {
           Delete
         </Button>
       </div>
-      {mode === 'delete' && (
-        <div role="alert" {...stylex.props(styles.row)}>
-          <Text size="sm" xstyle={styles.grow}>
-            Delete “{project.name}”? Its architecture and conversation are deleted too.
-          </Text>
-          <Button
-            size="sm"
-            disabled={remove.isPending}
-            onClick={() =>
-              remove.mutate(undefined, {
-                onSuccess: () => navigate('/projects', { replace: true }),
-              })
-            }
-          >
-            Delete project
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setMode('view')}>
-            Cancel
-          </Button>
-        </div>
-      )}
+      <Dialog
+        open={mode === 'delete'}
+        onClose={() => setMode('view')}
+        title={`Delete “${project.name}”?`}
+        actions={
+          <>
+            <Button size="sm" variant="ghost" onClick={() => setMode('view')}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={remove.isPending}
+              onClick={() =>
+                remove.mutate(undefined, {
+                  onSuccess: () => {
+                    toast.success(`“${project.name}” was deleted.`);
+                    navigate('/projects', { replace: true });
+                  },
+                })
+              }
+            >
+              Delete project
+            </Button>
+          </>
+        }
+      >
+        <Text size="sm" tone="muted">
+          Its architecture and conversation are deleted too. This can’t be undone.
+        </Text>
+      </Dialog>
     </div>
   );
 }
