@@ -91,12 +91,54 @@ describe('Workspace', () => {
 
     fireEvent.click(toggle);
 
-    expect(screen.queryByRole('navigation', { name: 'Projects' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Projects')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Show projects' }));
-    expect(screen.getByRole('navigation', { name: 'Projects' })).toBeInTheDocument();
+    expect(screen.getByText('Projects')).toBeInTheDocument();
   });
 
-  it('creates another project from the sidebar', async () => {
+  it('collapses and expands the chat, keeping the draft message', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'Half-typed' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide chat' }));
+
+    expect(screen.queryByRole('tab', { name: 'Conversation' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show chat' }));
+    expect(screen.getByRole('tab', { name: 'Conversation', selected: true })).toBeVisible();
+    expect(screen.getByLabelText('Message')).toHaveValue('Half-typed');
+  });
+
+  it('shows each project as a letter on the collapsed rail', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.click(await screen.findByRole('button', { name: 'Hide projects' }));
+
+    const rail = screen.getByRole('navigation', { name: 'Projects' });
+    const current = within(rail).getByRole('link', { name: 'URL Shortener' });
+    expect(current).toHaveTextContent('U');
+    expect(current).toHaveAttribute('aria-current', 'page');
+    expect(within(rail).getByRole('link', { name: 'Chat App' })).toHaveAttribute(
+      'href',
+      '/p/chat-app-a1b2c3d4e5',
+    );
+  });
+
+  it('opens the new project dialog from the rail', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.click(await screen.findByRole('button', { name: 'Hide projects' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    expect(within(dialog).getByLabelText('Project name')).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Show projects' })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('creates another project from a dialog', async () => {
     const created = {
       slug: 'search-q1w2e3r4t5',
       name: 'Search',
@@ -109,12 +151,16 @@ describe('Workspace', () => {
     renderAt('/p/url-shortener-k3xa9q2m7p');
 
     fireEvent.click(await screen.findByRole('button', { name: 'New project' }));
-    fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'Search' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
+    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    fireEvent.change(within(dialog).getByLabelText('Project name'), {
+      target: { value: 'Search' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }));
 
     await waitFor(() =>
       expect(screen.getByTestId('location')).toHaveTextContent('/p/search-q1w2e3r4t5'),
     );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('renames the project and follows the new slug', async () => {

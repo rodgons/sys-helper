@@ -87,3 +87,21 @@ test('changing a requirement flags the decisions citing it until confirmed', asy
     { timeout: 5000 },
   );
 });
+
+test('a default experience level from settings applies to projects without their own', async ({
+  page,
+  signIn,
+}) => {
+  await signIn();
+  await newProject(page, 'Default level');
+
+  await page.getByRole('button', { name: 'Account' }).click();
+  await page.getByRole('menuitem', { name: 'Settings' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings' });
+  await dialog.getByLabel('Default experience level').selectOption('expert');
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole('tab', { name: /Requirements/ }).click();
+  await expect(page.getByLabel('Your experience')).toHaveValue('expert');
+});

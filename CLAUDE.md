@@ -6,7 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Monorepo: Go API in `app/backend`, React SPA in `app/frontend`, Supabase local stack config in `supabase/`. The root is reserved for shared config (`Makefile`, `.env`, `biome.json`, pnpm workspace). Keep app code and scripts out of it. All workflows go through `make` (run `make` with no target to list them).
 
-Product docs: `CONTEXT.md` is the domain glossary (use its terms in code and conversation), `docs/specs/` holds feature specs and `docs/adr/` holds architecture decisions.
+## Docs
+
+Read the matching doc before changing that area. These are plain paths: open them with Read when the task touches them.
+
+- `CONTEXT.md`: domain glossary. Use its terms (Project, Architecture, Component, Connection, Proposal, Requirement, Decision…) in code and conversation.
+- `docs/backend.md`: Go packages, ownership scoping, locking and transaction hooks, endpoints, error codes, tables and migration rules.
+- `docs/ai.md`: the assistant turn, prompt, model clients and fallback, Proposal ops, validation, accept flow.
+- `docs/frontend.md`: query keys and cache updates, workspace panes, canvas state, autosave, Proposal review, chat streaming, styling, test helpers.
+- `docs/recipes.md`: checklist of every file to touch when adding a Component Type, connection kind, Proposal op, category or level, endpoint, table or UI component. Read it first for any of those.
+- `docs/specs/` (feature specs) and `docs/adr/` (architecture decisions): background for why things are the way they are.
 
 ## Commands
 
@@ -18,6 +27,7 @@ make test-all                         # lint + unit + integration + e2e
 make lint / make format               # tsc + Biome + gofmt + go vet
 make build                            # both prod Docker images
 make db-migration name=x / make db-reset
+make demo-screenshots                 # recapture the home page's workspace images (needs Supabase)
 ```
 
 Single tests:
@@ -25,26 +35,26 @@ Single tests:
 ```sh
 cd app/backend && go test -run 'TestReady/database_down' ./internal/httpapi
 cd app/backend && go test -tags integration -run TestConnect ./internal/database   # needs DATABASE_URL (make exports .env)
-pnpm --filter frontend exec vitest run src/app.test.tsx -t 'shows unavailable'
+pnpm --filter frontend exec vitest run src/pages/home.test.tsx -t 'sends signed-in users'
 pnpm --filter frontend exec playwright test e2e/smoke.spec.ts
 ```
 
 ## Architecture
 
-- **Data flow:** the browser uses TanStack Query (`@tanstack/react-query`) to call the Go API (`src/lib/api.ts`, base URL `VITE_API_URL`). The API connects to Supabase Postgres directly with a pgx pool. The frontend also gets a `supabase-js` client (`src/lib/supabase.ts`) for Supabase features (auth, storage, realtime), but nothing uses it yet. The API allows browser calls from other origins only for those listed in `CORS_ALLOWED_ORIGINS`.
-- **Auth:** the browser signs in with GitHub through Supabase Auth (`src/lib/auth.tsx`, `useAuth()`) and sends the access token as a bearer token (`apiFetch(path, { token })`). The API wraps protected routes in `requireUser` (`internal/httpapi/auth.go`). It verifies the token against Supabase's JWKS (`internal/auth`), reads the GitHub username from `auth.identities`, and applies `ALLOWED_GITHUB_USERS`. Never trust `user_metadata`, because users can edit it.
-- **AI:** `internal/assistant` runs a turn. It builds the context (system prompt in `prompt.go`, the current Architecture, the last 30 Messages), streams from an `llm.ChatModel`, and saves the reply only when it completes. `POST /api/projects/{slug}/reply` streams it as SSE (`delta`, `done`, `error`), and the client retries by calling it again. Models: `llm.OpenAIClient` talks to the OpenAI-compatible API of `AI_PROVIDER` (`nvidia` or `gemini`, each with its own key variable and default base URL in `config.providers`). The models come only from `.env`: `AI_MODEL` is required with the provider's key, and `llm.Fallback` switches to `AI_FALLBACK_MODEL` when `AI_MODEL` hasn't started answering within `AI_FIRST_TOKEN_TIMEOUT`. `llm.Fake` (`AI_FAKE=1`) is used by E2E. `make test-ai-live` hits the real API with the configured models.
-- **Proposals:** the AI changes the canvas only through the `propose_changes` tool (`internal/proposal`: the change ops, validation against the current Architecture, and the tool schema). The assistant gives the model one retry with the validation error. A Proposal is stored with its Message (`proposals` table, numbered by `seq`), and a new one supersedes the pending one. Accept and reject happen on the client: `src/architecture/proposal.ts` checks staleness, applies the Proposal (dagre places only new components) and builds the diff preview. Accepting sends the applied document through `autosave.commit` to `POST …/proposals/{seq}/accept`, which saves it and resolves the Proposal in one transaction (`architecture.Store.SaveWith`). With `AI_FAKE=1`, a message containing "propose" gets a canned Proposal.
-- **Knowledge:** `internal/knowledge` holds the Experience Level, Requirements and Decisions, numbered per Project (R1, D1; the API and the AI use these ids). Changing or removing a Requirement flags the Decisions citing it (`needs_review`), and any edit or empty PATCH of a Decision clears the flag. Every canvas save runs `knowledge.PruneDecisions` (`architecture.Store.AfterSave`), which drops targets that are gone and deletes Decisions left with none. Proposals carry knowledge ops too (`add_requirement`, `add_decision`, `set_experience_level`, …). These are applied server-side on accept (`conversation.Accept`), and new items' refs map to ids with `proposal.ComponentID` / `ConnectionID`, which the client mirrors. The assistant's system prompt lists the Project's knowledge. The UI is the right pane's tabs (`src/knowledge/`) plus the inspector's Decisions section.
+- **Data flow:** the browser calls the Go API through TanStack Query hooks in `src/lib/` (`apiFetch`, base URL `VITE_API_URL`). The API talks to Supabase Postgres directly with a pgx pool; nothing uses supabase-js except auth. Cross-origin calls are allowed only from `CORS_ALLOWED_ORIGINS`.
+- **Auth:** GitHub sign-in through Supabase Auth (`src/lib/auth.tsx`, `useAuth()`). The access token goes as a bearer token. `requireUser` (`internal/httpapi/auth.go`) verifies it against Supabase's JWKS, reads the GitHub username from `auth.identities` and applies `ALLOWED_GITHUB_USERS`. Never trust `user_metadata`, because users can edit it.
+- **Ownership:** every store query is scoped to the User and the Project's slug suffix. Another User's Project is a 404, never a 403.
+- **AI:** the AI changes the canvas and knowledge only through Proposals (the `propose_changes` tool), which the User accepts or rejects as a whole. Models come only from `.env` (`AI_PROVIDER`, `AI_MODEL`, `AI_FALLBACK_MODEL`). `AI_FAKE=1` gives a canned model for E2E and offline work.
+- **Canvas ↔ server:** the canvas owns the Architecture document while open and autosaves it with a base version (409 on conflict). Accepting a Proposal applies it on the client and saves it in the same transaction that resolves it. Canvas saves prune Decisions whose targets are gone.
+- **Duplicated catalogs:** Component Types, connection kinds, Requirement categories, Experience Levels, Proposal ops and accepted-item ids (`p{seq}-{ref}`) exist in both Go and TypeScript, and the enums also exist in SQL checks. Change them together (`docs/recipes.md`).
 - **Frontend routing:** React Router in declarative mode (`<Routes>` in `src/root.tsx`, `BrowserRouter` in `main.tsx`).
-- **Config:** a single root `.env` serves every app. Make loads and exports it (`-include .env` + `export`), and Vite reads it because `envDir: '../..'`. `VITE_*` values are compiled into the bundle at build time, so production values are passed as Docker build args (`make build-frontend VITE_API_URL=…`).
-- **Backend wiring:** `cmd/server/main.go` is the only place real dependencies are built. Handlers in `internal/httpapi` depend on small interfaces (e.g. `Pinger`) passed in through `httpapi.Deps`, and `config.Load` takes an injected `getenv`. Tests supply fakes through these seams. Keep that pattern for new dependencies. Routes use Go 1.22+ `ServeMux` patterns (`"GET /path"`), with no router library.
-- **Design system:** tokens live in `src/design/tokens.stylex.ts` (colors, space, type, radius, layout, `media` breakpoints). Their keys start with `--`, so StyleX emits them as literal CSS variables that `global.css` also uses. Base components are in `src/ui/`, and `/ui-kit` (`src/pages/ui-kit.tsx`) renders all of them. "Design system" means only these UI tokens and components; the architecture a User draws is an **Architecture** (see `CONTEXT.md`). Use token roles (`color['--color-fg']`), not raw values.
-- **Tests:** follow test-first (red/green/refactor; README has the strategy).
-  - **Go:** black-box `package x_test`. Integration tests live in `*_integration_test.go` files with `//go:build integration`.
-  - **Frontend:** render with `renderWithQuery` from `src/test/render.tsx` (pass `{ route }` to start the MemoryRouter at a path) and stub network calls with `vi.stubGlobal('fetch', vi.fn(mockApi({ 'GET /api/projects': [...] })))`. Pass `auth: signedIn()` or `signedOut()` to set the session, and render `<LocationProbe />` to assert on navigation. Vitest gets fixed `VITE_*` values from `test.env` in `vite.config.ts`.
-  - **Go integration:** `internal/testdb` gives you `Pool(t)` and `User(t, pool, githubUsername)`, which creates a Supabase user and removes it after the test.
-  - **E2E:** Playwright starts the real API and Vite through `webServer`. Import `test` from `e2e/fixtures.ts`. Its `signIn()` fixture creates a GitHub-linked user and injects the session, because real GitHub OAuth can't run in tests.
+- **Config:** one root `.env` serves every app. Make exports it (`-include .env` + `export`), and Vite reads it via `envDir: '../..'`. `VITE_*` values are compiled in at build time, so production values are Docker build args (`make build-frontend VITE_API_URL=…`).
+- **Backend wiring:** `cmd/server/main.go` is the only place real dependencies are built. Handlers in `internal/httpapi` depend on small interfaces passed through `httpapi.Deps`, and `config.Load` takes an injected `getenv`. Tests supply fakes through these seams. Keep that pattern. Routes use Go 1.22+ `ServeMux` patterns, with no router library.
+- **Design system:** this term means only the UI tokens (`src/design/tokens.stylex.ts`) and base components (`src/ui/`, all shown on `/ui-kit`). What a User draws is an **Architecture**. Use token roles (`color['--color-fg']`), not raw values.
+- **Tests:** test-first (red/green/refactor; README has the strategy).
+  - **Go:** black-box `package x_test`. Integration tests live in `*_integration_test.go` with `//go:build integration` and use `internal/testdb` (`Pool(t)`, `User(t, pool, githubUsername)`).
+  - **Frontend:** `renderWithQuery` + `mockApi` + `signedIn()` from `src/test/render.tsx`. Stub fetch with `vi.stubGlobal('fetch', vi.fn(mockApi({...})))`.
+  - **E2E:** import `test` from `e2e/fixtures.ts`; its `signIn()` fixture creates a GitHub-linked user, because real OAuth can't run in tests.
 
 ## Non-obvious constraints (each one was a real bug)
 
@@ -58,3 +68,4 @@ pnpm --filter frontend exec playwright test e2e/smoke.spec.ts
   - **Final images:** keep them minimal. The backend runs on `scratch` and the frontend on `static-web-server`, both as non-root users on port 8080.
 - **Biome config:** `biome.json` uses `"preset": "recommended"`. `biome migrate` rewrote it to `"none"` once, which silently disabled the lint rules.
 - **Supabase CLI:** use the pnpm devDependency at the root (`pnpm exec supabase`). There is no global install. Local keys in `.env.example` are the CLI's public demo defaults.
+- **Reply timeouts:** `/reply` clears the server's `WriteTimeout` per request, and `OpenAIClient` must not set an `http.Client.Timeout`. Replies stream longer than both, so they are bounded by the request context.

@@ -1,5 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
-import { type ReactNode, useState } from 'react';
+import { LogOut, Settings } from 'lucide-react';
+import { type ReactNode, useId, useState } from 'react';
 import { color, font, media, radius, space, text } from '../design/tokens.stylex';
 import { Avatar } from '../ui/avatar';
 import { Badge } from '../ui/badge';
@@ -9,8 +10,11 @@ import { CommandLine } from '../ui/command-line';
 import { Dialog } from '../ui/dialog';
 import { Cluster, Grid, Section, Stack } from '../ui/layout';
 import { ArrowLink, TextLink } from '../ui/link';
-import { Menu, MenuItem } from '../ui/menu';
+import { Logo } from '../ui/logo';
+import { Menu, MenuHeader, MenuItem, MenuSeparator } from '../ui/menu';
 import { MeterList } from '../ui/meter';
+import { PaneToggle } from '../ui/pane-toggle';
+import { SelectField } from '../ui/select-field';
 import { TextArea } from '../ui/text-area';
 import { TextField } from '../ui/text-field';
 import { toast } from '../ui/toaster';
@@ -43,6 +47,20 @@ export function UiKitPage() {
           </div>
         </Stack>
       </Section>
+
+      <DocSection id="brand" index="00" title="Brand">
+        <Text tone="muted">
+          The mark: a speech bubble holding an architecture, with the AI on its corner. Its purples
+          are fixed in both color schemes. <InlineCode>public/favicon.svg</InlineCode> is the same
+          mark on a dark tile.
+        </Text>
+        <Cluster gap={6}>
+          <Logo size={96} />
+          <Logo size={48} />
+          <Logo size={28} />
+          <Logo size={16} />
+        </Cluster>
+      </DocSection>
 
       <DocSection id="color" index="01" title="Color">
         <Text tone="muted">
@@ -252,6 +270,21 @@ export function UiKitPage() {
           <TextField label="Project name" placeholder="e.g. URL shortener" />
           <TextField label="Hidden label" hideLabel placeholder="Label kept for screen readers" />
           <TextArea label="Text area" placeholder="Several lines, e.g. a decision's rationale" />
+          <SelectField
+            label="Select field"
+            defaultValue="intermediate"
+            options={[
+              { value: 'beginner', label: 'Beginner' },
+              { value: 'intermediate', label: 'Intermediate' },
+              { value: 'advanced', label: 'Advanced' },
+            ]}
+          />
+          <TextField label="Disabled" disabled defaultValue="Loading…" />
+          <SelectField
+            label="Disabled select"
+            disabled
+            options={[{ value: '', label: 'Ask in each project' }]}
+          />
         </Grid>
       </DocSection>
 
@@ -263,25 +296,90 @@ export function UiKitPage() {
         <Cluster gap={3}>
           <Avatar name="octocat" src="https://github.com/octocat.png" />
           <Avatar name="octocat" />
+          <Avatar name="octocat" size={24} />
+          <Avatar name="octocat" src="https://github.com/octocat.png" size={48} />
           <Menu label="Account" trigger={<Avatar name="octocat" />}>
-            <MenuItem onSelect={() => toast.info('Signed out (not really).')}>Sign out</MenuItem>
+            <MenuHeader>
+              <Text size="sm" tone="muted">
+                Signed in as
+              </Text>
+              octocat
+            </MenuHeader>
+            <MenuSeparator />
+            <MenuItem icon={Settings} onSelect={() => toast.info('Settings (not really).')}>
+              Settings
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem icon={LogOut} onSelect={() => toast.info('Signed out (not really).')}>
+              Sign out
+            </MenuItem>
           </Menu>
         </Cluster>
+      </DocSection>
+
+      <DocSection id="panes" index="13" title="Pane toggle">
+        <PaneToggles />
       </DocSection>
     </main>
   );
 }
 
-function Overlays() {
-  const [open, setOpen] = useState(false);
+function PaneToggles() {
+  const [left, setLeft] = useState(true);
+  const [right, setRight] = useState(true);
   return (
     <Cluster gap={3}>
-      <Button variant="outline" onClick={() => setOpen(true)}>
-        Open dialog
-      </Button>
-      <Button variant="outline" onClick={() => toast.success('“URL Shortener” was deleted.')}>
-        Show toast
-      </Button>
+      <PaneToggle side="left" name="projects" open={left} onToggle={() => setLeft((o) => !o)} />
+      <PaneToggle side="right" name="panel" open={right} onToggle={() => setRight((o) => !o)} />
+    </Cluster>
+  );
+}
+
+function Overlays() {
+  const [open, setOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  return (
+    <Stack gap={6}>
+      <Stack gap={2}>
+        <Label>Dialog · confirm / form</Label>
+        <Cluster gap={3}>
+          <Button variant="outline" onClick={() => setOpen(true)}>
+            Confirm dialog
+          </Button>
+          <Button variant="outline" onClick={() => setFormOpen(true)}>
+            Form dialog
+          </Button>
+        </Cluster>
+      </Stack>
+      <Stack gap={2}>
+        <Label>Toast · success / error / info / warning</Label>
+        <Cluster gap={3}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => toast.success('“URL Shortener” was deleted.')}
+          >
+            Success
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => toast.error("Couldn't save your settings. Try again.")}
+          >
+            Error
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => toast.info('Proposal superseded.')}>
+            Info
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => toast.warning('This Proposal is out of date.')}
+          >
+            Warning
+          </Button>
+        </Cluster>
+      </Stack>
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
@@ -301,7 +399,52 @@ function Overlays() {
           A confirmation for an action that can’t be undone.
         </Text>
       </Dialog>
-    </Cluster>
+      <FormDialog open={formOpen} onClose={() => setFormOpen(false)} />
+    </Stack>
+  );
+}
+
+/** A form in a Dialog: the submit button lives in `actions`, tied to the form by `form={id}`. */
+function FormDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const formId = useId();
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Settings"
+      actions={
+        <>
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} size="sm">
+            Save
+          </Button>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        aria-label="Settings"
+        onSubmit={(e) => {
+          e.preventDefault();
+          toast.success('Settings saved.');
+          onClose();
+        }}
+        {...stylex.props(styles.dialogForm)}
+      >
+        <SelectField
+          label="Default experience level"
+          options={[
+            { value: '', label: 'Ask in each project' },
+            { value: 'beginner', label: 'Beginner' },
+          ]}
+        />
+        <Text size="sm" tone="muted">
+          Helper copy sits under the field in muted small text.
+        </Text>
+      </form>
+    </Dialog>
   );
 }
 
@@ -364,6 +507,7 @@ function Stat({ label, value, unit }: { label: string; value: string; unit: stri
 const COLOR_TOKENS = [
   '--color-canvas',
   '--color-subtle',
+  '--color-surface',
   '--color-raised',
   '--color-line',
   '--color-line-strong',
@@ -373,7 +517,9 @@ const COLOR_TOKENS = [
   '--color-accent',
   '--color-accent-strong',
   '--color-accent-soft',
+  '--color-on-accent',
   '--color-slab',
+  '--color-on-slab',
   '--color-success',
   '--color-warning',
   '--color-danger',
@@ -398,6 +544,7 @@ const styles = stylex.create({
     paddingTop: { default: space['--space-12'], [media.md]: space['--space-16'] },
   },
   command: { maxWidth: '28rem', width: '100%' },
+  dialogForm: { display: 'flex', flexDirection: 'column', gap: space['--space-3'] },
   docSection: {
     display: 'grid',
     gridTemplateColumns: { default: 'minmax(0, 1fr)', [media.lg]: '16rem minmax(0, 1fr)' },

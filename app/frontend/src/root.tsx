@@ -1,4 +1,7 @@
+import { LogOut, Settings } from 'lucide-react';
+import { useState } from 'react';
 import { Route, Routes, useLocation } from 'react-router';
+import { SettingsDialog } from './account/settings-dialog';
 import { useAuth } from './lib/auth';
 import { useMe } from './lib/me';
 import { HomePage } from './pages/home';
@@ -7,23 +10,25 @@ import { UiKitPage } from './pages/ui-kit';
 import { WorkspacePage } from './pages/workspace';
 import { Avatar } from './ui/avatar';
 import { Button } from './ui/button';
-import { Menu, MenuItem } from './ui/menu';
+import { Menu, MenuHeader, MenuItem, MenuSeparator } from './ui/menu';
 import { SiteHeader } from './ui/site-header';
 import { Toaster } from './ui/toaster';
+import { Text } from './ui/typography';
 
-const NAV_LINKS = [
-  { href: '/', label: 'Home' },
-  { href: '/ui-kit', label: 'UI kit' },
-];
+// The UI kit (`/ui-kit`) is a reference for developers, so it is reachable only by URL.
+const VISITOR_LINKS = [{ href: '/', label: 'Home' }];
 
 /** App shell: site header, the page for the current route and the toasts. Unknown paths fall back to the home page. */
 export function Root() {
   const { pathname } = useLocation();
+  const auth = useAuth();
+  // Signed-in Users work from their projects; the home page is for visitors.
+  const links = auth.status === 'signedIn' ? [] : VISITOR_LINKS;
   const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
 
   return (
     <>
-      <SiteHeader links={NAV_LINKS} currentPath={normalized} actions={<AuthAction />} />
+      <SiteHeader links={links} currentPath={normalized} actions={<AuthAction />} />
       <Routes>
         <Route path="/ui-kit" element={<UiKitPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
@@ -50,12 +55,33 @@ function AuthAction() {
 /** The User's GitHub avatar, opening a menu of account actions. */
 function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
   const me = useMe();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   return (
-    <Menu
-      label="Account"
-      trigger={<Avatar name={me.data?.username ?? ''} src={me.data?.avatarUrl} />}
-    >
-      <MenuItem onSelect={onSignOut}>Sign out</MenuItem>
-    </Menu>
+    <>
+      <Menu
+        label="Account"
+        trigger={<Avatar name={me.data?.username ?? ''} src={me.data?.avatarUrl} />}
+      >
+        {me.data && (
+          <>
+            <MenuHeader>
+              <Text size="sm" tone="muted">
+                Signed in as
+              </Text>
+              {me.data.username}
+            </MenuHeader>
+            <MenuSeparator />
+          </>
+        )}
+        <MenuItem icon={Settings} onSelect={() => setSettingsOpen(true)}>
+          Settings
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={LogOut} onSelect={onSignOut}>
+          Sign out
+        </MenuItem>
+      </Menu>
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+    </>
   );
 }

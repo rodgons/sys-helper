@@ -1,41 +1,73 @@
 import * as stylex from '@stylexjs/stylex';
+import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
+import { color, motion, radius, space, text } from '../design/tokens.stylex';
 import { slugSuffix, useProjects } from '../lib/projects';
+import { Avatar } from '../ui/avatar';
 import { Button } from '../ui/button';
-import { Label, Text } from '../ui/typography';
+import { Dialog } from '../ui/dialog';
+import { PaneToggle } from '../ui/pane-toggle';
+import { Label } from '../ui/typography';
 import { NewProjectForm } from './new-project-form';
 
-/** Left pane of the workspace: the User's Projects, a way to add one, and a collapse toggle. */
+/**
+ * Left pane of the workspace: the User's Projects, a button that adds one in a dialog, and a
+ * collapse toggle. Collapsed, it is a rail of the Projects' initials.
+ */
 export function ProjectSidebar({
   currentSlug,
-  username,
   open,
   onToggle,
 }: {
   currentSlug: string;
-  username: string;
   open: boolean;
   onToggle: () => void;
 }) {
   const projects = useProjects();
   const [creating, setCreating] = useState(false);
 
-  const toggle = (
-    <button
-      type="button"
-      aria-expanded={open}
-      onClick={onToggle}
-      title={open ? 'Hide projects' : 'Show projects'}
-      {...stylex.props(styles.toggle)}
-    >
-      <span aria-hidden="true">{open ? '«' : '»'}</span>
-      <span {...stylex.props(styles.srOnly)}>{open ? 'Hide projects' : 'Show projects'}</span>
-    </button>
+  const toggle = <PaneToggle side="left" name="projects" open={open} onToggle={onToggle} />;
+
+  const dialog = creating && (
+    <Dialog open onClose={() => setCreating(false)} title="New project">
+      <NewProjectForm onCancel={() => setCreating(false)} />
+    </Dialog>
   );
 
-  if (!open) return <div {...stylex.props(styles.rail)}>{toggle}</div>;
+  const isCurrent = (slug: string) =>
+    slugSuffix(slug) === slugSuffix(currentSlug) ? 'page' : undefined;
+
+  if (!open) {
+    return (
+      <div {...stylex.props(styles.rail)}>
+        {toggle}
+        <nav aria-label="Projects" {...stylex.props(styles.railList)}>
+          {projects.data?.map((p) => (
+            <Link
+              key={p.slug}
+              to={`/p/${p.slug}`}
+              title={p.name}
+              aria-current={isCurrent(p.slug)}
+              {...stylex.props(styles.railItem)}
+            >
+              <Avatar name={p.name} size={28} />
+            </Link>
+          ))}
+        </nav>
+        <button
+          type="button"
+          aria-label="New project"
+          title="New project"
+          onClick={() => setCreating(true)}
+          {...stylex.props(styles.railAdd)}
+        >
+          <Plus size={16} strokeWidth={2} aria-hidden="true" />
+        </button>
+        {dialog}
+      </div>
+    );
+  }
 
   return (
     <div {...stylex.props(styles.sidebar)}>
@@ -48,7 +80,7 @@ export function ProjectSidebar({
           <Link
             key={p.slug}
             to={`/p/${p.slug}`}
-            aria-current={slugSuffix(p.slug) === slugSuffix(currentSlug) ? 'page' : undefined}
+            aria-current={isCurrent(p.slug)}
             {...stylex.props(styles.item)}
           >
             {p.name}
@@ -56,17 +88,11 @@ export function ProjectSidebar({
         ))}
       </nav>
       <div {...stylex.props(styles.create)}>
-        {creating ? (
-          <NewProjectForm onCancel={() => setCreating(false)} />
-        ) : (
-          <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
-            New project
-          </Button>
-        )}
+        <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+          New project
+        </Button>
       </div>
-      <Text size="sm" tone="faint" xstyle={styles.footer}>
-        {username}
-      </Text>
+      {dialog}
     </div>
   );
 }
@@ -79,27 +105,58 @@ const styles = stylex.create({
     minHeight: 0,
     padding: space['--space-4'],
   },
-  rail: { display: 'flex', justifyContent: 'center', paddingBlock: space['--space-4'] },
-  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  toggle: {
+  rail: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: space['--space-3'],
+    minHeight: 0,
+    paddingBlock: space['--space-4'],
+  },
+  railList: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: space['--space-2'],
+    minHeight: 0,
+    overflowY: 'auto',
+    // Room for the current Project's ring, which the scroll box would otherwise clip.
+    padding: 3,
+  },
+  railItem: {
+    display: 'inline-flex',
+    borderRadius: radius['--radius-full'],
+    outlineWidth: 2,
+    outlineOffset: 1,
+    outlineStyle: {
+      default: 'none',
+      ':hover': 'solid',
+      ':focus-visible': 'solid',
+      '[aria-current="page"]': 'solid',
+    },
+    outlineColor: {
+      default: color['--color-line-strong'],
+      ':focus-visible': color['--color-accent'],
+      '[aria-current="page"]': color['--color-accent'],
+    },
+  },
+  railAdd: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
     width: 28,
     height: 28,
+    padding: 0,
     borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: color['--color-line'],
-    borderRadius: radius['--radius-sm'],
+    borderStyle: 'dashed',
+    borderColor: color['--color-line-strong'],
+    borderRadius: radius['--radius-full'],
     backgroundColor: { default: 'transparent', ':hover': color['--color-subtle'] },
-    fontFamily: font['--font-mono'],
+    color: color['--color-fg-muted'],
     cursor: 'pointer',
   },
-  srOnly: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    overflow: 'hidden',
-    clipPath: 'inset(50%)',
-    whiteSpace: 'nowrap',
-  },
+  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   list: {
     display: 'flex',
     flexDirection: 'column',
@@ -132,11 +189,4 @@ const styles = stylex.create({
     transitionDuration: motion['--duration'],
   },
   create: { paddingTop: space['--space-2'] },
-  footer: {
-    paddingTop: space['--space-3'],
-    borderTopWidth: 1,
-    borderTopStyle: 'solid',
-    borderTopColor: color['--color-line'],
-    fontFamily: font['--font-mono'],
-  },
 });

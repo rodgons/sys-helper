@@ -118,6 +118,32 @@ func (s *Store) SetExperienceLevel(ctx context.Context, userID, suffix, level st
 	})
 }
 
+// DefaultExperienceLevel is the User's default Experience Level, or "" if they haven't set one.
+func (s *Store) DefaultExperienceLevel(ctx context.Context, userID string) (string, error) {
+	var level *string
+	err := s.db.QueryRow(ctx, `SELECT experience_level FROM user_settings WHERE user_id = $1`, userID).Scan(&level)
+	if errors.Is(err, pgx.ErrNoRows) || level == nil {
+		return "", nil
+	}
+	return *level, err
+}
+
+// SetDefaultExperienceLevel sets the level every Project without its own uses; "" clears it.
+func (s *Store) SetDefaultExperienceLevel(ctx context.Context, userID, level string) error {
+	var stored *string
+	if level != "" {
+		if err := CheckLevel(level); err != nil {
+			return err
+		}
+		stored = &level
+	}
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO user_settings (user_id, experience_level) VALUES ($1, $2)
+		ON CONFLICT (user_id) DO UPDATE SET experience_level = excluded.experience_level, updated_at = now()`,
+		userID, stored)
+	return err
+}
+
 // inProject runs fn in a transaction holding the User's Project row lock.
 func (s *Store) inProject(ctx context.Context, userID, suffix string, fn func(tx pgx.Tx, projectID string) error) error {
 	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
@@ -134,11 +160,15 @@ func (s *Store) inProject(ctx context.Context, userID, suffix string, fn func(tx
 	})
 }
 
-// Load reads a Project's knowledge, Requirements and Decisions in number order.
+// Load reads a Project's knowledge, Requirements and Decisions in number order. A Project that
+// hasn't recorded an Experience Level gets its owner's default.
 func Load(ctx context.Context, db DB, projectID string) (Knowledge, error) {
 	k := Knowledge{Requirements: []Requirement{}, Decisions: []Decision{}}
 	var level *string
-	if err := db.QueryRow(ctx, `SELECT experience_level FROM projects WHERE id = $1`, projectID).Scan(&level); err != nil {
+	if err := db.QueryRow(ctx, `
+		SELECT coalesce(p.experience_level, s.experience_level)
+		FROM projects p LEFT JOIN user_settings s ON s.user_id = p.user_id
+		WHERE p.id = $1`, projectID).Scan(&level); err != nil {
 		return Knowledge{}, fmt.Errorf("load experience level: %w", err)
 	}
 	if level != nil {

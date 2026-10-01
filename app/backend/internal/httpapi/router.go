@@ -21,6 +21,7 @@ type Deps struct {
 	Assistant     Replier
 	Reviews       ProposalReviews
 	Knowledge     KnowledgeStore
+	Settings      SettingsStore
 	// DailyMessageLimit caps the messages a User can send per UTC day. 0 means no cap.
 	DailyMessageLimit int
 	AllowedOrigins    []string
@@ -35,6 +36,8 @@ func NewRouter(deps Deps) http.Handler {
 
 	user := func(h http.HandlerFunc) http.HandlerFunc { return requireUser(deps.Auth, deps.AllowedGitHubUsers, h) }
 	mux.HandleFunc("GET /api/me", user(handleMe))
+	mux.HandleFunc("GET /api/settings", user(handleGetSettings(deps.Settings)))
+	mux.HandleFunc("PUT /api/settings", user(handleSaveSettings(deps.Settings)))
 	mux.HandleFunc("GET /api/projects", user(handleListProjects(deps.Projects)))
 	mux.HandleFunc("POST /api/projects", user(handleCreateProject(deps.Projects)))
 	mux.HandleFunc("GET /api/projects/{slug}", user(handleGetProject(deps.Projects)))

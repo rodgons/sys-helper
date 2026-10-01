@@ -1,10 +1,13 @@
 import * as stylex from '@stylexjs/stylex';
 import { Navigate } from 'react-router';
-import { color, font, space, text } from '../design/tokens.stylex';
+import workspaceDark from '../assets/workspace-dark.webp';
+import workspaceLight from '../assets/workspace-light.webp';
+import { color, font, radius, space, text } from '../design/tokens.stylex';
 import { useAuth } from '../lib/auth';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Grid, Section, Stack } from '../ui/layout';
+import { Logo } from '../ui/logo';
 import { Display, Heading, Label, Text } from '../ui/typography';
 
 const STEPS = [
@@ -31,6 +34,7 @@ export function HomePage() {
     <main>
       <Section>
         <Stack gap={6}>
+          <Logo size={72} />
           <Label tone="accent">System design, explained</Label>
           <Display as="h1" size="lg">
             Design an architecture that scales, and learn why it works.
@@ -45,6 +49,35 @@ export function HomePage() {
               Sign in with GitHub
             </Button>
           </div>
+        </Stack>
+      </Section>
+
+      <Section ruled aria-labelledby="preview">
+        <Stack gap={8}>
+          <Stack gap={3}>
+            <Label tone="accent">Inside the workspace</Label>
+            <Display as="h2" size="sm" id="preview">
+              Your design, its reasons and the conversation, side by side
+            </Display>
+          </Stack>
+          <figure {...stylex.props(styles.figure)}>
+            {/* Recaptured by `make demo-screenshots`; the scheme matches the visitor's. */}
+            <picture>
+              <source srcSet={workspaceDark} media="(prefers-color-scheme: dark)" />
+              <img
+                src={workspaceLight}
+                width={2880}
+                height={1800}
+                alt="The sys-helper workspace: a social app's architecture canvas in the middle, and the AI's conversation on the right with a pending proposal to add hashtag search."
+                {...stylex.props(styles.shot)}
+              />
+            </picture>
+            <figcaption {...stylex.props(styles.caption)}>
+              The AI proposed hashtag search. Its new components are dashed on the canvas until you
+              accept or reject the proposal, and the requirements and decisions it relies on sit in
+              their own tabs.
+            </figcaption>
+          </figure>
         </Stack>
       </Section>
 
@@ -73,6 +106,25 @@ export function HomePage() {
 }
 
 const styles = stylex.create({
+  figure: {
+    margin: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: space['--space-3'],
+  },
+  shot: {
+    display: 'block',
+    width: '100%',
+    height: 'auto',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: color['--color-line'],
+    borderRadius: radius['--radius-lg'],
+  },
+  caption: {
+    fontSize: text['--text-sm'],
+    color: color['--color-fg-muted'],
+  },
   index: {
     fontFamily: font['--font-mono'],
     fontSize: text['--text-sm'],

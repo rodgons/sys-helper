@@ -1,5 +1,5 @@
-import { Graph, layout } from '@dagrejs/dagre';
 import { categoryLabel, levelLabel } from '../lib/knowledge';
+import { dagreLayout } from './layout';
 import {
   type ComponentNode,
   type ConnectionEdge,
@@ -270,8 +270,6 @@ export function describeChange(
 
 type XY = { x: number; y: number };
 
-const SIZE = { width: 180, height: 70 };
-
 /**
  * Positions `added` (already in `nodes`) with dagre: lay out the whole graph left to right, shift
  * the result so existing components line up with where they really are, then nudge each new
@@ -279,27 +277,12 @@ const SIZE = { width: 180, height: 70 };
  */
 function place(added: ComponentNode[], nodes: ComponentNode[], edges: ConnectionEdge[]) {
   if (added.length === 0) return;
-  const g = new Graph();
-  g.setGraph({ rankdir: 'LR', nodesep: 50, ranksep: 90 });
-  g.setDefaultEdgeLabel(() => ({}));
-  for (const n of nodes) {
-    g.setNode(n.id, {
-      width: n.measured?.width ?? SIZE.width,
-      height: n.measured?.height ?? SIZE.height,
-    });
-  }
-  for (const e of edges) {
-    if (g.hasNode(e.source) && g.hasNode(e.target)) g.setEdge(e.source, e.target);
-  }
-  layout(g);
+  const corners = dagreLayout(nodes, edges);
 
   // Existing components, and new ones whose position is already fixed, stay where they are.
   const isNew = new Set(added.map((n) => n.id));
   const existing = nodes.filter((n) => !isNew.has(n.id));
-  const topLeft = (id: string) => {
-    const { x, y, width, height } = g.node(id);
-    return { x: x - width / 2, y: y - height / 2 };
-  };
+  const topLeft = (id: string) => corners.get(id) ?? { x: 0, y: 0 };
   // Average offset between dagre's layout and the real one (none on an empty canvas).
   const offset = { x: 80, y: 80 };
   if (existing.length > 0) {

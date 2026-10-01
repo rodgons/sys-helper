@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,10 @@ type Assistant struct {
 // invalid Proposal is sent back with the validation error so the model can correct it.
 const proposalAttempts = 2
 
+// maxProposalsInARow is how many Proposals the AI may make without a User message in between.
+// Each review gives the AI another turn, so without a cap it could keep proposing indefinitely.
+const maxProposalsInARow = 3
+
 // Reply answers the Conversation's last User message, possibly with a Proposal. If the Conversation
 // instead ends with a Proposal the User accepted or rejected, Reply continues from that review, so
 // the AI keeps leading until it stops proposing. onText receives
@@ -92,6 +97,8 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	defer cancel()
 	var reply strings.Builder
 	var accepted *proposal.Changes
+	var problems []string  // why each rejected propose_changes call was invalid
+	var arguments []string // and what it sent
 	gaveUp := false
 	for attempt := 1; ; attempt++ {
 		text, call, err := a.stream(ctx, req, onText)
@@ -107,8 +114,13 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 			accepted = &changes
 			break
 		}
+		problems = append(problems, problem.Error())
+		arguments = append(arguments, call.Arguments)
 		if attempt == proposalAttempts {
 			gaveUp = true
+			// The User only sees a generic note, so tell the developer what the model got wrong.
+			slog.Warn("model gave up on a proposal: every propose_changes call was invalid",
+				"project", suffix, "attempts", attempt, "problems", problems, "arguments", arguments)
 			break
 		}
 		// Show the model its call and what was wrong with it, and let it try again.
@@ -170,11 +182,14 @@ func (a *Assistant) request(msgs []conversation.Message, doc architecture.Docume
 		// Generous: thinking models (e.g. GLM-5.3) spend thousands of tokens reasoning before they
 		// call propose_changes, and run out of budget otherwise.
 		MaxTokens: 16384,
-		Tools:     []llm.Tool{proposal.Tool},
 		// One system message: some chat templates (e.g. Gemma's) accept only one.
 		Messages: []llm.Message{
 			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + describeKnowledge(known) + "\n\n" + architectureNote + string(canvas)},
 		},
+	}
+	why := mustNotPropose(msgs)
+	if why == "" {
+		req.Tools = []llm.Tool{proposal.Tool}
 	}
 	if len(msgs) > a.HistoryLimit {
 		msgs = msgs[len(msgs)-a.HistoryLimit:]
@@ -193,10 +208,32 @@ func (a *Assistant) request(msgs []conversation.Message, doc architecture.Docume
 	}
 	if p := reviewed(msgs[len(msgs)-1]); p != nil {
 		// Chat templates expect a user turn last; the review is the User's turn.
-		req.Messages = append(req.Messages, llm.Message{Role: llm.RoleUser,
-			Content: fmt.Sprintf("[I %s proposal #%d \"%s\". Continue.]", p.Status, p.Seq, p.Summary)})
+		content := fmt.Sprintf("[I %s proposal #%d \"%s\". Continue.]", p.Status, p.Seq, p.Summary)
+		if why != "" {
+			content = fmt.Sprintf("[I %s proposal #%d \"%s\". %s]", p.Status, p.Seq, p.Summary, why)
+		}
+		req.Messages = append(req.Messages, llm.Message{Role: llm.RoleUser, Content: content})
 	}
 	return req, nil
+}
+
+// mustNotPropose says why the AI's next turn may only talk, or "" if it may propose. After a
+// rejection it should find out what didn't fit rather than propose again, and after
+// maxProposalsInARow Proposals with no User message in between it should check in with the User.
+func mustNotPropose(msgs []conversation.Message) string {
+	if p := reviewed(msgs[len(msgs)-1]); p != nil && p.Status == conversation.ProposalRejected {
+		return "Don't propose anything now: ask what I'd change, or describe another approach and let me ask for it."
+	}
+	inARow := 0
+	for i := len(msgs) - 1; i >= 0 && msgs[i].Role != conversation.RoleUser; i-- {
+		if msgs[i].Proposal != nil {
+			inARow++
+		}
+	}
+	if inARow >= maxProposalsInARow {
+		return "Don't propose anything now: sum up where the design stands and ask me how to continue."
+	}
+	return ""
 }
 
 // reviewed returns m's Proposal if the User accepted or rejected it.

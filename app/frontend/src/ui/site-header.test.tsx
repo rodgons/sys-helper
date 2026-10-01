@@ -34,4 +34,15 @@ describe('SiteHeader', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('navigation', { name: 'Mobile' })).toBeInTheDocument();
   });
+
+  it('leaves out the nav and the menu button when there are no links', () => {
+    render(
+      <MemoryRouter>
+        <SiteHeader links={[]} currentPath="/" />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Menu' })).not.toBeInTheDocument();
+  });
 });

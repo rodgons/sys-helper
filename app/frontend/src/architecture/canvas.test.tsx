@@ -122,6 +122,28 @@ describe('ArchitectureCanvas', () => {
     expect(shapeOf('Orders API')).toBe('rounded');
   });
 
+  it('edits the selected component in a window attached to it, which closes', () => {
+    stubSave();
+    renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
+      auth: signedIn(),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Cache' }));
+
+    // React Flow positions node toolbars next to their node and moves them with it.
+    const editor = screen.getByRole('region', { name: 'Inspector' });
+    const selected = document.querySelector('.react-flow__node.selected');
+    expect(editor.closest('.react-flow__node-toolbar')).toHaveAttribute(
+      'data-id',
+      selected?.getAttribute('data-id'),
+    );
+
+    fireEvent.click(within(editor).getByRole('button', { name: 'Close' }));
+
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    expect(document.querySelector('.react-flow__node.selected')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Inspector' })).toHaveTextContent(/Select something/);
+  });
+
   it('edits and deletes the selected component through the inspector', async () => {
     const save = stubSave();
     renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
@@ -141,6 +163,30 @@ describe('ArchitectureCanvas', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete component' }));
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(savedDocument(save).components.map((c) => c.name)).toEqual(['Orders API', 'Orders DB']);
+  });
+
+  it('tidies up the layout and autosaves it', async () => {
+    const save = stubSave();
+    const tangled = {
+      ...initial,
+      document: {
+        ...initial.document,
+        components: [
+          { id: 'api', type: 'service', name: 'Orders API', position: { x: 600, y: 400 } },
+          { id: 'db', type: 'database', name: 'Orders DB', position: { x: 0, y: 0 } },
+        ],
+      },
+    };
+    renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={tangled} />, {
+      auth: signedIn(),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tidy up' }));
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+
+    const [api, db] = savedDocument(save).components;
+    expect(api?.position.x).toBeLessThan(db?.position.x ?? 0);
+    expect(api?.position.y).toBe(db?.position.y);
   });
 
   describe('with a pending proposal', () => {
@@ -226,6 +272,12 @@ describe('ArchitectureCanvas', () => {
         { id: 'p2-k1', source: 'api', target: 'p2-cache', kind: 'sync' },
       ]);
       expect(screen.getByRole('status')).toHaveTextContent('All changes saved');
+    });
+
+    it("can't be tidied up while it is previewed, which would move its new components", () => {
+      setup();
+
+      expect(screen.getByRole('button', { name: 'Tidy up' })).toBeDisabled();
     });
 
     it('rejects', async () => {

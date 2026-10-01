@@ -1,4 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
+import type { LucideIcon } from 'lucide-react';
 import {
   createContext,
   type ReactNode,
@@ -80,7 +81,16 @@ export function Menu({
   );
 }
 
-export function MenuItem({ onSelect, children }: { onSelect: () => void; children: ReactNode }) {
+/** One action in a Menu, with an optional decorative icon on its left. */
+export function MenuItem({
+  icon: Icon,
+  onSelect,
+  children,
+}: {
+  icon?: LucideIcon;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
   const close = useContext(CloseMenu);
   return (
     <button
@@ -92,9 +102,26 @@ export function MenuItem({ onSelect, children }: { onSelect: () => void; childre
       }}
       {...stylex.props(styles.item)}
     >
+      {Icon && (
+        <Icon size={16} strokeWidth={1.75} aria-hidden="true" {...stylex.props(styles.icon)} />
+      )}
       {children}
     </button>
   );
+}
+
+/** Non-interactive text atop a Menu, such as who is signed in. Arrow keys and focus skip it. */
+export function MenuHeader({ children }: { children: ReactNode }) {
+  return (
+    <div role="none" {...stylex.props(styles.header)}>
+      {children}
+    </div>
+  );
+}
+
+/** A rule between groups of Menu items, e.g. before Sign out. */
+export function MenuSeparator() {
+  return <hr {...stylex.props(styles.separator)} />;
 }
 
 const styles = stylex.create({
@@ -124,6 +151,9 @@ const styles = stylex.create({
     backgroundColor: color['--color-raised'],
   },
   item: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: space['--space-2'],
     paddingInline: space['--space-3'],
     paddingBlock: space['--space-2'],
     borderWidth: 0,
@@ -139,5 +169,25 @@ const styles = stylex.create({
     cursor: 'pointer',
     transitionProperty: 'background-color',
     transitionDuration: motion['--duration'],
+  },
+  header: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    paddingInline: space['--space-3'],
+    paddingBlock: space['--space-2'],
+    fontSize: text['--text-sm'],
+    color: color['--color-fg'],
+    fontWeight: 600,
+    overflowWrap: 'anywhere',
+  },
+  icon: { flexShrink: 0, color: color['--color-fg-muted'] },
+  separator: {
+    marginBlock: space['--space-2'],
+    marginInline: 0,
+    borderWidth: 0,
+    borderTopWidth: 1,
+    borderTopStyle: 'solid',
+    borderTopColor: color['--color-line'],
   },
 });

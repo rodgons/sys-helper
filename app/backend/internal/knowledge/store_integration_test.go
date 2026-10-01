@@ -139,6 +139,41 @@ func TestStore(t *testing.T) {
 		}
 	})
 
+	t.Run("falls back to the user's default experience level", func(t *testing.T) {
+		user, suffix := newProject(t)
+
+		if level, err := store.DefaultExperienceLevel(ctx, user); err != nil || level != "" {
+			t.Fatalf("default before any set = %q, %v", level, err)
+		}
+		if err := store.SetDefaultExperienceLevel(ctx, user, "expert"); err != nil {
+			t.Fatal(err)
+		}
+		if level, _ := store.DefaultExperienceLevel(ctx, user); level != "expert" {
+			t.Errorf("default = %q", level)
+		}
+		if k, _ := store.Get(ctx, user, suffix); k.ExperienceLevel != "expert" {
+			t.Errorf("project without its own level = %q, want the default", k.ExperienceLevel)
+		}
+
+		// A level set on the Project wins over the default.
+		if err := store.SetExperienceLevel(ctx, user, suffix, "beginner"); err != nil {
+			t.Fatal(err)
+		}
+		if k, _ := store.Get(ctx, user, suffix); k.ExperienceLevel != "beginner" {
+			t.Errorf("project level = %q", k.ExperienceLevel)
+		}
+
+		if err := store.SetDefaultExperienceLevel(ctx, user, ""); err != nil {
+			t.Fatal(err)
+		}
+		if level, _ := store.DefaultExperienceLevel(ctx, user); level != "" {
+			t.Errorf("cleared default = %q", level)
+		}
+		if err := store.SetDefaultExperienceLevel(ctx, user, "guru"); !errors.Is(err, knowledge.ErrInvalid) {
+			t.Errorf("invalid default: err = %v", err)
+		}
+	})
+
 	t.Run("hides other users' knowledge", func(t *testing.T) {
 		_, suffix := newProject(t)
 		intruder := testdb.User(t, pool, "hubot")

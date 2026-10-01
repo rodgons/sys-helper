@@ -88,6 +88,44 @@ describe('ChatPane', () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   });
 
+  it('recalls earlier messages with the arrow keys', async () => {
+    setup({}, [
+      welcome,
+      { role: 'user', body: 'A URL shortener', createdAt: at },
+      { role: 'assistant', body: 'How many users?', createdAt: at },
+      { role: 'user', body: 'About 1M a day', createdAt: at },
+      { role: 'assistant', body: 'Got it.', createdAt: at },
+    ]);
+    await screen.findByText('Got it.');
+
+    fireEvent.keyDown(box(), { key: 'ArrowUp' });
+    expect(box()).toHaveValue('About 1M a day');
+    fireEvent.keyDown(box(), { key: 'ArrowUp' });
+    expect(box()).toHaveValue('A URL shortener');
+    fireEvent.keyDown(box(), { key: 'ArrowUp' });
+    expect(box()).toHaveValue('A URL shortener');
+
+    fireEvent.keyDown(box(), { key: 'ArrowDown' });
+    expect(box()).toHaveValue('About 1M a day');
+    fireEvent.keyDown(box(), { key: 'ArrowDown' });
+    expect(box()).toHaveValue('');
+  });
+
+  it('leaves the arrow keys alone once the draft is edited', async () => {
+    setup({}, [welcome, { role: 'user', body: 'A URL shortener', createdAt: at }]);
+    await screen.findByText('A URL shortener');
+
+    fireEvent.change(box(), { target: { value: 'Something new' } });
+    fireEvent.keyDown(box(), { key: 'ArrowUp' });
+    expect(box()).toHaveValue('Something new');
+
+    fireEvent.change(box(), { target: { value: '' } });
+    fireEvent.keyDown(box(), { key: 'ArrowUp' });
+    fireEvent.change(box(), { target: { value: 'A URL shortener, with analytics' } });
+    fireEvent.keyDown(box(), { key: 'ArrowUp' });
+    expect(box()).toHaveValue('A URL shortener, with analytics');
+  });
+
   it('does not send blank messages', async () => {
     setup();
     await screen.findByText(/who is it for/);

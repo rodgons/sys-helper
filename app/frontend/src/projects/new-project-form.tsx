@@ -7,7 +7,10 @@ import { Button } from '../ui/button';
 import { TextField } from '../ui/text-field';
 import { Text } from '../ui/typography';
 
-/** Creates a Project from a name and opens it. */
+/**
+ * Creates a Project from a name and opens it. With `onCancel` it is a dialog's body: Cancel joins
+ * the actions, which sit bottom-right with the primary one last, as in Dialog.
+ */
 export function NewProjectForm({ onCancel }: { onCancel?: () => void }) {
   const [name, setName] = useState('');
   const create = useCreateProject();
@@ -40,15 +43,15 @@ export function NewProjectForm({ onCancel }: { onCancel?: () => void }) {
           Couldn't create the project. Try again.
         </Text>
       )}
-      <div {...stylex.props(styles.actions)}>
-        <Button type="submit" size="sm" disabled={create.isPending || name.trim() === ''}>
-          Create project
-        </Button>
+      <div {...stylex.props(styles.actions, onCancel && styles.dialogActions)}>
         {onCancel && (
           <Button size="sm" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
         )}
+        <Button type="submit" size="sm" disabled={create.isPending || name.trim() === ''}>
+          Create project
+        </Button>
       </div>
     </form>
   );
@@ -57,4 +60,5 @@ export function NewProjectForm({ onCancel }: { onCancel?: () => void }) {
 const styles = stylex.create({
   form: { display: 'flex', flexDirection: 'column', gap: space['--space-3'] },
   actions: { display: 'flex', gap: space['--space-2'] },
+  dialogActions: { justifyContent: 'flex-end', marginTop: space['--space-2'] },
 });

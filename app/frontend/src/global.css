@@ -95,6 +95,15 @@ samp {
   font-size: 0.875rem;
 }
 
+/*
+ * React Flow draws each edge in an unsized <svg> inside a zero-width container and relies on
+ * overflow: visible. The max-width reset above shrinks those to 0px wide, and Chrome (unlike
+ * Firefox) skips painting a zero-sized <svg>, so the Connections vanished.
+ */
+.react-flow__edges svg {
+  max-width: none;
+}
+
 ::selection {
   background: color-mix(in srgb, var(--color-accent) 25%, transparent);
   color: var(--color-fg);

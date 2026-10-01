@@ -366,6 +366,50 @@ func TestProposals(t *testing.T) {
 		}
 	})
 
+	t.Run("after a rejection, only talks: no proposal tool", func(t *testing.T) {
+		c := conv("Welcome", "Add a cache")
+		c.msgs = append(c.msgs, conversation.Message{Role: conversation.RoleAssistant, Body: "Here.",
+			Proposal: &conversation.Proposal{Seq: 1, Summary: "Add a cache", Status: conversation.ProposalRejected}})
+		m := &turns{turns: []turn{{text: "What didn't fit?"}}}
+
+		if _, err := newAssistant(m, c).Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		if tools := m.reqs[0].Tools; len(tools) != 0 {
+			t.Errorf("tools = %+v, want none after a rejection", tools)
+		}
+	})
+
+	t.Run("after an acceptance, may propose the next step", func(t *testing.T) {
+		c := conv("Welcome", "Add a cache")
+		c.msgs = append(c.msgs, conversation.Message{Role: conversation.RoleAssistant, Body: "Here.",
+			Proposal: &conversation.Proposal{Seq: 1, Summary: "Add a cache", Status: conversation.ProposalAccepted}})
+		m := &turns{turns: []turn{{text: "Next."}}}
+
+		if _, err := newAssistant(m, c).Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		if tools := m.reqs[0].Tools; len(tools) != 1 {
+			t.Errorf("tools = %+v, want propose_changes", tools)
+		}
+	})
+
+	t.Run("checks in with the user after three proposals in a row", func(t *testing.T) {
+		c := conv("Welcome", "Design it")
+		for seq := 1; seq <= 3; seq++ {
+			c.msgs = append(c.msgs, conversation.Message{Role: conversation.RoleAssistant, Body: "Step.",
+				Proposal: &conversation.Proposal{Seq: seq, Summary: "Step", Status: conversation.ProposalAccepted}})
+		}
+		m := &turns{turns: []turn{{text: "Anything else?"}}}
+
+		if _, err := newAssistant(m, c).Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		if tools := m.reqs[0].Tools; len(tools) != 0 {
+			t.Errorf("tools = %+v, want none after three proposals without a user message", tools)
+		}
+	})
+
 	t.Run("validates decisions against the project's requirements", func(t *testing.T) {
 		cites := `{"summary": "Explain the DB", "changes": [{"op": "add_decision", "title": "T", "rationale": "R", "targets": ["db"], "requirements": ["R1"]}]}`
 		msg, err := newAssistant(&turns{turns: []turn{{text: "Recorded.", args: cites}}}, conv("Welcome", "Why Postgres?")).
@@ -375,4 +419,20 @@ func TestProposals(t *testing.T) {
 			t.Fatalf("message = %+v, err = %v", msg, err)
 		}
 	})
+}
+
+func TestProposalsTheModelGotWrongInProduction(t *testing.T) {
+	// Logged on 2026-10-01: an unnamed component and a decision with its op in `type` (Gemini).
+	args := `{"summary":"Add a relational database for storing URL mappings and expiration data.","changes":[
+		{"op":"add_component","type":"database","ref":"urls","properties":{"replicas":2,"sharding":false,"engine":"PostgreSQL"}},
+		{"kind":"sync","source":"urls","target":"db","op":"add_connection","label":"Read/Write mappings"},
+		{"title":"Relational Database for URL Mappings","alternative":"NoSQL document store.","type":"add_decision","targets":["urls"],
+		 "rationale":"Stores URL mappings (R1).","category":"scale","pattern":"Primary-Replica relational database"}]}`
+
+	msg, err := newAssistant(&turns{turns: []turn{{text: "Adding a database.", args: args}}}, conv("Welcome", "Add storage")).
+		Reply(context.Background(), "u", "s", func(string) {})
+
+	if err != nil || msg.Proposal == nil || len(msg.Proposal.Changes) != 3 {
+		t.Fatalf("message = %+v, err = %v", msg, err)
+	}
 }

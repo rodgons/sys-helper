@@ -22,6 +22,9 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
   const send = useSendMessage(slug);
   const reply = useReply(slug);
   const [draft, setDraft] = useState('');
+  // Which of the User's sent messages the draft shows, counting back from the newest (0), like a
+  // shell's history. null when the draft is the User's own text.
+  const [recalled, setRecalled] = useState<number | null>(null);
   const list = useRef<HTMLOListElement>(null);
   const count = messages.data?.length ?? 0;
   const streamed = reply.state.status === 'streaming' ? reply.state.text : '';
@@ -60,10 +63,22 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
     send.mutate(draft.trim(), {
       onSuccess: () => {
         setDraft('');
+        setRecalled(null);
         void reply.start();
       },
     });
   };
+  // Up and Down step through the User's sent messages, but only while the draft is empty or still
+  // an unedited recalled message, so they keep moving the caret in text being written.
+  const sent = (messages.data ?? []).filter((m) => m.role === 'user').map((m) => m.body);
+  const recall = (step: 1 | -1) => {
+    const index = (recalled ?? -1) + step;
+    if (index >= sent.length) return;
+    setRecalled(index < 0 ? null : index);
+    setDraft(index < 0 ? '' : (sent[sent.length - 1 - index] ?? ''));
+  };
+  const browsing = recalled === null ? draft === '' : draft === sent[sent.length - 1 - recalled];
+
   const sendError =
     send.error instanceof ApiError && send.error.code === 'daily_limit'
       ? "You've reached today's message limit. It resets at midnight UTC."
@@ -144,12 +159,20 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
           maxLength={MAX_LENGTH}
           placeholder="Describe your system or ask a question…"
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setRecalled(null);
+          }}
           onKeyDown={(e) => {
             // Enter sends; Shift+Enter adds a line. Ignore Enter while an IME is composing.
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit();
+            }
+            const plain = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey;
+            if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && plain && browsing) {
+              e.preventDefault();
+              recall(e.key === 'ArrowUp' ? 1 : -1);
             }
           }}
           {...stylex.props(styles.input)}

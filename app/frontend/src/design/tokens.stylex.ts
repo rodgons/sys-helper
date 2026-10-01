@@ -83,6 +83,8 @@ export const layout = stylex.defineVars({
   '--container-narrow': '46rem',
   '--gutter': 'clamp(1.25rem, 4vw, 2.5rem)',
   '--header-h': '64px',
+  // The bars atop the workspace panes (canvas title, side panel tabs), so their rules line up.
+  '--pane-head-h': '3.5rem',
 });
 
 export const motion = stylex.defineVars({

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { LogOut, Settings } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
-import { Menu, MenuItem } from './menu';
+import { Menu, MenuItem, MenuSeparator } from './menu';
 
 function renderMenu(onSelect = vi.fn()) {
   render(
@@ -40,6 +41,26 @@ describe('Menu', () => {
 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(button).toHaveFocus();
+  });
+
+  it('shows icons beside items and separates groups', () => {
+    const { container } = render(
+      <Menu label="Account" trigger="Open">
+        <MenuItem icon={Settings} onSelect={vi.fn()}>
+          Settings
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={LogOut} onSelect={vi.fn()}>
+          Sign out
+        </MenuItem>
+      </Menu>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.getByRole('separator')).toBeInTheDocument();
+    expect(container.querySelectorAll('[role="menuitem"] svg[aria-hidden="true"]')).toHaveLength(2);
   });
 
   it('closes on a click outside', () => {

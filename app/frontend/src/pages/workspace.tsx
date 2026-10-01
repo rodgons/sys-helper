@@ -20,12 +20,13 @@ import { RequireUser } from './require-user';
 /** `/p/:slug`: Projects on the left, the Architecture canvas in the middle, the Conversation on the right. */
 export function WorkspacePage() {
   const { slug = '' } = useParams();
-  return <RequireUser>{(me) => <Workspace slug={slug} username={me.username} />}</RequireUser>;
+  return <RequireUser>{() => <Workspace slug={slug} />}</RequireUser>;
 }
 
-function Workspace({ slug, username }: { slug: string; username: string }) {
+function Workspace({ slug }: { slug: string }) {
   const project = useProject(slug);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(true);
   // The pending Proposal's review, published by the canvas so the chat can offer Accept too.
   const [review, setReview] = useState<Review | null>(null);
   // Current names of canvas items, for showing what Decisions explain.
@@ -60,11 +61,16 @@ function Workspace({ slug, username }: { slug: string; username: string }) {
       <p {...stylex.props(styles.notice)}>
         The workspace works best on a screen at least 1024px wide.
       </p>
-      <div {...stylex.props(styles.panes, sidebarOpen ? styles.withSidebar : styles.withRail)}>
+      <div
+        {...stylex.props(
+          styles.panes,
+          sidebarOpen ? styles.withSidebar : styles.withLeftRail,
+          panelOpen ? styles.withPanel : styles.withRightRail,
+        )}
+      >
         <div {...stylex.props(styles.pane, styles.left)}>
           <ProjectSidebar
             currentSlug={slug}
-            username={username}
             open={sidebarOpen}
             onToggle={() => setSidebarOpen((o) => !o)}
           />
@@ -81,6 +87,8 @@ function Workspace({ slug, username }: { slug: string; username: string }) {
             slug={project.data.slug}
             names={names}
             conversation={<ChatPane slug={project.data.slug} review={review} />}
+            open={panelOpen}
+            onToggle={() => setPanelOpen((o) => !o)}
           />
         </aside>
       </div>
@@ -136,12 +144,16 @@ const styles = stylex.create({
   },
   panes: {
     display: 'grid',
+    gridTemplateColumns: 'var(--left-w) 1fr var(--right-w)',
     flexGrow: 1,
     minHeight: 0,
     minWidth: '64rem',
   },
-  withSidebar: { gridTemplateColumns: '16rem 1fr 24rem' },
-  withRail: { gridTemplateColumns: '3rem 1fr 24rem' },
+  // The left and right pane widths are set independently, through the CSS variables the grid reads.
+  withSidebar: { '--left-w': '16rem' },
+  withLeftRail: { '--left-w': '3rem' },
+  withPanel: { '--right-w': '24rem' },
+  withRightRail: { '--right-w': '3rem' },
   pane: { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 },
   left: {
     borderRightWidth: 1,
@@ -151,8 +163,13 @@ const styles = stylex.create({
   },
   canvas: { backgroundColor: color['--color-subtle'] },
   bar: {
+    boxSizing: 'border-box',
+    height: layout['--pane-head-h'],
+    flexShrink: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
     paddingInline: space['--space-4'],
-    paddingBlock: space['--space-3'],
     borderBottomWidth: 1,
     borderBottomStyle: 'solid',
     borderBottomColor: color['--color-line'],

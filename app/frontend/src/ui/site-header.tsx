@@ -3,12 +3,13 @@ import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import { color, font, layout, media, motion, radius, space, text } from '../design/tokens.stylex';
 import { Container } from './layout';
+import { Logo } from './logo';
 
 export type NavLink = { href: string; label: string };
 
 /**
  * Sticky top bar: brand left, pill nav links, actions right. Below `md` the links move into a
- * full-width menu with large display-type rows.
+ * full-width menu with large display-type rows. Without links there is neither nav nor menu.
  */
 export function SiteHeader({
   links,
@@ -21,38 +22,45 @@ export function SiteHeader({
 }) {
   const [open, setOpen] = useState(false);
   const current = (href: string) => (href === currentPath ? 'page' : undefined);
+  const hasLinks = links.length > 0;
 
   return (
     <header {...stylex.props(styles.header)}>
       <Container xstyle={styles.bar}>
         <Link to="/" {...stylex.props(styles.brand)}>
-          <span aria-hidden="true" {...stylex.props(styles.mark)} />
-          sys-helper
+          <Logo size={28} />
+          <span>
+            sys-<span {...stylex.props(styles.brandAccent)}>helper</span>
+          </span>
         </Link>
-        <nav aria-label="Main" {...stylex.props(styles.desktopNav)}>
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              to={link.href}
-              aria-current={current(link.href)}
-              {...stylex.props(styles.navLink)}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+        {hasLinks && (
+          <nav aria-label="Main" {...stylex.props(styles.desktopNav)}>
+            {links.map((link) => (
+              <Link
+                key={link.href}
+                to={link.href}
+                aria-current={current(link.href)}
+                {...stylex.props(styles.navLink)}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        )}
         <div {...stylex.props(styles.actions)}>{actions}</div>
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls="mobile-menu"
-          onClick={() => setOpen((o) => !o)}
-          {...stylex.props(styles.menuButton)}
-        >
-          {open ? 'Close' : 'Menu'}
-        </button>
+        {hasLinks && (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls="mobile-menu"
+            onClick={() => setOpen((o) => !o)}
+            {...stylex.props(styles.menuButton)}
+          >
+            {open ? 'Close' : 'Menu'}
+          </button>
+        )}
       </Container>
-      {open && (
+      {hasLinks && open && (
         <nav id="mobile-menu" aria-label="Mobile" {...stylex.props(styles.mobileNav)}>
           <Container>
             {links.map((link) => (
@@ -103,11 +111,8 @@ const styles = stylex.create({
     letterSpacing: '-0.02em',
     textDecoration: 'none',
   },
-  mark: {
-    width: 22,
-    height: 22,
-    backgroundColor: color['--color-accent'],
-    clipPath: 'polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%)',
+  brandAccent: {
+    color: color['--color-accent-strong'],
   },
   desktopNav: {
     display: { default: 'none', [media.md]: 'flex' },

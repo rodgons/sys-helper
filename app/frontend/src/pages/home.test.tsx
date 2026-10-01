@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Root } from '../root';
 import { mockApi, renderWithQuery, signedIn, signedOut } from '../test/render';
@@ -14,6 +14,13 @@ describe('Home page', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign in with github/i, hidden: false }));
 
     expect(auth.signIn).toHaveBeenCalled();
+  });
+
+  it('shows what the workspace looks like when signed in', () => {
+    renderWithQuery(<Root />, { route: '/', auth: signedOut() });
+
+    const preview = screen.getByRole('region', { name: /side by side/i });
+    expect(within(preview).getByRole('img', { name: /workspace/i })).toBeInTheDocument();
   });
 
   it('sends signed-in users to their projects', async () => {

@@ -107,6 +107,18 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects setting the experience level the project already has", func(t *testing.T) {
+		k := known()
+		k.ExperienceLevel = "intermediate"
+		c := parse(t, `{"summary": "s", "changes": [{"op": "set_experience_level", "level": "intermediate"}]}`)
+
+		err := c.Validate(canvas(), k)
+
+		if err == nil || !strings.Contains(err.Error(), "already intermediate") {
+			t.Fatalf("err = %v, want one saying the level is already intermediate", err)
+		}
+	})
+
 	t.Run("allows a proposal of requirements only", func(t *testing.T) {
 		c := parse(t, `{"summary": "Noted", "changes": [{"op": "add_requirement", "ref": "r", "category": "cost", "statement": "Under $500/month"}]}`)
 		if err := c.Validate(canvas(), known()); err != nil {
@@ -163,5 +175,127 @@ func TestNormalize(t *testing.T) {
 	}
 	if err := c.Validate(canvas(), known()); err != nil {
 		t.Fatalf("normalized proposal invalid: %v", err)
+	}
+}
+
+func TestPropertiesAcceptNumbersAndBooleans(t *testing.T) {
+	c := parse(t, `{"summary": "s", "changes": [
+		{"op": "add_component", "ref": "api2", "type": "service", "name": "API", "properties": {"instances": 2, "runtime": "Go"}},
+		{"op": "update_component", "id": "db", "properties": {"replicas": 1.5, "sharding": false}}]}`)
+
+	if got := c.Changes[0].Properties["instances"]; got != "2" {
+		t.Errorf("instances = %q, want \"2\"", got)
+	}
+	if got := c.Changes[1].Properties; got["replicas"] != "1.5" || got["sharding"] != "false" {
+		t.Errorf("properties = %v", got)
+	}
+}
+
+func TestPropertiesRejectNestedValues(t *testing.T) {
+	var c proposal.Changes
+	err := json.Unmarshal([]byte(`{"summary": "s", "changes": [{"op": "update_component", "id": "db", "properties": {"engine": {"name": "pg"}}}]}`), &c)
+	if err == nil || !strings.Contains(err.Error(), `"engine"`) {
+		t.Fatalf("err = %v, want one naming the property", err)
+	}
+}
+
+func TestNormalizeOpGivenAsType(t *testing.T) {
+	c := parse(t, `{"summary": "s", "changes": [
+		{"type": "add_decision", "title": "T", "rationale": "R", "targets": ["api"]}]}`)
+
+	c.Normalize()
+
+	if c.Changes[0].Op != "add_decision" || c.Changes[0].Type != "" {
+		t.Fatalf("change = %+v", c.Changes[0])
+	}
+	if err := c.Validate(canvas(), known()); err != nil {
+		t.Fatalf("normalized proposal invalid: %v", err)
+	}
+}
+
+func TestNormalizePutsNewComponentsAndRequirementsFirst(t *testing.T) {
+	c := parse(t, `{"summary": "s", "changes": [
+		{"op": "add_connection", "source": "api", "target": "cache", "kind": "sync"},
+		{"op": "add_decision", "title": "T", "rationale": "R", "targets": ["cache"], "requirements": ["reads"]},
+		{"op": "add_component", "ref": "cache", "type": "cache", "name": "Cache"},
+		{"op": "add_requirement", "ref": "reads", "category": "scale", "statement": "100:1 reads"}]}`)
+
+	c.Normalize()
+
+	var got []string
+	for _, ch := range c.Changes {
+		got = append(got, ch.Op)
+	}
+	if want := "add_component add_requirement add_connection add_decision"; strings.Join(got, " ") != want {
+		t.Fatalf("ops = %v, want %s", got, want)
+	}
+	if err := c.Validate(canvas(), known()); err != nil {
+		t.Fatalf("normalized proposal invalid: %v", err)
+	}
+}
+
+func TestNormalizeInfersAMissingOp(t *testing.T) {
+	c := parse(t, `{"summary": "s", "changes": [
+		{"title": "T", "rationale": "R", "targets": ["api"], "add_decision": true},
+		{"source": "api", "target": "db", "kind": "async"},
+		{"level": "beginner"}]}`)
+
+	c.Normalize()
+
+	for i, want := range []string{"add_decision", "add_connection", "set_experience_level"} {
+		if c.Changes[i].Op != want {
+			t.Errorf("change %d op = %q, want %q", i+1, c.Changes[i].Op, want)
+		}
+	}
+}
+
+func TestValidateExplainsAMissingOp(t *testing.T) {
+	c := parse(t, `{"summary": "s", "changes": [{"id": "api"}]}`)
+	if err := c.Validate(canvas(), known()); err == nil || !strings.Contains(err.Error(), `"op"`) {
+		t.Fatalf("err = %v, want it to ask for an op", err)
+	}
+}
+
+// A real call (Gemini) that was rejected: the component has no name, and the decision gives its op
+// in `type` and has a stray `category`.
+const unnamedComponentCall = `{"summary":"Add a relational database for storing URL mappings and expiration data.","changes":[
+	{"op":"add_component","type":"database","ref":"urls","properties":{"replicas":2,"sharding":false,"engine":"PostgreSQL"}},
+	{"kind":"sync","source":"api","target":"urls","op":"add_connection","label":"Read/Write mappings"},
+	{"title":"Relational Database for URL Mappings","alternative":"NoSQL document store.","type":"add_decision","targets":["urls"],
+	 "rationale":"Stores URL mappings (R1).","category":"scale","pattern":"Primary-Replica relational database"}]}`
+
+func TestNormalizeNamesAnUnnamedComponentAfterItsType(t *testing.T) {
+	c := parse(t, unnamedComponentCall)
+
+	c.Normalize()
+
+	if err := c.Validate(canvas(), known()); err != nil {
+		t.Fatalf("normalized proposal invalid: %v", err)
+	}
+	if name := c.Changes[0].Name; name == nil || *name != "Database" {
+		t.Fatalf("name = %v, want Database", name)
+	}
+}
+
+func TestNormalizeNamesAPIGatewayWithItsAcronym(t *testing.T) {
+	c := parse(t, `{"summary": "s", "changes": [{"op": "add_component", "ref": "gw", "type": "api_gateway"}]}`)
+
+	c.Normalize()
+
+	if name := c.Changes[0].Name; name == nil || *name != "API Gateway" {
+		t.Fatalf("name = %v, want API Gateway", name)
+	}
+}
+
+// Models mix up the op and the component type: {"type": "add_component"} leaves no component type
+// once Normalize takes it as the op, so the error must tell them apart.
+func TestValidateExplainsTheOpAndTypeFieldsWhenTheTypeIsMissing(t *testing.T) {
+	c := parse(t, `{"summary": "s", "changes": [{"type": "add_component", "ref": "urls", "name": "URLs"}]}`)
+
+	c.Normalize()
+	err := c.Validate(canvas(), known())
+
+	if err == nil || !strings.Contains(err.Error(), `"op"`) || !strings.Contains(err.Error(), `"type"`) {
+		t.Fatalf("err = %v, want it to explain the op and type fields", err)
 	}
 }

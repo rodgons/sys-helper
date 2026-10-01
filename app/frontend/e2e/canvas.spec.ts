@@ -26,7 +26,16 @@ test('build an architecture by hand and find it again after a reload', async ({ 
     .dragTo(node(page, 'Database').locator('.react-flow__handle-left'));
   await expect(page.locator('.react-flow__edge')).toHaveCount(1);
 
-  await page.locator('.react-flow__edge').click({ force: true });
+  // The connection's window opens where it was clicked, not in a corner.
+  const edge = await page.locator('.react-flow__edge').boundingBox();
+  if (!edge) throw new Error('the connection is not drawn');
+  const click = { x: edge.x + edge.width / 2, y: edge.y + edge.height / 2 };
+  await page.mouse.click(click.x, click.y);
+  await expect(page.getByLabel('Kind')).toBeVisible();
+  const inspector = await page.getByRole('region', { name: 'Inspector' }).boundingBox();
+  expect(Math.abs((inspector?.x ?? 0) - click.x)).toBeLessThan(40);
+  expect(Math.abs((inspector?.y ?? 0) - click.y)).toBeLessThan(40);
+
   await page.getByLabel('Kind').selectOption('async');
   await page.getByLabel('Label').fill('order events');
 

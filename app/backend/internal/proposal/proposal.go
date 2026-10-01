@@ -38,16 +38,16 @@ const (
 //     Targets (component or connection ids or refs; at least one)
 //   - set_experience_level: Level
 type Change struct {
-	Op         string            `json:"op"`
-	ID         string            `json:"id,omitempty"`
-	Ref        string            `json:"ref,omitempty"`
-	Type       string            `json:"type,omitempty"`
-	Name       *string           `json:"name,omitempty"`
-	Properties map[string]string `json:"properties,omitempty"`
-	Source     string            `json:"source,omitempty"`
-	Target     string            `json:"target,omitempty"`
-	Kind       string            `json:"kind,omitempty"`
-	Label      *string           `json:"label,omitempty"`
+	Op         string     `json:"op"`
+	ID         string     `json:"id,omitempty"`
+	Ref        string     `json:"ref,omitempty"`
+	Type       string     `json:"type,omitempty"`
+	Name       *string    `json:"name,omitempty"`
+	Properties Properties `json:"properties,omitempty"`
+	Source     string     `json:"source,omitempty"`
+	Target     string     `json:"target,omitempty"`
+	Kind       string     `json:"kind,omitempty"`
+	Label      *string    `json:"label,omitempty"`
 
 	Category     *string  `json:"category,omitempty"`
 	Statement    *string  `json:"statement,omitempty"`
@@ -59,6 +59,33 @@ type Change struct {
 	Targets      []string `json:"targets,omitempty"`
 	Level        string   `json:"level,omitempty"`
 }
+
+// Properties are a component's properties. Models often send numbers and booleans
+// ("instances": 2), so those are accepted and kept as text.
+type Properties map[string]string
+
+func (p *Properties) UnmarshalJSON(data []byte) error {
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*p = make(Properties, len(raw))
+	for key, value := range raw {
+		switch v := value.(type) {
+		case string:
+			(*p)[key] = v
+		case float64, bool:
+			(*p)[key] = fmt.Sprint(v)
+		default:
+			return fmt.Errorf("property %q must be a string, number or boolean", key)
+		}
+	}
+	return nil
+}
+
+// ops are the Change operations.
+var ops = []string{"add_component", "update_component", "remove_component", "add_connection", "update_connection",
+	"remove_connection", "add_requirement", "update_requirement", "remove_requirement", "add_decision", "set_experience_level"}
 
 // Changes is what the model submits through the propose_changes tool.
 type Changes struct {
@@ -80,14 +107,66 @@ func ConnectionID(seq int, c Change, index int) string {
 
 var ErrInvalid = errors.New("invalid proposal")
 
-// Normalize forgives a common slip: naming a new item in `id` instead of `ref`. Call it before
-// Validate.
+// Normalize forgives common slips: leaving out the op (or giving it in `type`), naming a new item
+// in `id` instead of `ref`, leaving a new component unnamed (it is named after its type), and using
+// a new component or requirement before the change that adds it. Call it before Validate.
 func (c *Changes) Normalize() {
-	for i, ch := range c.Changes {
+	for i := range c.Changes {
+		ch := &c.Changes[i]
+		if ch.Op == "" {
+			ch.Op = inferOp(ch)
+		}
 		if strings.HasPrefix(ch.Op, "add_") && ch.Op != "add_decision" && ch.Ref == "" && ch.ID != "" {
-			c.Changes[i].Ref, c.Changes[i].ID = ch.ID, ""
+			ch.Ref, ch.ID = ch.ID, ""
+		}
+		if _, known := architecture.ComponentTypes[ch.Type]; ch.Op == "add_component" && ch.Name == nil && known {
+			name := typeName(ch.Type)
+			ch.Name = &name
 		}
 	}
+	// Nothing can refer to an item before it exists, and refs can't shadow ids, so adding these
+	// first never changes what the other changes mean.
+	slices.SortStableFunc(c.Changes, func(a, b Change) int {
+		return addedFirst(b) - addedFirst(a)
+	})
+}
+
+func addedFirst(ch Change) int {
+	if ch.Op == "add_component" || ch.Op == "add_requirement" {
+		return 1
+	}
+	return 0
+}
+
+// typeName is a component type as a default name: "load_balancer" → "Load Balancer".
+func typeName(typ string) string {
+	words := strings.Split(typ, "_")
+	for i, w := range words {
+		switch w {
+		case "api", "cdn", "dns":
+			words[i] = strings.ToUpper(w)
+		default:
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// inferOp guesses a missing op from the fields only one op uses.
+func inferOp(ch *Change) string {
+	switch {
+	case slices.Contains(ops, ch.Type):
+		op := ch.Type
+		ch.Type = ""
+		return op
+	case ch.Title != "" || ch.Rationale != "" || len(ch.Targets) > 0:
+		return "add_decision"
+	case ch.Source != "" || ch.Target != "":
+		return "add_connection"
+	case ch.Level != "":
+		return "set_experience_level"
+	}
+	return ""
 }
 
 // Validate checks every Change against doc and k (what the Project has when the Proposal is made).
@@ -124,6 +203,10 @@ func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) erro
 		case "add_component":
 			if err := newRef(at, ch.Ref, taken); err != nil {
 				return err
+			}
+			if ch.Type == "" {
+				// Models confuse the two fields, so say which is which.
+				return invalid("%s: needs a \"type\", the component type (one of %s); the operation goes in \"op\"", at, typeList())
 			}
 			if _, ok := architecture.ComponentTypes[ch.Type]; !ok {
 				return invalid("%s: unknown type %q; use one of %s", at, ch.Type, typeList())
@@ -230,6 +313,11 @@ func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) erro
 			if err := knowledge.CheckLevel(ch.Level); err != nil {
 				return invalid("%s: %v", at, err)
 			}
+			if ch.Level == k.ExperienceLevel {
+				return invalid("%s: the experience level is already %s; leave this change out, and if nothing else is left, don't call propose_changes", at, ch.Level)
+			}
+		case "":
+			return invalid("%s: every change needs an \"op\", one of %s", at, strings.Join(ops, ", "))
 		default:
 			return invalid("%s: unknown op", at)
 		}
@@ -305,6 +393,7 @@ var Tool = llm.Tool{
 }
 
 func toolSchema() string {
+	opNames, _ := json.Marshal(ops)
 	types, _ := json.Marshal(sortedTypes())
 	kinds, _ := json.Marshal(architecture.ConnectionKinds)
 	categories, _ := json.Marshal(knowledge.Categories)
@@ -318,11 +407,11 @@ func toolSchema() string {
       "items": {
         "type": "object",
         "properties": {
-          "op": {"type": "string", "enum": ["add_component", "update_component", "remove_component", "add_connection", "update_connection", "remove_connection", "add_requirement", "update_requirement", "remove_requirement", "add_decision", "set_experience_level"]},
+          "op": {"type": "string", "enum": ` + string(opNames) + `, "description": "The operation. Always set it; never put the operation in \"type\"."},
           "id": {"type": "string", "description": "Existing item id (update_*, remove_*): a component or connection id, or a requirement id like R1."},
           "ref": {"type": "string", "description": "Temporary id for a new component, connection or requirement (add_*), usable by later changes."},
-          "type": {"type": "string", "enum": ` + string(types) + `, "description": "Component type (add_component)."},
-          "name": {"type": "string", "description": "Component name (add_component, update_component)."},
+          "type": {"type": "string", "enum": ` + string(types) + `, "description": "Component type (add_component, required). Not the operation: that goes in \"op\"."},
+          "name": {"type": "string", "description": "Component name shown on the canvas (add_component, required; update_component)."},
           "properties": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Component properties allowed by its type (e.g. database: engine, replicas, sharding)."},
           "source": {"type": "string", "description": "Connection start: component id or ref (add_connection)."},
           "target": {"type": "string", "description": "Connection end: component id or ref (add_connection)."},

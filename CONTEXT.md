@@ -53,7 +53,7 @@ A stated need or constraint of the Project that design choices answer to, such a
 _Avoid_: Spec, constraint, NFR
 
 **Experience Level**:
-How experienced the User says they are, recorded per Project: Beginner, Intermediate or Expert. It sets how deeply the AI explains its Decisions.
+How experienced the User says they are, recorded per Project: Beginner, Intermediate or Expert. It sets how deeply the AI explains its Decisions. A Project that hasn't recorded one uses the User's default Experience Level, which the User sets in Settings.
 _Avoid_: Skill level, persona
 
 **Decision**:

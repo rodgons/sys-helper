@@ -6,15 +6,20 @@ import {
   Background,
   type Connection,
   ConnectionMode,
+  ControlButton,
   Controls,
   type EdgeChange,
+  EdgeToolbar,
   MarkerType,
   type NodeChange,
+  NodeToolbar,
   Panel,
+  Position,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
 } from '@xyflow/react';
+import { Workflow } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { color, radius, space, text } from '../design/tokens.stylex';
 import { ApiError, apiFetch } from '../lib/api';
@@ -27,6 +32,7 @@ import { Label, Text } from '../ui/typography';
 import { type SaveStatus, useAutosave } from './autosave';
 import { ComponentDock, DRAG_TYPE } from './dock';
 import { Inspector } from './inspector';
+import { tidy } from './layout';
 import {
   type ComponentData,
   type ComponentNode,
@@ -62,8 +68,26 @@ export function ArchitectureCanvas(props: CanvasProps) {
   );
 }
 
-// Width of the inspector panel (16rem) plus its margins.
+// Width of the inspector (16rem) plus its margins.
 const INSPECTOR_SPACE = 300;
+
+/**
+ * How to fit the Architecture into view. Panels float over the canvas (the controls bottom left, the
+ * dock and proposal bar bottom centre, the inspector top right, or beside the selected component),
+ * so the fit keeps clear of them rather than of the canvas edges. The inspector is only wide while
+ * something is selected.
+ */
+function fitOptions({ inspector, proposal }: { inspector: boolean; proposal: boolean }) {
+  return {
+    maxZoom: 1,
+    padding: {
+      top: '48px',
+      left: '64px',
+      right: inspector ? `${INSPECTOR_SPACE}px` : '64px',
+      bottom: proposal ? '180px' : '80px',
+    },
+  } as const;
+}
 
 // Changes that alter the saved document. Selection, measuring and mid-drag moves don't.
 const changesDocument = (c: NodeChange | EdgeChange) =>
@@ -83,6 +107,8 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
   const autosave = useAutosave(slug, initial.version, refreshKnowledge);
   const reactFlow = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
+  // Where the last connection was clicked, on the canvas, so its window opens there.
+  const [clicked, setClicked] = useState<({ id: string } & XY) | null>(null);
 
   const update = (nodes: ComponentNode[], edges: ConnectionEdge[], changed: boolean) => {
     latest.current = { nodes, edges };
@@ -123,8 +149,12 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
   useEffect(() => {
     if (!proposal || !ghostsMeasured || fitted.current === proposal.seq) return;
     fitted.current = proposal.seq;
-    void reactFlow.fitView({ padding: 0.25, maxZoom: 1, duration: 300 });
+    void reactFlow.fitView({ ...fitOptions({ inspector: false, proposal: true }), duration: 300 });
   }, [proposal, ghostsMeasured, reactFlow]);
+  const fit = fitOptions({
+    inspector: nodes.some((n) => n.selected) || edges.some((e) => e.selected),
+    proposal: Boolean(proposal),
+  });
   const editorIds = new Set(nodes.map((n) => n.id));
   const editorEdgeIds = new Set(edges.map((e) => e.id));
 
@@ -177,12 +207,46 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
       true,
     );
 
+  /** Rearranges every component so connections flow left to right, then brings it all into view. */
+  const tidyUp = () => {
+    update(tidy(latest.current.nodes, latest.current.edges), latest.current.edges, true);
+    void reactFlow.fitView({ ...fit, duration: 300 });
+  };
+
   const remove = (id: string) =>
     update(
       latest.current.nodes.filter((n) => n.id !== id),
       latest.current.edges.filter((e) => e.id !== id && e.source !== id && e.target !== id),
       true,
     );
+
+  const deselect = () =>
+    update(
+      latest.current.nodes.map((n) => ({ ...n, selected: false })),
+      latest.current.edges.map((e) => ({ ...e, selected: false })),
+      false,
+    );
+
+  const selectedNodes = nodes.filter((n) => n.selected);
+  const selectedEdges = edges.filter((e) => e.selected);
+  // One selected component is edited in a window beside it, which follows it as it is dragged, and
+  // one clicked connection in a window where it was clicked; anything else in the corner panel.
+  const [floating] = selectedNodes.length === 1 && selectedEdges.length === 0 ? selectedNodes : [];
+  const [floatingEdge] =
+    selectedNodes.length === 0 && selectedEdges.length === 1 ? selectedEdges : [];
+  const edgeAnchor = floatingEdge && clicked?.id === floatingEdge.id ? clicked : null;
+  const inspector = (
+    <Inspector
+      slug={slug}
+      saved={autosave.status === 'saved'}
+      nodes={selectedNodes}
+      edges={selectedEdges}
+      onEditComponent={editComponent}
+      onEditConnection={editConnection}
+      onRemove={remove}
+      onClose={deselect}
+    />
+  );
 
   return (
     <div ref={wrapper} {...stylex.props(styles.wrapper)}>
@@ -212,6 +276,12 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
           );
         }}
         onConnect={onConnect}
+        onEdgeClick={(e, edge) =>
+          setClicked({
+            id: edge.id,
+            ...reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY }),
+          })
+        }
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
           e.preventDefault();
@@ -227,25 +297,53 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
         defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
         colorMode="system"
         fitView={fitOnLoad}
-        fitViewOptions={{ maxZoom: 1 }}
+        fitViewOptions={fit}
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={24} />
-        <Controls showInteractive={false} />
+        <Controls showInteractive={false} fitViewOptions={fit}>
+          <ControlButton
+            onClick={tidyUp}
+            // A pending Proposal's preview fixes where its new components go, so tidying under it
+            // would leave them stranded.
+            disabled={Boolean(proposal) || nodes.length < 2}
+            aria-label="Tidy up"
+            title={proposal ? 'Tidy up (after reviewing the proposal)' : 'Tidy up'}
+          >
+            <Workflow />
+          </ControlButton>
+        </Controls>
         <Panel position="top-left">
           <SaveIndicator status={autosave.status} />
         </Panel>
-        <Panel position="top-right">
-          <Inspector
-            slug={slug}
-            saved={autosave.status === 'saved'}
-            nodes={nodes.filter((n) => n.selected)}
-            edges={edges.filter((e) => e.selected)}
-            onEditComponent={editComponent}
-            onEditConnection={editConnection}
-            onRemove={remove}
-          />
-        </Panel>
+        {floating ? (
+          <NodeToolbar
+            nodeId={floating.id}
+            isVisible
+            position={Position.Right}
+            align="start"
+            offset={12}
+            // Scrolling the inspector shouldn't zoom the canvas.
+            className="nowheel"
+          >
+            {inspector}
+          </NodeToolbar>
+        ) : edgeAnchor ? (
+          <EdgeToolbar
+            edgeId={edgeAnchor.id}
+            x={edgeAnchor.x}
+            y={edgeAnchor.y}
+            isVisible
+            alignX="left"
+            alignY="top"
+            // It sits inside the canvas, so typing, dragging and scrolling in it must not pan or zoom.
+            className="nowheel nopan nodrag"
+          >
+            <div {...stylex.props(styles.edgeWindow)}>{inspector}</div>
+          </EdgeToolbar>
+        ) : (
+          <Panel position="top-right">{inspector}</Panel>
+        )}
         <Panel position="bottom-center">
           <div {...stylex.props(styles.bottom)}>
             {proposal && <ProposalBar proposal={proposal} review={review.state} />}
@@ -493,6 +591,8 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 
 const styles = stylex.create({
   wrapper: { flexGrow: 1, minHeight: 0, position: 'relative' },
+  // Clear of the pointer, so the connection under it stays visible.
+  edgeWindow: { transform: 'translate(12px, 12px)' },
   status: { fontSize: text['--text-xs'], color: color['--color-fg-muted'] },
   statusError: { color: color['--color-danger'] },
   bottom: {

@@ -1,6 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
-import { useState } from 'react';
-import { color, radius, space } from '../design/tokens.stylex';
+import { X } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
+import { color, motion, radius, space } from '../design/tokens.stylex';
 import { DecisionCard, DecisionForm } from '../knowledge/decisions';
 import { useKnowledge, useKnowledgeActions } from '../lib/knowledge';
 import { Button } from '../ui/button';
@@ -17,7 +18,10 @@ import {
   typeDef,
 } from './model';
 
-/** Edits the one selected Component or Connection; otherwise explains how to use the canvas. */
+/**
+ * Edits the one selected Component or Connection; otherwise explains how to use the canvas. The
+ * canvas floats it next to a selected Component (see ArchitectureCanvas).
+ */
 export function Inspector({
   slug,
   saved,
@@ -26,6 +30,7 @@ export function Inspector({
   onEditComponent,
   onEditConnection,
   onRemove,
+  onClose,
 }: {
   slug: string;
   /** Whether the canvas is saved: Decisions can only be attached to saved items. */
@@ -35,6 +40,8 @@ export function Inspector({
   onEditComponent: (id: string, patch: Partial<ComponentData>) => void;
   onEditConnection: (id: string, patch: Partial<ConnectionData>) => void;
   onRemove: (id: string) => void;
+  /** Closes the inspector by clearing the selection. */
+  onClose: () => void;
 }) {
   const [node] = nodes;
   const [edge] = edges;
@@ -44,7 +51,7 @@ export function Inspector({
     <section aria-label="Inspector" {...stylex.props(styles.panel, !single && styles.hint)}>
       {single && node ? (
         <>
-          <Label tone="accent">{typeDef(node.data.type).label}</Label>
+          <Header onClose={onClose}>{typeDef(node.data.type).label}</Header>
           <TextField
             label="Name"
             value={node.data.name}
@@ -72,7 +79,7 @@ export function Inspector({
         </>
       ) : single && edge?.data ? (
         <>
-          <Label tone="accent">Connection</Label>
+          <Header onClose={onClose}>Connection</Header>
           <SelectField
             label="Kind"
             value={edge.data.kind}
@@ -97,6 +104,23 @@ export function Inspector({
         </Text>
       )}
     </section>
+  );
+}
+
+function Header({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  return (
+    <div {...stylex.props(styles.header)}>
+      <Label tone="accent">{children}</Label>
+      <button
+        type="button"
+        aria-label="Close"
+        title="Close"
+        onClick={onClose}
+        {...stylex.props(styles.close)}
+      >
+        <X size={16} aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 
@@ -150,6 +174,29 @@ function ItemDecisions({ slug, target, saved }: { slug: string; target: string; 
 }
 
 const styles = stylex.create({
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space['--space-2'],
+  },
+  close: {
+    display: 'grid',
+    placeItems: 'center',
+    width: 28,
+    height: 28,
+    // Pull the icon into the corner without shrinking its hit area.
+    marginBlock: `calc(-1 * ${space['--space-1']})`,
+    marginInlineEnd: `calc(-1 * ${space['--space-2']})`,
+    padding: 0,
+    borderWidth: 0,
+    borderRadius: radius['--radius-sm'],
+    backgroundColor: { default: 'transparent', ':hover': color['--color-subtle'] },
+    color: { default: color['--color-fg-muted'], ':hover': color['--color-fg'] },
+    cursor: 'pointer',
+    transitionProperty: 'background-color, color',
+    transitionDuration: motion['--duration'],
+  },
   decisions: {
     display: 'flex',
     flexDirection: 'column',
