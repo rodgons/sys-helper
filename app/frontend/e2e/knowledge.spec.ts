@@ -31,7 +31,7 @@ test('an accepted proposal brings its requirement, decision and experience level
     .getByRole('region', { name: 'Proposal' })
     .getByRole('button', { name: 'Accept' })
     .click();
-  await expect(chat.getByText('Accepted')).toBeVisible();
+  await expect(chat.getByText('Accepted', { exact: true })).toBeVisible();
 
   await expect(node(page, 'Fake Cache')).toContainText('1 decision');
   await page.getByRole('tab', { name: /Requirements/ }).click();

@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { useSetProposalStatus } from '../lib/conversation';
 import { mockApi, renderWithQuery, signedIn, sseResponse } from '../test/render';
 import { ChatPane } from './chat-pane';
 
@@ -209,5 +210,67 @@ describe('ChatPane', () => {
 
     expect(await screen.findByText('A better idea.')).toBeInTheDocument();
     expect(screen.getByText('Replaced')).toBeInTheDocument();
+  });
+
+  describe('after the user reviews a proposal', () => {
+    const proposed = (status: string) => ({
+      role: 'assistant',
+      body: 'Here is a cache.',
+      createdAt: at,
+      proposal: { seq: 1, summary: 'Add a cache', status, baseVersion: 0, changes: [] },
+    });
+
+    /** Resolves Proposal 1 the way the canvas does. */
+    function Resolve({ status }: { status: 'accepted' | 'rejected' }) {
+      const setStatus = useSetProposalStatus(SLUG);
+      return (
+        <button type="button" onClick={() => setStatus(1, status)}>
+          resolve
+        </button>
+      );
+    }
+
+    it.each(['accepted', 'rejected'] as const)(
+      'continues the conversation once %s',
+      async (status) => {
+        const reply = vi.fn(aiSays('Next, let us talk about availability.'));
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(
+            mockApi({
+              [`GET ${API}/messages`]: [welcome, proposed('pending')],
+              [`POST ${API}/reply`]: reply,
+            }),
+          ),
+        );
+        renderWithQuery(
+          <>
+            <ChatPane slug={SLUG} />
+            <Resolve status={status} />
+          </>,
+          { auth: signedIn() },
+        );
+        await screen.findByText('Here is a cache.');
+        expect(reply).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'resolve' }));
+
+        expect(
+          await within(messages()).findByText('Next, let us talk about availability.'),
+        ).toBeInTheDocument();
+        expect(reply).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('offers the reply instead of fetching it when the review happened earlier', async () => {
+      const { reply } = setup({}, [welcome, proposed('accepted')]);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Get a reply' }));
+
+      expect(
+        await within(messages()).findByText('How many users will it have?'),
+      ).toBeInTheDocument();
+      expect(reply).toHaveBeenCalledTimes(1);
+    });
   });
 });

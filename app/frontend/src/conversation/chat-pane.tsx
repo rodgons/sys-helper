@@ -25,7 +25,27 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
   const count = messages.data?.length ?? 0;
   const streamed = reply.state.status === 'streaming' ? reply.state.text : '';
   const replying = reply.state.status === 'streaming';
-  const unanswered = messages.data?.at(-1)?.role === 'user';
+  const last = messages.data?.at(-1);
+  const pendingSeq = last?.proposal?.status === 'pending' ? last.proposal.seq : undefined;
+  const reviewedSeq =
+    last?.proposal?.status === 'accepted' || last?.proposal?.status === 'rejected'
+      ? last.proposal.seq
+      : undefined;
+  // The AI follows up on a User message, and on its own Proposal once the User reviews it.
+  const unanswered = last?.role === 'user' || reviewedSeq !== undefined;
+
+  // When the User accepts or rejects the Proposal ending the Conversation, the AI continues right
+  // away. A review from before this page loaded only gets the "Get a reply" button.
+  const watchedSeq = useRef<number | undefined>(undefined);
+  const { start } = reply;
+  useEffect(() => {
+    if (pendingSeq !== undefined) {
+      watchedSeq.current = pendingSeq;
+    } else if (reviewedSeq !== undefined && reviewedSeq === watchedSeq.current) {
+      watchedSeq.current = undefined;
+      void start();
+    }
+  }, [pendingSeq, reviewedSeq, start]);
 
   // Keep the newest message (or the reply being written) in view.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll whenever either changes
@@ -90,7 +110,9 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
             <Text size="sm" tone="muted">
               {reply.state.status === 'failed'
                 ? (REPLY_ERRORS[reply.state.code] ?? "The AI couldn't reply.")
-                : 'This message has no reply yet.'}
+                : reviewedSeq !== undefined
+                  ? "The AI hasn't followed up on this proposal yet."
+                  : 'This message has no reply yet.'}
             </Text>
             <Button size="sm" variant="outline" onClick={() => void reply.start()}>
               {reply.state.status === 'failed' ? 'Retry' : 'Get a reply'}

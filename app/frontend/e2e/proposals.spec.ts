@@ -29,15 +29,17 @@ test('accepting a proposal applies it to the canvas and keeps it', async ({ page
     .getByRole('button', { name: 'Accept' })
     .click();
 
-  await expect(chat.getByText('Accepted')).toBeVisible();
+  await expect(chat.getByText('Accepted', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Proposal' })).toHaveCount(0);
+  // The AI follows up on the review without the User writing anything.
+  await expect(chat).toContainText('You said: [I accepted proposal #1');
   await expect(node(page, 'Fake API')).not.toContainText('new');
 
   await page.reload();
   await expect(node(page, 'Fake API')).toBeVisible();
   await expect(node(page, 'Fake Cache')).toContainText('Redis');
   await expect(page.locator('.react-flow__edge')).toHaveCount(1);
-  await expect(chat.getByText('Accepted')).toBeVisible();
+  await expect(chat.getByText('Accepted', { exact: true })).toBeVisible();
 });
 
 test('rejecting a proposal leaves the canvas as it was', async ({ page, signIn }) => {
@@ -49,9 +51,16 @@ test('rejecting a proposal leaves the canvas as it was', async ({ page, signIn }
     .getByRole('button', { name: 'Reject' })
     .click();
 
-  await expect(page.getByRole('list', { name: 'Messages' }).getByText('Rejected')).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Messages' }).getByText('Rejected', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Messages' })).toContainText(
+    'You said: [I rejected proposal #1',
+  );
   await expect(page.locator('.react-flow__node')).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole('list', { name: 'Messages' }).getByText('Rejected')).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Messages' }).getByText('Rejected', { exact: true }),
+  ).toBeVisible();
   await expect(page.locator('.react-flow__node')).toHaveCount(0);
 });

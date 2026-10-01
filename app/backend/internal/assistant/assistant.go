@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	// ErrNothingToReply means the Conversation doesn't end with a User message.
-	ErrNothingToReply = errors.New("the conversation has no user message to reply to")
+	// ErrNothingToReply means the Conversation ends with neither a User message nor a Proposal the
+	// User has just reviewed.
+	ErrNothingToReply = errors.New("the conversation has nothing to reply to")
 	// ErrBusy means a reply for this Project is already being generated.
 	ErrBusy = errors.New("a reply is already in progress")
 	// ErrUnavailable means no model is configured.
@@ -52,7 +53,9 @@ type Assistant struct {
 // invalid Proposal is sent back with the validation error so the model can correct it.
 const proposalAttempts = 2
 
-// Reply answers the Conversation's last User message, possibly with a Proposal. onText receives
+// Reply answers the Conversation's last User message, possibly with a Proposal. If the Conversation
+// instead ends with a Proposal the User accepted or rejected, Reply continues from that review, so
+// the AI keeps leading until it stops proposing. onText receives
 // the reply as it streams; the reply is saved only if it completes, so a failed reply can simply be
 // retried.
 func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText func(string)) (conversation.Message, error) {
@@ -69,7 +72,7 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	if err != nil {
 		return conversation.Message{}, err
 	}
-	if len(msgs) == 0 || msgs[len(msgs)-1].Role != conversation.RoleUser {
+	if len(msgs) == 0 || (msgs[len(msgs)-1].Role != conversation.RoleUser && reviewed(msgs[len(msgs)-1]) == nil) {
 		return conversation.Message{}, ErrNothingToReply
 	}
 	arch, err := a.Architectures.Get(ctx, userID, suffix)
@@ -188,7 +191,20 @@ func (a *Assistant) request(msgs []conversation.Message, doc architecture.Docume
 		}
 		req.Messages = append(req.Messages, llm.Message{Role: llm.RoleAssistant, Content: content})
 	}
+	if p := reviewed(msgs[len(msgs)-1]); p != nil {
+		// Chat templates expect a user turn last; the review is the User's turn.
+		req.Messages = append(req.Messages, llm.Message{Role: llm.RoleUser,
+			Content: fmt.Sprintf("[I %s proposal #%d \"%s\". Continue.]", p.Status, p.Seq, p.Summary)})
+	}
 	return req, nil
+}
+
+// reviewed returns m's Proposal if the User accepted or rejected it.
+func reviewed(m conversation.Message) *conversation.Proposal {
+	if p := m.Proposal; p != nil && (p.Status == conversation.ProposalAccepted || p.Status == conversation.ProposalRejected) {
+		return p
+	}
+	return nil
 }
 
 func describeStatus(s conversation.ProposalStatus) string {

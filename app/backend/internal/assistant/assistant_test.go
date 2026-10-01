@@ -334,6 +334,38 @@ func TestProposals(t *testing.T) {
 		}
 	})
 
+	t.Run("continues the conversation once the user reviews a proposal", func(t *testing.T) {
+		for _, status := range []conversation.ProposalStatus{conversation.ProposalAccepted, conversation.ProposalRejected} {
+			c := conv("Welcome", "Add a cache")
+			c.msgs = append(c.msgs, conversation.Message{Role: conversation.RoleAssistant, Body: "Here.",
+				Proposal: &conversation.Proposal{Seq: 3, Summary: "Add a cache", Status: status}})
+			m := &turns{turns: []turn{{text: "Next, availability."}}}
+
+			msg, err := newAssistant(m, c).Reply(context.Background(), "u", "s", func(string) {})
+
+			if err != nil || msg.Body != "Next, availability." {
+				t.Fatalf("%s: message = %+v, err = %v", status, msg, err)
+			}
+			history := m.reqs[0].Messages
+			last := history[len(history)-1]
+			if last.Role != llm.RoleUser || !strings.Contains(last.Content, "#3") || !strings.Contains(last.Content, string(status)) {
+				t.Errorf("%s: last message = %+v", status, last)
+			}
+		}
+	})
+
+	t.Run("doesn't continue after a proposal that is pending or superseded", func(t *testing.T) {
+		for _, status := range []conversation.ProposalStatus{conversation.ProposalPending, conversation.ProposalSuperseded} {
+			c := conv("Welcome", "Add a cache")
+			c.msgs = append(c.msgs, conversation.Message{Role: conversation.RoleAssistant, Body: "Here.",
+				Proposal: &conversation.Proposal{Seq: 1, Status: status}})
+
+			if _, err := newAssistant(&turns{turns: []turn{{text: "x"}}}, c).Reply(context.Background(), "u", "s", func(string) {}); !errors.Is(err, assistant.ErrNothingToReply) {
+				t.Errorf("%s: err = %v, want ErrNothingToReply", status, err)
+			}
+		}
+	})
+
 	t.Run("validates decisions against the project's requirements", func(t *testing.T) {
 		cites := `{"summary": "Explain the DB", "changes": [{"op": "add_decision", "title": "T", "rationale": "R", "targets": ["db"], "requirements": ["R1"]}]}`
 		msg, err := newAssistant(&turns{turns: []turn{{text: "Recorded.", args: cites}}}, conv("Welcome", "Why Postgres?")).

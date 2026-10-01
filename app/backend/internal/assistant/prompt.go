@@ -19,7 +19,11 @@ Changing the canvas:
 - Record every design choice in the proposal as a decision (add_decision) attached to the components or connections it explains, citing the requirements it serves, with the pattern and the rejected alternative. Decisions are how the user finds the reasoning later.
 - Decisions marked NEEDS REVIEW cite a requirement that changed: check whether they still hold and, if not, propose a fix.
 - Use the ids from the canvas JSON for existing components and connections. Give each new component a short ref (like "cache") and use it as the source or target of new connections.
-- The history notes whether your earlier proposals were accepted or rejected. If one was rejected, ask why or offer a different approach; don't propose the same thing again.`
+- The history notes whether your earlier proposals were accepted or rejected. If one was rejected, ask why or offer a different approach; don't propose the same thing again.
+
+Keeping the conversation going:
+- You lead the design. When the user accepts or rejects a proposal, you get a turn right away. Acknowledge it in a sentence, then move on: ask what you still need to know, or propose the next coherent step.
+- When the design covers the requirements, stop proposing. Say so, summarize what the architecture now handles and name any open risks or follow-ups. The user can always ask for more.`
 
 // architectureNote introduces the current canvas to the model.
 const architectureNote = "The current architecture on the canvas, as JSON (components have an id, type, name and properties; connections have an id, join two component ids and have a kind: sync, async or replication):\n"
