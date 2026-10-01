@@ -27,6 +27,20 @@ const (
 // MaxUserMessage is the longest message a User can send, in characters.
 const MaxUserMessage = 4000
 
+// MaxReply is the longest AI reply that is stored, in characters (messages.body allows 20,000).
+const MaxReply = 20000
+
+const truncatedMarker = "\n\n…[reply truncated]"
+
+// CapReply cuts an AI reply that is too long to store, ending it with a visible marker.
+func CapReply(body string) string {
+	if utf8.RuneCountInString(body) <= MaxReply {
+		return body
+	}
+	keep := []rune(body)[:MaxReply-utf8.RuneCountInString(truncatedMarker)]
+	return strings.TrimRight(string(keep), " \n") + truncatedMarker
+}
+
 // WelcomeMessage opens every Conversation. It sets expectations and asks the first question, so
 // the User knows the AI will interview them before designing anything.
 const WelcomeMessage = "Hi! I'm your AI architect. Before we draw anything, I'll ask you some questions " +

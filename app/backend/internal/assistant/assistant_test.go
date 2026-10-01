@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/assistant"
@@ -167,6 +168,23 @@ func TestReply(t *testing.T) {
 
 		if err == nil || len(c.msgs) != 2 {
 			t.Fatalf("err = %v, stored = %+v", err, c.msgs)
+		}
+	})
+
+	t.Run("truncates a reply too long to store, with a visible marker", func(t *testing.T) {
+		c := conv("Welcome", "Explain everything")
+		long := strings.Repeat("é", conversation.MaxReply+500) // multi-byte: the limit counts characters
+
+		msg, err := newAssistant(model{words: []string{long}}, c).Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := utf8.RuneCountInString(msg.Body); n > conversation.MaxReply {
+			t.Errorf("saved %d characters, want at most %d", n, conversation.MaxReply)
+		}
+		if !strings.HasSuffix(msg.Body, "[reply truncated]") || !strings.HasPrefix(msg.Body, "ééé") {
+			t.Errorf("body ends %q", msg.Body[len(msg.Body)-40:])
 		}
 	})
 

@@ -140,6 +140,7 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	if body == "" {
 		return conversation.Message{}, errors.New("model reply: empty")
 	}
+	body = conversation.CapReply(body)
 	// Save even if the client went away mid-stream: the reply is complete and paid for.
 	return a.Conversations.AppendReply(context.WithoutCancel(ctx), userID, suffix, body, accepted, arch.Version)
 }
@@ -179,9 +180,10 @@ func (a *Assistant) request(msgs []conversation.Message, doc architecture.Docume
 		return llm.Request{}, err
 	}
 	req := llm.Request{
-		// Generous: thinking models (e.g. GLM-5.3) spend thousands of tokens reasoning before they
-		// call propose_changes, and run out of budget otherwise.
-		MaxTokens: 16384,
+		// Enough for thinking models (e.g. GLM-5.3), which spend thousands of tokens reasoning before
+		// they call propose_changes, while keeping a reply's text near the 20,000 characters a
+		// Message can store. Longer text is cut by conversation.CapReply.
+		MaxTokens: 4096,
 		// One system message: some chat templates (e.g. Gemma's) accept only one.
 		Messages: []llm.Message{
 			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + describeKnowledge(known) + "\n\n" + architectureNote + string(canvas)},
