@@ -1,15 +1,19 @@
 import * as stylex from '@stylexjs/stylex';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { color, font, media, radius, space, text } from '../design/tokens.stylex';
+import { Avatar } from '../ui/avatar';
 import { Badge } from '../ui/badge';
 import { Button, ButtonLink } from '../ui/button';
 import { Card } from '../ui/card';
 import { CommandLine } from '../ui/command-line';
+import { Dialog } from '../ui/dialog';
 import { Cluster, Grid, Section, Stack } from '../ui/layout';
 import { ArrowLink, TextLink } from '../ui/link';
+import { Menu, MenuItem } from '../ui/menu';
 import { MeterList } from '../ui/meter';
 import { TextArea } from '../ui/text-area';
 import { TextField } from '../ui/text-field';
+import { toast } from '../ui/toaster';
 import { Display, Heading, InlineCode, Label, Readout, Text } from '../ui/typography';
 
 /** Living reference for the design system: every token and base component, rendered. */
@@ -250,7 +254,54 @@ export function UiKitPage() {
           <TextArea label="Text area" placeholder="Several lines, e.g. a decision's rationale" />
         </Grid>
       </DocSection>
+
+      <DocSection id="overlays" index="11" title="Dialog & toast">
+        <Overlays />
+      </DocSection>
+
+      <DocSection id="account" index="12" title="Avatar & menu">
+        <Cluster gap={3}>
+          <Avatar name="octocat" src="https://github.com/octocat.png" />
+          <Avatar name="octocat" />
+          <Menu label="Account" trigger={<Avatar name="octocat" />}>
+            <MenuItem onSelect={() => toast.info('Signed out (not really).')}>Sign out</MenuItem>
+          </Menu>
+        </Cluster>
+      </DocSection>
     </main>
+  );
+}
+
+function Overlays() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Cluster gap={3}>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        Open dialog
+      </Button>
+      <Button variant="outline" onClick={() => toast.success('“URL Shortener” was deleted.')}>
+        Show toast
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Delete “URL Shortener”?"
+        actions={
+          <>
+            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => setOpen(false)}>
+              Delete project
+            </Button>
+          </>
+        }
+      >
+        <Text size="sm" tone="muted">
+          A confirmation for an action that can’t be undone.
+        </Text>
+      </Dialog>
+    </Cluster>
   );
 }
 

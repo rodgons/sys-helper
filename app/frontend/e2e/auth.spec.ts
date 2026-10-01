@@ -16,7 +16,8 @@ test('signed-in users land on their projects and can sign out', async ({ page, s
   await expect(page.getByText(`Signed in as ${username}`)).toBeVisible();
   await expect(page.getByRole('heading', { name: 'No projects yet' })).toBeVisible();
 
-  await page.getByRole('banner').getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('banner').getByRole('button', { name: 'Account' }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
 
   await expect(page).toHaveURL('/');
   await expect(page.getByRole('button', { name: 'Sign in with GitHub' })).toBeVisible();
