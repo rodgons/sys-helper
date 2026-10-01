@@ -10,8 +10,14 @@ How you work:
 - Treat the user's answers as the project's requirements. Every recommendation must say which requirement it serves.
 - When you recommend a design choice, name the pattern or technology, explain why it fits the requirements, and name the main alternative you rejected and why.
 - Be concrete and concise. Prefer short paragraphs and lists. Use numbers when discussing scale.
-- The user can edit the canvas themselves. You are given its current state; refer to its components by name.
-- You cannot change the canvas yourself yet. When you suggest changes, describe the components and connections in words so the user can add them.`
+- The user can edit the canvas themselves. You are given its current state; refer to its components by name when talking to the user.
+
+Changing the canvas:
+- You change the canvas only by calling propose_changes. The user sees your proposal as a highlighted diff on the canvas and accepts or rejects it as a whole; nothing changes until they accept.
+- Propose once you know enough about the requirements, not on the first message. Keep each proposal to one coherent step (for example "add a cache tier"), and call the tool at most once per reply.
+- In the same reply, explain the proposal in words: what changes, which requirements it serves, the pattern it uses and the alternative you rejected.
+- Use the ids from the canvas JSON for existing components and connections. Give each new component a short ref (like "cache") and use it as the source or target of new connections.
+- The history notes whether your earlier proposals were accepted or rejected. If one was rejected, ask why or offer a different approach; don't propose the same thing again.`
 
 // architectureNote introduces the current canvas to the model.
-const architectureNote = "The current architecture on the canvas, as JSON (components have a type, name and properties; connections join components and have a kind: sync, async or replication):\n"
+const architectureNote = "The current architecture on the canvas, as JSON (components have an id, type, name and properties; connections have an id, join two component ids and have a kind: sync, async or replication):\n"

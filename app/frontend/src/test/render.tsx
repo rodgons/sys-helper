@@ -43,7 +43,7 @@ export function mockFetchJson(body: unknown, status = 200) {
 }
 
 type Reply = unknown | { status: number; body?: unknown };
-type Route = Reply | ((init: RequestInit & { json?: unknown }) => Reply);
+type Route = Reply | ((init: RequestInit & { json?: unknown }) => Reply | Promise<Reply>);
 
 /**
  * A `fetch` stub that routes on `"METHOD /path"` (path relative to VITE_API_URL). A route is a JSON
@@ -55,7 +55,7 @@ export function mockApi(routes: Record<string, Route>) {
     if (!(key in routes)) throw new Error(`unexpected request: ${key}`);
     const route = routes[key];
     const json = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
-    const reply = typeof route === 'function' ? route({ ...init, json }) : route;
+    const reply = await (typeof route === 'function' ? route({ ...init, json }) : route);
     if (reply instanceof Response) return reply;
     const { status, body } =
       reply !== null && typeof reply === 'object' && 'status' in reply

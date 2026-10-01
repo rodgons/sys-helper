@@ -1,10 +1,12 @@
 import * as stylex from '@stylexjs/stylex';
 import { useEffect, useRef, useState } from 'react';
+import type { Review } from '../architecture/review';
 import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
 import { ApiError } from '../lib/api';
 import { useMessages, useReply, useSendMessage } from '../lib/conversation';
 import { Button } from '../ui/button';
 import { Heading, Text } from '../ui/typography';
+import { ProposalCard } from './proposal-card';
 
 const MAX_LENGTH = 4000;
 
@@ -14,7 +16,7 @@ const REPLY_ERRORS: Record<string, string> = {
 };
 
 /** Right pane of the workspace: the Project's Conversation and a composer. */
-export function ChatPane({ slug }: { slug: string }) {
+export function ChatPane({ slug, review = null }: { slug: string; review?: Review | null }) {
   const messages = useMessages(slug);
   const send = useSendMessage(slug);
   const reply = useReply(slug);
@@ -73,6 +75,12 @@ export function ChatPane({ slug }: { slug: string }) {
               {m.role === 'user' ? 'You' : 'AI architect'}
             </span>
             <p {...stylex.props(styles.body)}>{m.body}</p>
+            {m.proposal && (
+              <ProposalCard
+                proposal={m.proposal}
+                review={review?.seq === m.proposal.seq ? review : null}
+              />
+            )}
           </li>
         ))}
         {replying && (

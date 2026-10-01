@@ -33,7 +33,7 @@ export function Inspector({
   const single = nodes.length + edges.length === 1;
 
   return (
-    <section aria-label="Inspector" {...stylex.props(styles.panel)}>
+    <section aria-label="Inspector" {...stylex.props(styles.panel, !single && styles.hint)}>
       {single && node ? (
         <>
           <Label tone="accent">{typeDef(node.data.type).label}</Label>
@@ -83,8 +83,7 @@ export function Inspector({
         </>
       ) : (
         <Text size="sm" tone="muted">
-          Add components from the menu, then drag from one component's edge to another to connect
-          them. Select anything to edit it; Backspace deletes the selection.
+          Select something to edit it. Drag between components to connect them.
         </Text>
       )}
     </section>
@@ -103,5 +102,12 @@ const styles = stylex.create({
     borderColor: color['--color-line'],
     borderRadius: radius['--radius-md'],
     backgroundColor: color['--color-surface'],
+  },
+  // With nothing to edit, shrink to a one-line hint so the canvas stays visible.
+  hint: {
+    width: 'auto',
+    maxWidth: '16rem',
+    paddingBlock: space['--space-2'],
+    paddingInline: space['--space-3'],
   },
 });

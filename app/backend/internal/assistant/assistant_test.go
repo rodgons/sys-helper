@@ -14,6 +14,7 @@ import (
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/projects"
+	"sys-helper/backend/internal/proposal"
 )
 
 type fakeConversations struct {
@@ -34,6 +35,17 @@ func (f *fakeConversations) Append(_ context.Context, _, _ string, role conversa
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	m := conversation.Message{Role: role, Body: body}
+	f.msgs = append(f.msgs, m)
+	return m, nil
+}
+
+func (f *fakeConversations) AppendReply(_ context.Context, _, _ string, body string, changes *proposal.Changes, base int) (conversation.Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m := conversation.Message{Role: conversation.RoleAssistant, Body: body}
+	if changes != nil {
+		m.Proposal = &conversation.Proposal{Seq: 1, Summary: changes.Summary, Changes: changes.Changes, Status: conversation.ProposalPending, BaseVersion: base}
+	}
 	f.msgs = append(f.msgs, m)
 	return m, nil
 }
@@ -190,6 +202,118 @@ func TestReply(t *testing.T) {
 	t.Run("passes not-found through", func(t *testing.T) {
 		if _, err := newAssistant(model{}, conv()).Reply(context.Background(), "u", "other", func(string) {}); !errors.Is(err, projects.ErrNotFound) {
 			t.Fatalf("err = %v, want ErrNotFound", err)
+		}
+	})
+}
+
+// turns answers each model call with the next scripted turn: text, then an optional tool call.
+type turns struct {
+	mu    sync.Mutex
+	turns []turn
+	reqs  []llm.Request
+}
+
+type turn struct {
+	text string
+	args string // propose_changes arguments; empty for none
+}
+
+func (s *turns) Stream(_ context.Context, req llm.Request) iter.Seq2[llm.Event, error] {
+	return func(yield func(llm.Event, error) bool) {
+		s.mu.Lock()
+		s.reqs = append(s.reqs, req)
+		t := s.turns[0]
+		s.turns = s.turns[1:]
+		s.mu.Unlock()
+		if t.text != "" && !yield(llm.Event{Text: t.text}, nil) {
+			return
+		}
+		if t.args != "" {
+			yield(llm.Event{ToolCall: &llm.ToolCall{ID: "call_1", Name: "propose_changes", Arguments: t.args}}, nil)
+		}
+	}
+}
+
+const validArgs = `{"summary": "Add a cache in front of the database", "changes": [
+	{"op": "add_component", "ref": "cache", "type": "cache", "name": "Order Cache"},
+	{"op": "add_connection", "source": "cache", "target": "db", "kind": "sync"}]}`
+
+func TestProposals(t *testing.T) {
+	t.Run("offers the propose_changes tool", func(t *testing.T) {
+		m := &turns{turns: []turn{{text: "ok"}}}
+		if _, err := newAssistant(m, conv("Welcome", "Hi")).Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		if tools := m.reqs[0].Tools; len(tools) != 1 || tools[0].Name != "propose_changes" {
+			t.Errorf("tools = %+v", tools)
+		}
+	})
+
+	t.Run("saves a valid proposal with the reply, based on the current version", func(t *testing.T) {
+		c := conv("Welcome", "Add a cache")
+
+		msg, err := newAssistant(&turns{turns: []turn{{text: "A cache absorbs the reads.", args: validArgs}}}, c).
+			Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.Body != "A cache absorbs the reads." || msg.Proposal == nil || msg.Proposal.BaseVersion != 2 || len(msg.Proposal.Changes) != 2 {
+			t.Fatalf("message = %+v", msg)
+		}
+	})
+
+	t.Run("uses the summary when the model only calls the tool", func(t *testing.T) {
+		msg, err := newAssistant(&turns{turns: []turn{{args: validArgs}}}, conv("Welcome", "Add a cache")).
+			Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Body != "Add a cache in front of the database" || msg.Proposal == nil {
+			t.Fatalf("message = %+v, err = %v", msg, err)
+		}
+	})
+
+	t.Run("lets the model fix an invalid proposal once", func(t *testing.T) {
+		bad := `{"summary": "Add a cache", "changes": [{"op": "add_connection", "source": "ghost", "target": "db", "kind": "sync"}]}`
+		m := &turns{turns: []turn{{text: "Adding a cache.", args: bad}, {args: validArgs}}}
+
+		msg, err := newAssistant(m, conv("Welcome", "Add a cache")).Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal == nil || msg.Body != "Adding a cache." {
+			t.Fatalf("message = %+v, err = %v", msg, err)
+		}
+		retry := m.reqs[1].Messages
+		toolResult := retry[len(retry)-1]
+		if toolResult.Role != llm.RoleTool || toolResult.ToolCallID != "call_1" || !strings.Contains(toolResult.Content, `"ghost"`) {
+			t.Errorf("tool result = %+v", toolResult)
+		}
+		if call := retry[len(retry)-2]; call.Role != llm.RoleAssistant || len(call.ToolCalls) != 1 {
+			t.Errorf("assistant tool call = %+v", call)
+		}
+	})
+
+	t.Run("gives up on proposals that stay invalid, and says so", func(t *testing.T) {
+		bad := `{"summary": "x", "changes": []}`
+		msg, err := newAssistant(&turns{turns: []turn{{text: "Here goes.", args: bad}, {args: bad}}}, conv("Welcome", "Add a cache")).
+			Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal != nil || !strings.Contains(msg.Body, "couldn't") {
+			t.Fatalf("message = %+v, err = %v", msg, err)
+		}
+	})
+
+	t.Run("tells the model what became of earlier proposals", func(t *testing.T) {
+		c := conv("Welcome", "Add a cache")
+		c.msgs = append(c.msgs,
+			conversation.Message{Role: conversation.RoleAssistant, Body: "Here.", Proposal: &conversation.Proposal{Seq: 1, Summary: "Add a cache", Status: conversation.ProposalRejected}},
+			conversation.Message{Role: conversation.RoleUser, Body: "Why?"})
+		m := &turns{turns: []turn{{text: "Because."}}}
+
+		if _, err := newAssistant(m, c).Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		history := m.reqs[0].Messages
+		if got := history[len(history)-2].Content; !strings.Contains(got, "Add a cache") || !strings.Contains(got, "rejected") {
+			t.Errorf("assistant history = %q", got)
 		}
 	})
 }

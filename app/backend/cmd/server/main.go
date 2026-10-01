@@ -68,6 +68,7 @@ func run() error {
 				HistoryLimit:  30,
 				Timeout:       3 * time.Minute,
 			},
+			Reviews:            conversation.Reviews{Conversations: conversations, Architectures: architectures},
 			DailyMessageLimit:  cfg.AI.DailyMessageLimit,
 			AllowedOrigins:     cfg.AllowedOrigins,
 			AllowedGitHubUsers: cfg.AllowedGitHubUsers,

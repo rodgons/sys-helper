@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/llm"
+	"sys-helper/backend/internal/proposal"
 )
 
 // Calls the real NVIDIA API: `make test-ai-live` (needs NVIDIA_API_KEY and AI_MODEL). It checks each model
@@ -91,6 +93,40 @@ func TestLiveModels(t *testing.T) {
 				t.Fatalf("arguments %q: %v", calls[0].Arguments, err)
 			}
 			t.Logf("tool call: %s(%s)", calls[0].Name, calls[0].Arguments)
+		})
+
+		t.Run(model+"/proposes valid changes", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			doc := architecture.Empty()
+			doc.Components = append(doc.Components,
+				architecture.Component{ID: "c-api", Type: "service", Name: "Orders API"},
+				architecture.Component{ID: "c-db", Type: "database", Name: "Orders DB", Properties: map[string]string{"engine": "PostgreSQL"}})
+			doc.Connections = append(doc.Connections, architecture.Connection{ID: "k-1", Source: "c-api", Target: "c-db", Kind: "sync"})
+			canvas, _ := json.Marshal(doc)
+			var call *llm.ToolCall
+			for ev, err := range client.Stream(ctx, llm.Request{MaxTokens: 2048, Tools: []llm.Tool{proposal.Tool}, Messages: []llm.Message{
+				{Role: llm.RoleSystem, Content: "You are a software architect. Change the canvas only by calling propose_changes. Current canvas JSON: " + string(canvas)},
+				{Role: llm.RoleUser, Content: "Reads are 100x writes and the database is overloaded. Propose adding a Redis cache between the API and the database."},
+			}}) {
+				if err != nil {
+					t.Fatalf("stream: %v", err)
+				}
+				if ev.ToolCall != nil && call == nil {
+					call = ev.ToolCall
+				}
+			}
+			if call == nil || call.Name != proposal.Tool.Name {
+				t.Fatalf("no propose_changes call: %+v", call)
+			}
+			var changes proposal.Changes
+			if err := json.Unmarshal([]byte(call.Arguments), &changes); err != nil {
+				t.Fatalf("arguments %q: %v", call.Arguments, err)
+			}
+			if err := changes.Validate(doc); err != nil {
+				t.Fatalf("invalid proposal %s: %v", call.Arguments, err)
+			}
+			t.Logf("proposal: %s", call.Arguments)
 		})
 	}
 }

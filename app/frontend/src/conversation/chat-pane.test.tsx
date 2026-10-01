@@ -150,4 +150,64 @@ describe('ChatPane', () => {
     expect(await within(messages()).findByText('How many users will it have?')).toBeInTheDocument();
     expect(reply).toHaveBeenCalledTimes(1);
   });
+
+  it('shows a proposal with its changes and lets the user accept it from the chat', async () => {
+    const proposal = {
+      seq: 1,
+      summary: 'Add a cache',
+      status: 'pending',
+      baseVersion: 0,
+      changes: [
+        { op: 'add_component', ref: 'cache', type: 'cache', name: 'Order Cache' },
+        { op: 'add_connection', source: 'api', target: 'cache', kind: 'sync' },
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        mockApi({
+          [`GET ${API}/messages`]: [
+            welcome,
+            { role: 'assistant', body: 'Here is a cache.', createdAt: at, proposal },
+          ],
+        }),
+      ),
+    );
+    const review = {
+      seq: 1,
+      stale: null,
+      busy: false,
+      error: null,
+      names: { api: 'Orders API' },
+      accept: vi.fn(),
+      reject: vi.fn(),
+    };
+    renderWithQuery(<ChatPane slug={SLUG} review={review} />, { auth: signedIn() });
+
+    expect(await screen.findByText('Add Cache “Order Cache”')).toBeInTheDocument();
+    expect(screen.getByText('Connect Orders API → Order Cache (sync)')).toBeInTheDocument();
+    expect(screen.getByText('Pending')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(review.accept).toHaveBeenCalled();
+  });
+
+  it('marks an older pending proposal as replaced when a new one arrives', async () => {
+    const old = { seq: 1, summary: 'Old idea', status: 'pending', baseVersion: 0, changes: [] };
+    const fresh = { seq: 2, summary: 'New idea', status: 'pending', baseVersion: 0, changes: [] };
+    setup(
+      {
+        [`POST ${API}/reply`]: () =>
+          sseResponse([
+            'done',
+            { role: 'assistant', body: 'A better idea.', createdAt: at, proposal: fresh },
+          ]),
+      },
+      [welcome, { role: 'assistant', body: 'Idea one.', createdAt: at, proposal: old }],
+    );
+
+    await send('Something better?');
+
+    expect(await screen.findByText('A better idea.')).toBeInTheDocument();
+    expect(screen.getByText('Replaced')).toBeInTheDocument();
+  });
 });

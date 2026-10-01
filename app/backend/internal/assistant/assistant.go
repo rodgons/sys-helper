@@ -14,6 +14,7 @@ import (
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/llm"
+	"sys-helper/backend/internal/proposal"
 )
 
 var (
@@ -29,7 +30,7 @@ type Assistant struct {
 	Model         llm.ChatModel
 	Conversations interface {
 		List(ctx context.Context, userID, suffix string) ([]conversation.Message, error)
-		Append(ctx context.Context, userID, suffix string, role conversation.Role, body string) (conversation.Message, error)
+		AppendReply(ctx context.Context, userID, suffix, body string, changes *proposal.Changes, baseVersion int) (conversation.Message, error)
 	}
 	Architectures interface {
 		Get(ctx context.Context, userID, suffix string) (architecture.Versioned, error)
@@ -43,8 +44,13 @@ type Assistant struct {
 	inFlight sync.Map // userID + suffix → struct{}
 }
 
-// Reply answers the Conversation's last User message. onText receives the reply as it streams;
-// the reply is saved only if it completes, so a failed reply can simply be retried.
+// proposalAttempts is how many times the model may submit propose_changes in one reply: an
+// invalid Proposal is sent back with the validation error so the model can correct it.
+const proposalAttempts = 2
+
+// Reply answers the Conversation's last User message, possibly with a Proposal. onText receives
+// the reply as it streams; the reply is saved only if it completes, so a failed reply can simply be
+// retried.
 func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText func(string)) (conversation.Message, error) {
 	if a.Model == nil {
 		return conversation.Message{}, ErrUnavailable
@@ -74,21 +80,73 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	ctx, cancel := context.WithTimeout(ctx, a.Timeout)
 	defer cancel()
 	var reply strings.Builder
-	for ev, err := range a.Model.Stream(ctx, req) {
+	var accepted *proposal.Changes
+	gaveUp := false
+	for attempt := 1; ; attempt++ {
+		text, call, err := a.stream(ctx, req, onText)
 		if err != nil {
-			return conversation.Message{}, fmt.Errorf("model reply: %w", err)
+			return conversation.Message{}, err
 		}
-		if ev.Text != "" {
-			reply.WriteString(ev.Text)
-			onText(ev.Text)
+		reply.WriteString(text)
+		if call == nil {
+			break
 		}
+		changes, problem := parseChanges(call.Arguments, arch.Document)
+		if problem == nil {
+			accepted = &changes
+			break
+		}
+		if attempt == proposalAttempts {
+			gaveUp = true
+			break
+		}
+		// Show the model its call and what was wrong with it, and let it try again.
+		req.Messages = append(req.Messages,
+			llm.Message{Role: llm.RoleAssistant, Content: text, ToolCalls: []llm.ToolCall{*call}},
+			llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: "The proposal was not saved: " + problem.Error() + ". Call propose_changes again with corrected changes."},
+		)
 	}
+
 	body := strings.TrimSpace(reply.String())
+	if gaveUp {
+		body = strings.TrimSpace(body + "\n\n(I couldn't turn this into a valid proposal for the canvas. Ask me to try again.)")
+	}
+	if body == "" && accepted != nil {
+		body = accepted.Summary
+	}
 	if body == "" {
 		return conversation.Message{}, errors.New("model reply: empty")
 	}
 	// Save even if the client went away mid-stream: the reply is complete and paid for.
-	return a.Conversations.Append(context.WithoutCancel(ctx), userID, suffix, conversation.RoleAssistant, body)
+	return a.Conversations.AppendReply(context.WithoutCancel(ctx), userID, suffix, body, accepted, arch.Version)
+}
+
+// stream runs one model call, forwarding text to onText. It returns the text and the first
+// propose_changes call, if any.
+func (a *Assistant) stream(ctx context.Context, req llm.Request, onText func(string)) (string, *llm.ToolCall, error) {
+	var text strings.Builder
+	var call *llm.ToolCall
+	for ev, err := range a.Model.Stream(ctx, req) {
+		if err != nil {
+			return "", nil, fmt.Errorf("model reply: %w", err)
+		}
+		if ev.Text != "" {
+			text.WriteString(ev.Text)
+			onText(ev.Text)
+		}
+		if ev.ToolCall != nil && ev.ToolCall.Name == proposal.Tool.Name && call == nil {
+			call = ev.ToolCall
+		}
+	}
+	return text.String(), call, nil
+}
+
+func parseChanges(arguments string, doc architecture.Document) (proposal.Changes, error) {
+	var changes proposal.Changes
+	if err := json.Unmarshal([]byte(arguments), &changes); err != nil {
+		return proposal.Changes{}, fmt.Errorf("arguments are not valid JSON for this tool: %w", err)
+	}
+	return changes, changes.Validate(doc)
 }
 
 func (a *Assistant) request(msgs []conversation.Message, doc architecture.Document) (llm.Request, error) {
@@ -98,6 +156,7 @@ func (a *Assistant) request(msgs []conversation.Message, doc architecture.Docume
 	}
 	req := llm.Request{
 		MaxTokens: 4096,
+		Tools:     []llm.Tool{proposal.Tool},
 		// One system message: some chat templates (e.g. Gemma's) accept only one.
 		Messages: []llm.Message{
 			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + architectureNote + string(canvas)},
@@ -107,11 +166,27 @@ func (a *Assistant) request(msgs []conversation.Message, doc architecture.Docume
 		msgs = msgs[len(msgs)-a.HistoryLimit:]
 	}
 	for _, m := range msgs {
-		role := llm.RoleAssistant
 		if m.Role == conversation.RoleUser {
-			role = llm.RoleUser
+			req.Messages = append(req.Messages, llm.Message{Role: llm.RoleUser, Content: m.Body})
+			continue
 		}
-		req.Messages = append(req.Messages, llm.Message{Role: role, Content: m.Body})
+		content := m.Body
+		if p := m.Proposal; p != nil {
+			// The model only sees text history, so note what became of its earlier Proposals.
+			content += fmt.Sprintf("\n\n[Proposal #%d \"%s\": %s by the user]", p.Seq, p.Summary, describeStatus(p.Status))
+		}
+		req.Messages = append(req.Messages, llm.Message{Role: llm.RoleAssistant, Content: content})
 	}
 	return req, nil
+}
+
+func describeStatus(s conversation.ProposalStatus) string {
+	switch s {
+	case conversation.ProposalPending:
+		return "not yet reviewed"
+	case conversation.ProposalSuperseded:
+		return "replaced by a later proposal, not reviewed"
+	default:
+		return string(s)
+	}
 }

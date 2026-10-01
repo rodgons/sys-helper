@@ -19,6 +19,7 @@ type Deps struct {
 	Architectures ArchitectureStore
 	Conversations ConversationStore
 	Assistant     Replier
+	Reviews       ProposalReviews
 	// DailyMessageLimit caps the messages a User can send per UTC day. 0 means no cap.
 	DailyMessageLimit int
 	AllowedOrigins    []string
@@ -43,6 +44,8 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /api/projects/{slug}/messages", user(handleListMessages(deps.Conversations)))
 	mux.HandleFunc("POST /api/projects/{slug}/messages", user(handleSendMessage(deps.Conversations, deps.DailyMessageLimit)))
 	mux.HandleFunc("POST /api/projects/{slug}/reply", user(handleReply(deps.Assistant)))
+	mux.HandleFunc("POST /api/projects/{slug}/proposals/{seq}/accept", user(handleAcceptProposal(deps.Reviews)))
+	mux.HandleFunc("POST /api/projects/{slug}/proposals/{seq}/reject", user(handleRejectProposal(deps.Reviews)))
 	return withCORS(deps.AllowedOrigins, mux)
 }
 

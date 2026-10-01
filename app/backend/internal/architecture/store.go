@@ -49,6 +49,13 @@ func (s *Store) Get(ctx context.Context, userID, suffix string) (Versioned, erro
 // Save stores doc as the next version if base is still the current version, and returns the new
 // version. The document must already be valid.
 func (s *Store) Save(ctx context.Context, userID, suffix string, base int, doc Document) (int, error) {
+	return s.SaveWith(ctx, userID, suffix, base, doc, nil)
+}
+
+// SaveWith is Save plus `also`, which runs in the same transaction after the version check (for
+// example, marking the Proposal that produced doc as accepted). If it fails, nothing is saved.
+func (s *Store) SaveWith(ctx context.Context, userID, suffix string, base int, doc Document,
+	also func(ctx context.Context, tx pgx.Tx, projectID string) error) (int, error) {
 	doc.normalize()
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		// Locking the project row serializes concurrent saves, including the very first one.
@@ -70,6 +77,11 @@ func (s *Store) Save(ctx context.Context, userID, suffix string, base int, doc D
 		if current != base {
 			return ErrConflict
 		}
+		if also != nil {
+			if err := also(ctx, tx, projectID); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO architectures (project_id, document, version) VALUES ($1, $2, $3)
 			ON CONFLICT (project_id) DO UPDATE
@@ -82,6 +94,9 @@ func (s *Store) Save(ctx context.Context, userID, suffix string, base int, doc D
 	})
 	if errors.Is(err, projects.ErrNotFound) || errors.Is(err, ErrConflict) {
 		return 0, err
+	}
+	if err != nil && also != nil {
+		return 0, err // the hook's own errors pass through unwrapped
 	}
 	if err != nil {
 		return 0, fmt.Errorf("save architecture: %w", err)

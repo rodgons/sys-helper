@@ -15,12 +15,15 @@ import {
   ReactFlowProvider,
   useReactFlow,
 } from '@xyflow/react';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { color, radius, space, text } from '../design/tokens.stylex';
+import { ApiError, apiFetch } from '../lib/api';
 import type { VersionedArchitecture } from '../lib/architecture';
+import { useAuth } from '../lib/auth';
+import { useRefreshMessages, useSetProposalStatus } from '../lib/conversation';
 import { Button } from '../ui/button';
 import { SelectField } from '../ui/select-field';
-import { Text } from '../ui/typography';
+import { Label, Text } from '../ui/typography';
 import { type SaveStatus, useAutosave } from './autosave';
 import { Inspector } from './inspector';
 import {
@@ -36,9 +39,20 @@ import {
   toFlow,
 } from './model';
 import { edgeTypes, nodeTypes } from './nodes';
+import { applyProposal, type Proposal, previewProposal, staleReason } from './proposal';
+import type { Review } from './review';
+
+type CanvasProps = {
+  slug: string;
+  initial: VersionedArchitecture;
+  /** The pending Proposal, previewed as a diff until the User accepts or rejects it. */
+  proposal?: Proposal;
+  /** Receives the review state of the pending Proposal (null when there is none). */
+  onReview?: (review: Review | null) => void;
+};
 
 /** The editable Architecture canvas. Every change is autosaved; see useAutosave. */
-export function ArchitectureCanvas(props: { slug: string; initial: VersionedArchitecture }) {
+export function ArchitectureCanvas(props: CanvasProps) {
   return (
     <ReactFlowProvider>
       <Editor {...props} />
@@ -56,7 +70,7 @@ const changesDocument = (c: NodeChange | EdgeChange) =>
   c.type === 'replace' ||
   (c.type === 'position' && !c.dragging);
 
-function Editor({ slug, initial }: { slug: string; initial: VersionedArchitecture }) {
+function Editor({ slug, initial, proposal, onReview }: CanvasProps) {
   const [flow, setFlow] = useState(() => toFlow(initial.document));
   // Fit a saved architecture into view on load. An empty canvas must not fit: React Flow would wait
   // for the first component added and then re-centre the view on it, under the inspector.
@@ -72,6 +86,29 @@ function Editor({ slug, initial }: { slug: string; initial: VersionedArchitectur
     if (changed) autosave.schedule(fromFlow(nodes, edges));
   };
   const { nodes, edges } = flow;
+  const review = useProposalReview({
+    slug,
+    proposal,
+    onReview,
+    nodes,
+    edges,
+    latest,
+    autosave,
+    update,
+  });
+  const shown = review.preview ?? flow;
+
+  // Bring a new Proposal into view once its components have been measured.
+  const fitted = useRef(0);
+  const ghostsMeasured =
+    review.preview?.nodes.every((n) => n.data.diff !== 'added' || n.measured) ?? false;
+  useEffect(() => {
+    if (!proposal || !ghostsMeasured || fitted.current === proposal.seq) return;
+    fitted.current = proposal.seq;
+    void reactFlow.fitView({ padding: 0.25, maxZoom: 1, duration: 300 });
+  }, [proposal, ghostsMeasured, reactFlow]);
+  const editorIds = new Set(nodes.map((n) => n.id));
+  const editorEdgeIds = new Set(edges.map((e) => e.id));
 
   const onConnect = ({ source, target }: Connection) => {
     const duplicate = latest.current.edges.some((e) => e.source === source && e.target === target);
@@ -128,24 +165,30 @@ function Editor({ slug, initial }: { slug: string; initial: VersionedArchitectur
   return (
     <div ref={wrapper} {...stylex.props(styles.wrapper)}>
       <ReactFlow<ComponentNode, ConnectionEdge>
-        nodes={nodes}
-        edges={edges}
+        nodes={shown.nodes}
+        edges={shown.edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        onNodesChange={(changes) =>
+        onNodesChange={(all) => {
+          // Changes to preview-only components just record their size, so they can be shown.
+          review.measureGhosts(all);
+          const changes = all.filter((c) => !('id' in c) || editorIds.has(c.id));
+          if (changes.length === 0) return;
           update(
             applyNodeChanges(changes, latest.current.nodes),
             latest.current.edges,
             changes.some(changesDocument),
-          )
-        }
-        onEdgesChange={(changes) =>
+          );
+        }}
+        onEdgesChange={(all) => {
+          const changes = all.filter((c) => !('id' in c) || editorEdgeIds.has(c.id));
+          if (changes.length === 0) return;
           update(
             latest.current.nodes,
             applyEdgeChanges(changes, latest.current.edges),
             changes.some(changesDocument),
-          )
-        }
+          );
+        }}
         onConnect={onConnect}
         connectionMode={ConnectionMode.Loose}
         defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
@@ -182,21 +225,226 @@ function Editor({ slug, initial }: { slug: string; initial: VersionedArchitectur
             onRemove={remove}
           />
         </Panel>
-        {autosave.status === 'conflict' && (
-          <Panel position="bottom-center">
-            <div role="alert" {...stylex.props(styles.conflict)}>
-              <Text size="sm">
-                This architecture changed in another tab or window, so edits here are no longer
-                saved. Reload to continue from the latest version.
-              </Text>
-              <Button size="sm" onClick={() => window.location.reload()}>
-                Reload
-              </Button>
-            </div>
-          </Panel>
-        )}
+        <Panel position="bottom-center">
+          <div {...stylex.props(styles.bottom)}>
+            {proposal && <ProposalBar proposal={proposal} review={review.state} />}
+            {autosave.status === 'conflict' && (
+              <div role="alert" {...stylex.props(styles.conflict)}>
+                <Text size="sm">
+                  This architecture changed in another tab or window, so edits here are no longer
+                  saved. Reload to continue from the latest version.
+                </Text>
+                <Button size="sm" onClick={() => window.location.reload()}>
+                  Reload
+                </Button>
+              </div>
+            )}
+          </div>
+        </Panel>
       </ReactFlow>
     </div>
+  );
+}
+
+type Flow = { nodes: ComponentNode[]; edges: ConnectionEdge[] };
+type XY = { x: number; y: number };
+
+/**
+ * Previews the pending Proposal on the canvas and accepts or rejects it. Accepting applies it to
+ * the canvas, placing new components where the preview showed them, and saves the result together
+ * with resolving the Proposal (autosave.commit), so the canvas and the Proposal never disagree.
+ */
+function useProposalReview({
+  slug,
+  proposal,
+  onReview,
+  nodes,
+  edges,
+  latest,
+  autosave,
+  update,
+}: {
+  slug: string;
+  proposal?: Proposal;
+  onReview?: (review: Review | null) => void;
+  nodes: ComponentNode[];
+  edges: ConnectionEdge[];
+  latest: { current: Flow };
+  autosave: ReturnType<typeof useAutosave>;
+  update: (nodes: ComponentNode[], edges: ConnectionEdge[], changed: boolean) => void;
+}) {
+  const auth = useAuth();
+  const token = auth.status === 'signedIn' ? auth.token : undefined;
+  const setStatus = useSetProposalStatus(slug);
+  const refreshMessages = useRefreshMessages(slug);
+  const [progress, setProgress] = useState<{ busy: boolean; error: string | null }>({
+    busy: false,
+    error: null,
+  });
+  const [ghostSizes, setGhostSizes] = useState<Record<string, { width: number; height: number }>>(
+    {},
+  );
+  // Where the preview placed new components, per Proposal, so they don't move as the User edits
+  // and land exactly there on accept.
+  const placed = useRef<{ seq: number; at: Record<string, XY> }>({ seq: 0, at: {} });
+  if (proposal && placed.current.seq !== proposal.seq)
+    placed.current = { seq: proposal.seq, at: {} };
+
+  const stale = useMemo(
+    () => (proposal ? staleReason(nodes, edges, proposal) : null),
+    [nodes, edges, proposal],
+  );
+
+  const preview = useMemo((): Flow | null => {
+    if (!proposal || stale) return null;
+    const p = previewProposal(nodes, edges, proposal, placed.current.at);
+    return {
+      nodes: p.nodes.map((n) => {
+        if (n.data.diff !== 'added') return n;
+        placed.current.at[n.id] ??= n.position;
+        return {
+          ...n,
+          draggable: false,
+          selectable: false,
+          connectable: false,
+          measured: ghostSizes[n.id],
+        };
+      }),
+      edges: p.edges.map((e) => (e.data?.diff === 'added' ? { ...e, selectable: false } : e)),
+    };
+  }, [nodes, edges, proposal, stale, ghostSizes]);
+
+  const measureGhosts = (changes: NodeChange<ComponentNode>[]) => {
+    const sizes: Record<string, { width: number; height: number }> = {};
+    for (const c of changes) {
+      if (
+        c.type === 'dimensions' &&
+        c.dimensions &&
+        preview?.nodes.some((n) => n.id === c.id && n.data.diff === 'added')
+      ) {
+        sizes[c.id] = c.dimensions;
+      }
+    }
+    if (Object.keys(sizes).length > 0) setGhostSizes((s) => ({ ...s, ...sizes }));
+  };
+
+  const act = useRef({ accept: async () => {}, reject: async () => {} });
+  act.current.accept = async () => {
+    if (!proposal || stale) return;
+    setProgress({ busy: true, error: null });
+    const [n, e] = applyProposal(
+      latest.current.nodes,
+      latest.current.edges,
+      proposal,
+      placed.current.at,
+    );
+    try {
+      await autosave.commit(fromFlow(n, e), async (version, document) => {
+        const res = await apiFetch<{ version: number }>(
+          `/api/projects/${slug}/proposals/${proposal.seq}/accept`,
+          {
+            token,
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ version, document }),
+          },
+        );
+        return res.version;
+      });
+      update(n, e, false);
+      setStatus(proposal.seq, 'accepted');
+      setProgress({ busy: false, error: null });
+    } catch (err) {
+      setProgress({ busy: false, error: reviewError(err, refreshMessages) });
+    }
+  };
+  act.current.reject = async () => {
+    if (!proposal) return;
+    setProgress({ busy: true, error: null });
+    try {
+      await apiFetch(`/api/projects/${slug}/proposals/${proposal.seq}/reject`, {
+        token,
+        method: 'POST',
+      });
+      setStatus(proposal.seq, 'rejected');
+      setProgress({ busy: false, error: null });
+    } catch (err) {
+      setProgress({ busy: false, error: reviewError(err, refreshMessages) });
+    }
+  };
+  const accept = useCallback(() => void act.current.accept(), []);
+  const reject = useCallback(() => void act.current.reject(), []);
+
+  // Names change rarely; key them so dragging components doesn't re-publish the review.
+  const namesKey = JSON.stringify([
+    nodes.map((n) => [n.id, n.data.name]),
+    edges.map((e) => [e.id, e.source, e.target]),
+  ]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: recomputed when namesKey changes
+  const names = useMemo(() => {
+    const byId: Record<string, string> = {};
+    for (const n of nodes) byId[n.id] = n.data.name;
+    for (const e of edges)
+      byId[e.id] = `${byId[e.source] ?? e.source} → ${byId[e.target] ?? e.target}`;
+    return byId;
+  }, [namesKey]);
+
+  const state: Review | null = useMemo(
+    () => (proposal ? { seq: proposal.seq, stale, ...progress, names, accept, reject } : null),
+    [proposal, stale, progress, names, accept, reject],
+  );
+  useEffect(() => onReview?.(state), [onReview, state]);
+  useEffect(() => () => onReview?.(null), [onReview]);
+
+  return { preview, state, measureGhosts };
+}
+
+function reviewError(err: unknown, refreshMessages: () => void): string | null {
+  const code = err instanceof ApiError ? err.code : undefined;
+  if (code === 'conflict') return null; // the conflict notice explains it
+  if (code === 'not_pending') {
+    refreshMessages();
+    return 'This proposal was already accepted or rejected elsewhere.';
+  }
+  return "Couldn't update the proposal. Try again.";
+}
+
+/** Floating summary of the pending Proposal with Accept and Reject. */
+function ProposalBar({ proposal, review }: { proposal: Proposal; review: Review | null }) {
+  return (
+    <section aria-label="Proposal" {...stylex.props(styles.proposal)}>
+      <div {...stylex.props(styles.proposalText)}>
+        <Label tone="accent">AI proposal #{proposal.seq}</Label>
+        <Text size="sm">{proposal.summary}</Text>
+        {review?.stale && (
+          <Text size="sm" tone="muted">
+            Out of date: {review.stale}. Ask the AI to redo it.
+          </Text>
+        )}
+        {review?.error && (
+          <Text size="sm" tone="accent">
+            {review.error}
+          </Text>
+        )}
+      </div>
+      <div {...stylex.props(styles.proposalActions)}>
+        <Button
+          size="sm"
+          disabled={!review || review.busy || review.stale !== null}
+          onClick={review?.accept}
+        >
+          Accept
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!review || review.busy}
+          onClick={review?.reject}
+        >
+          Reject
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -224,6 +472,27 @@ const styles = stylex.create({
   toolbar: { display: 'flex', alignItems: 'center', gap: space['--space-3'] },
   status: { fontSize: text['--text-xs'], color: color['--color-fg-muted'] },
   statusError: { color: color['--color-danger'] },
+  bottom: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: space['--space-2'],
+  },
+  proposal: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: space['--space-4'],
+    maxWidth: '36rem',
+    padding: space['--space-3'],
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: color['--color-accent'],
+    borderRadius: radius['--radius-md'],
+    backgroundColor: color['--color-surface'],
+    boxShadow: `0 4px 16px ${color['--color-accent-soft']}`,
+  },
+  proposalText: { display: 'flex', flexDirection: 'column', gap: space['--space-1'], minWidth: 0 },
+  proposalActions: { display: 'flex', gap: space['--space-2'], flexShrink: 0 },
   conflict: {
     display: 'flex',
     alignItems: 'center',

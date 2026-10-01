@@ -18,15 +18,34 @@ export function ComponentNodeView({ data, selected }: NodeProps<ComponentNode>) 
     .filter(Boolean)
     .join(' · ');
   return (
-    <div {...stylex.props(styles.node, selected && styles.selected)}>
+    <div
+      data-diff={data.diff}
+      {...stylex.props(
+        styles.node,
+        selected && styles.selected,
+        data.diff && diffStyles[data.diff],
+      )}
+    >
       <Handle type="target" position={Position.Left} {...stylex.props(styles.handle)} />
-      <span {...stylex.props(styles.type)}>{typeDef(data.type).label}</span>
-      <span {...stylex.props(styles.name)}>{data.name}</span>
+      <span {...stylex.props(styles.type)}>
+        {typeDef(data.type).label}
+        {data.diff && <span {...stylex.props(styles.diffTag)}> · {DIFF_LABEL[data.diff]}</span>}
+      </span>
+      <span {...stylex.props(styles.name, data.diff === 'removed' && styles.struck)}>
+        {data.name}
+      </span>
       {summary && <span {...stylex.props(styles.summary)}>{summary}</span>}
       <Handle type="source" position={Position.Right} {...stylex.props(styles.handle)} />
     </div>
   );
 }
+
+const DIFF_LABEL = { added: 'new', changed: 'changed', removed: 'removed' } as const;
+const DIFF_STROKE = {
+  added: color['--color-success'],
+  changed: color['--color-warning'],
+  removed: color['--color-danger'],
+} as const;
 
 const DASH = { sync: undefined, async: '6 4', replication: '2 4' } as const;
 
@@ -50,8 +69,13 @@ export function ConnectionEdgeView({
         markerEnd={markerEnd}
         style={{
           strokeDasharray: DASH[kind],
-          stroke: selected ? color['--color-accent'] : color['--color-line-strong'],
-          strokeWidth: selected ? 2 : 1.5,
+          stroke: data?.diff
+            ? DIFF_STROKE[data.diff]
+            : selected
+              ? color['--color-accent']
+              : color['--color-line-strong'],
+          strokeWidth: selected || data?.diff ? 2 : 1.5,
+          opacity: data?.diff === 'removed' ? 0.5 : 1,
         }}
       />
       {label && (
@@ -89,6 +113,8 @@ const styles = stylex.create({
     borderColor: color['--color-accent'],
     boxShadow: `0 0 0 3px ${color['--color-accent-soft']}`,
   },
+  diffTag: { fontWeight: 700 },
+  struck: { textDecorationLine: 'line-through' },
   type: {
     fontFamily: font['--font-mono'],
     fontSize: '0.625rem',
@@ -116,4 +142,21 @@ const styles = stylex.create({
     color: color['--color-fg-muted'],
   },
   at: (x: number, y: number) => ({ transform: `translate(-50%, -50%) translate(${x}px, ${y}px)` }),
+});
+
+// Proposal preview: green dashed for new, amber for changed, faded red for removed.
+const diffStyles = stylex.create({
+  added: {
+    borderStyle: 'dashed',
+    borderWidth: 2,
+    borderColor: color['--color-success'],
+  },
+  changed: {
+    borderWidth: 2,
+    borderColor: color['--color-warning'],
+  },
+  removed: {
+    borderColor: color['--color-danger'],
+    opacity: 0.5,
+  },
 });

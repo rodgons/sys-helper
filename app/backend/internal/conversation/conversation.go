@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"sys-helper/backend/internal/projects"
+	"sys-helper/backend/internal/proposal"
 )
 
 type Role string
@@ -40,6 +41,8 @@ type Message struct {
 	Role      Role      `json:"role"`
 	Body      string    `json:"body"`
 	CreatedAt time.Time `json:"createdAt"`
+	// Proposal is set on AI messages that proposed changes to the Architecture.
+	Proposal *Proposal `json:"proposal,omitempty"`
 }
 
 // CleanUserMessage trims a User's message and checks its length.
@@ -69,14 +72,23 @@ func (s *Store) List(ctx context.Context, userID, suffix string) ([]Message, err
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx,
-		`SELECT role, body, created_at FROM messages WHERE project_id = $1 ORDER BY id`, projectID)
+	rows, err := s.db.Query(ctx, `
+		SELECT m.role, m.body, m.created_at,
+		       p.seq, p.summary, p.changes, p.status, p.base_version
+		FROM messages m LEFT JOIN proposals p ON p.message_id = m.id
+		WHERE m.project_id = $1 ORDER BY m.id`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list messages: %w", err)
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Message, error) {
 		var m Message
-		err := row.Scan(&m.Role, &m.Body, &m.CreatedAt)
+		var seq, base *int
+		var summary, status *string
+		var changes []proposal.Change
+		err := row.Scan(&m.Role, &m.Body, &m.CreatedAt, &seq, &summary, &changes, &status, &base)
+		if err == nil && seq != nil {
+			m.Proposal = &Proposal{Seq: *seq, Summary: *summary, Changes: changes, Status: ProposalStatus(*status), BaseVersion: *base}
+		}
 		return m, err
 	})
 }

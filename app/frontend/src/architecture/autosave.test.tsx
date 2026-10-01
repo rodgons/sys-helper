@@ -11,10 +11,12 @@ const doc = (name: string): ArchitectureDocument => ({
 });
 
 let schedule: (d: ArchitectureDocument) => void = () => {};
+let commit: ReturnType<typeof useAutosave>['commit'] = async () => {};
 
 function Probe({ version = 0 }: { version?: number }) {
   const autosave = useAutosave('shop-k3xa9q2m7p', version);
   schedule = autosave.schedule;
+  commit = autosave.commit;
   return <output>{autosave.status}</output>;
 }
 
@@ -99,5 +101,50 @@ describe('useAutosave', () => {
     await act(() => vi.advanceTimersByTimeAsync(0));
 
     expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('commits through another request after the save in progress, with its version', async () => {
+    let release = () => {};
+    const save = vi.fn(
+      (b: { version: number }) =>
+        new Promise<unknown>((resolve) => {
+          release = () => resolve({ version: b.version + 1 });
+        }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(mockApi({ [PATH]: ({ json }: { json?: unknown }) => save(json as never) })),
+    );
+    renderWithQuery(<Probe version={4} />, { auth: signedIn() });
+    act(() => schedule(doc('edited')));
+    await flush(); // the autosave is now in flight
+    const send = vi.fn(async (version: number) => version + 1);
+
+    const committed = commit(doc('accepted'), send);
+    expect(send).not.toHaveBeenCalled();
+    await act(async () => {
+      release();
+      await committed;
+    });
+
+    expect(send).toHaveBeenCalledWith(5, doc('accepted'));
+    expect(screen.getByRole('status')).toHaveTextContent('saved');
+    act(() => schedule(doc('later')));
+    await flush();
+    expect((save.mock.calls[1]?.[0] as { version: number } | undefined)?.version).toBe(6);
+  });
+
+  it('keeps earlier edits scheduled when a commit fails', async () => {
+    const save = stubSave((b) => ({ version: b.version + 1 }));
+    renderWithQuery(<Probe />, { auth: signedIn() });
+    act(() => schedule(doc('edited')));
+
+    await act(() =>
+      commit(doc('accepted'), () => Promise.reject(new Error('offline'))).catch(() => {}),
+    );
+    await flush();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]?.[0].json).toEqual({ version: 0, document: doc('edited') });
   });
 });

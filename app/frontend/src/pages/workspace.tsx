@@ -2,10 +2,12 @@ import * as stylex from '@stylexjs/stylex';
 import { useState } from 'react';
 import { Navigate, useParams } from 'react-router';
 import { ArchitectureCanvas } from '../architecture/canvas';
+import type { Review } from '../architecture/review';
 import { ChatPane } from '../conversation/chat-pane';
 import { color, layout, media, space } from '../design/tokens.stylex';
 import { ApiError } from '../lib/api';
 import { useArchitecture } from '../lib/architecture';
+import { usePendingProposal } from '../lib/conversation';
 import { slugSuffix, useProject } from '../lib/projects';
 import { ProjectSidebar } from '../projects/project-sidebar';
 import { ProjectTitle } from '../projects/project-title';
@@ -23,6 +25,8 @@ export function WorkspacePage() {
 function Workspace({ slug, username }: { slug: string; username: string }) {
   const project = useProject(slug);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The pending Proposal's review, published by the canvas so the chat can offer Accept too.
+  const [review, setReview] = useState<Review | null>(null);
 
   if (project.isError) {
     const notFound = project.error instanceof ApiError && project.error.status === 404;
@@ -66,17 +70,24 @@ function Workspace({ slug, username }: { slug: string; username: string }) {
           <div {...stylex.props(styles.bar)}>
             <ProjectTitle key={project.data.slug} project={project.data} />
           </div>
-          <CanvasPane slug={project.data.slug} />
+          <CanvasPane slug={project.data.slug} onReview={setReview} />
         </section>
         <aside aria-label="Conversation" {...stylex.props(styles.pane, styles.right)}>
-          <ChatPane key={slugSuffix(slug)} slug={project.data.slug} />
+          <ChatPane key={slugSuffix(slug)} slug={project.data.slug} review={review} />
         </aside>
       </div>
     </main>
   );
 }
 
-function CanvasPane({ slug }: { slug: string }) {
+function CanvasPane({
+  slug,
+  onReview,
+}: {
+  slug: string;
+  onReview: (review: Review | null) => void;
+}) {
+  const proposal = usePendingProposal(slug);
   const architecture = useArchitecture(slug);
   if (architecture.isError) {
     return (
@@ -87,7 +98,15 @@ function CanvasPane({ slug }: { slug: string }) {
   }
   if (!architecture.isSuccess) return <div {...stylex.props(styles.placeholder)} />;
   // Keyed by suffix: the editor owns its state, so another Project needs a fresh one.
-  return <ArchitectureCanvas key={slugSuffix(slug)} slug={slug} initial={architecture.data} />;
+  return (
+    <ArchitectureCanvas
+      key={slugSuffix(slug)}
+      slug={slug}
+      initial={architecture.data}
+      proposal={proposal}
+      onReview={onReview}
+    />
+  );
 }
 
 const styles = stylex.create({

@@ -105,8 +105,16 @@ export type ArchitectureDocument = {
   }[];
 };
 
-export type ComponentData = { type: string; name: string; properties: Record<string, string> };
-export type ConnectionData = { kind: ConnectionKind; label: string };
+/** How a pending Proposal would change an item; only set on the canvas preview, never saved. */
+export type Diff = 'added' | 'changed' | 'removed';
+
+export type ComponentData = {
+  type: string;
+  name: string;
+  properties: Record<string, string>;
+  diff?: Diff;
+};
+export type ConnectionData = { kind: ConnectionKind; label: string; diff?: Diff };
 export type ComponentNode = Node<ComponentData, 'component'>;
 export type ConnectionEdge = Edge<ConnectionData, 'connection'>;
 

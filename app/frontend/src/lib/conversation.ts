@@ -1,11 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Proposal } from '../architecture/proposal';
 import { apiFetch, baseUrl } from './api';
 import { useAuth } from './auth';
 import { slugSuffix } from './projects';
 import { readEvents } from './sse';
 
-export type Message = { role: 'user' | 'assistant'; body: string; createdAt: string };
+export type Message = {
+  role: 'user' | 'assistant';
+  body: string;
+  createdAt: string;
+  /** Set on AI messages that proposed changes to the canvas. */
+  proposal?: Proposal;
+};
 
 function useToken() {
   const auth = useAuth();
@@ -79,7 +86,14 @@ export function useReply(slug: string) {
           text += (data as { text: string }).text;
           setState({ status: 'streaming', text });
         } else if (event === 'done') {
-          client.setQueryData<Message[]>(key(slug), (list) => [...(list ?? []), data as Message]);
+          const message = data as Message;
+          client.setQueryData<Message[]>(key(slug), (list = []) => [
+            // A new Proposal supersedes the pending one, as on the server.
+            ...(message.proposal
+              ? list.map((m) => withStatus(m, (p) => p.status === 'pending', 'superseded'))
+              : list),
+            message,
+          ]);
           setState({ status: 'idle' });
           return;
         } else if (event === 'error') {
@@ -93,4 +107,36 @@ export function useReply(slug: string) {
   }, [client, slug, token]);
 
   return { state, start };
+}
+
+function withStatus(
+  m: Message,
+  match: (p: Proposal) => boolean,
+  status: Proposal['status'],
+): Message {
+  return m.proposal && match(m.proposal) ? { ...m, proposal: { ...m.proposal, status } } : m;
+}
+
+/** Records a resolved Proposal in the cached Conversation. */
+export function useSetProposalStatus(slug: string) {
+  const client = useQueryClient();
+  return useCallback(
+    (seq: number, status: Proposal['status']) =>
+      client.setQueryData<Message[]>(key(slug), (list) =>
+        list?.map((m) => withStatus(m, (p) => p.seq === seq, status)),
+      ),
+    [client, slug],
+  );
+}
+
+/** Reloads the Conversation, e.g. after learning a Proposal was resolved elsewhere. */
+export function useRefreshMessages(slug: string) {
+  const client = useQueryClient();
+  return useCallback(() => client.invalidateQueries({ queryKey: key(slug) }), [client, slug]);
+}
+
+/** The Project's pending Proposal, if any (there is at most one). */
+export function usePendingProposal(slug: string): Proposal | undefined {
+  const messages = useMessages(slug);
+  return messages.data?.findLast((m) => m.proposal?.status === 'pending')?.proposal;
 }

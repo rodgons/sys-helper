@@ -21,6 +21,8 @@ export function useAutosave(slug: string, initialVersion: number) {
     pending: undefined as ArchitectureDocument | undefined,
     timer: undefined as ReturnType<typeof setTimeout> | undefined,
     saving: false,
+    // Settles when the save in progress finishes; commit waits on it.
+    inflight: undefined as Promise<void> | undefined,
     conflict: false,
     token,
     slug,
@@ -35,6 +37,7 @@ export function useAutosave(slug: string, initialVersion: number) {
     const document = st.pending;
     st.pending = undefined;
     st.saving = true;
+    const settled = track(st);
     setStatus('saving');
     try {
       const res = await apiFetch<{ version: number }>(`/api/projects/${st.slug}/architecture`, {
@@ -62,6 +65,8 @@ export function useAutosave(slug: string, initialVersion: number) {
         st.pending ??= document;
         setStatus('error');
       }
+    } finally {
+      settled();
     }
   }, []);
 
@@ -73,6 +78,47 @@ export function useAutosave(slug: string, initialVersion: number) {
       clearTimeout(st.timer);
       if (!st.saving) setStatus('pending');
       st.timer = setTimeout(() => void flush(), DELAY_MS);
+    },
+    [flush],
+  );
+
+  /**
+   * Saves `document` through `send` instead of the usual endpoint (accepting a Proposal saves the
+   * canvas and resolves the Proposal in one request). Waits for any save in progress, sends the
+   * current version, and adopts the version `send` returns. Rethrows `send`'s errors.
+   */
+  const commit = useCallback(
+    async (
+      document: ArchitectureDocument,
+      send: (version: number, document: ArchitectureDocument) => Promise<number>,
+    ) => {
+      const st = s.current;
+      clearTimeout(st.timer);
+      while (st.inflight) await st.inflight;
+      if (st.conflict) throw new ApiError(409, 'conflict', 'the architecture changed elsewhere');
+      const earlier = st.pending;
+      st.pending = undefined;
+      st.saving = true;
+      const settled = track(st);
+      setStatus('saving');
+      try {
+        st.version = await send(st.version, document);
+        st.saving = false;
+        setStatus(st.pending ? 'pending' : 'saved');
+      } catch (err) {
+        st.saving = false;
+        if (err instanceof ApiError && err.code === 'conflict') {
+          st.conflict = true;
+          setStatus('conflict');
+        } else {
+          st.pending ??= earlier; // the edits it would have included still need saving
+          setStatus(st.pending ? 'pending' : 'saved');
+        }
+        throw err;
+      } finally {
+        settled();
+        if (st.pending && !st.conflict) st.timer = setTimeout(() => void flush(), DELAY_MS);
+      }
     },
     [flush],
   );
@@ -89,5 +135,17 @@ export function useAutosave(slug: string, initialVersion: number) {
     };
   }, [flush]);
 
-  return { status, schedule };
+  return { status, schedule, commit };
+}
+
+/** Marks a save as in progress until the returned function is called. */
+function track(st: { inflight: Promise<void> | undefined }) {
+  let settle = () => {};
+  st.inflight = new Promise((resolve) => {
+    settle = resolve;
+  });
+  return () => {
+    st.inflight = undefined;
+    settle();
+  };
 }
