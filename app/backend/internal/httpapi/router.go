@@ -17,6 +17,7 @@ type Deps struct {
 	Auth           Authenticator
 	Projects       ProjectStore
 	Architectures  ArchitectureStore
+	Conversations  ConversationStore
 	AllowedOrigins []string
 	// AllowedGitHubUsers is the lowercase beta allowlist. Empty lets every GitHub user in.
 	AllowedGitHubUsers []string
@@ -36,6 +37,8 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("DELETE /api/projects/{slug}", user(handleDeleteProject(deps.Projects)))
 	mux.HandleFunc("GET /api/projects/{slug}/architecture", user(handleGetArchitecture(deps.Architectures)))
 	mux.HandleFunc("PUT /api/projects/{slug}/architecture", user(handleSaveArchitecture(deps.Architectures)))
+	mux.HandleFunc("GET /api/projects/{slug}/messages", user(handleListMessages(deps.Conversations)))
+	mux.HandleFunc("POST /api/projects/{slug}/messages", user(handleSendMessage(deps.Conversations)))
 	return withCORS(deps.AllowedOrigins, mux)
 }
 

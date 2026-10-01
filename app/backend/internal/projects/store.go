@@ -17,6 +17,9 @@ type Store struct {
 	db *pgxpool.Pool
 	// NewSuffix generates slug suffixes; tests replace it to force collisions.
 	NewSuffix func() string
+	// OnCreate, if set, runs in the transaction that creates a Project (main uses it to add the
+	// Welcome Message). An error rolls the creation back.
+	OnCreate func(ctx context.Context, tx pgx.Tx, projectID string) error
 }
 
 func NewStore(db *pgxpool.Pool) *Store {
@@ -45,9 +48,17 @@ func (s *Store) Create(ctx context.Context, userID, name string) (Project, error
 		if err != nil {
 			return Project{}, fmt.Errorf("create project: %w", err)
 		}
-		p, err := one(s.db.Query(ctx, `
-			INSERT INTO projects (id, user_id, slug_suffix, name) VALUES ($1, $2, $3, $4)
-			RETURNING `+columns, id, userID, s.NewSuffix(), name))
+		var p Project
+		err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+			var err error
+			p, err = one(tx.Query(ctx, `
+				INSERT INTO projects (id, user_id, slug_suffix, name) VALUES ($1, $2, $3, $4)
+				RETURNING `+columns, id, userID, s.NewSuffix(), name))
+			if err != nil || s.OnCreate == nil {
+				return err
+			}
+			return s.OnCreate(ctx, tx, p.ID)
+		})
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "projects_slug_suffix_key" {
 			continue

@@ -13,6 +13,7 @@ import (
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/auth"
 	"sys-helper/backend/internal/config"
+	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/database"
 	"sys-helper/backend/internal/httpapi"
 	"sys-helper/backend/internal/projects"
@@ -45,13 +46,17 @@ func run() error {
 		return err
 	}
 
+	projectStore := projects.NewStore(db)
+	projectStore.OnCreate = conversation.AddWelcome // every Conversation opens with the Welcome Message
+
 	srv := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			DB:                 db,
 			Auth:               auth.Authenticator{Tokens: tokens, Identities: auth.Identities{DB: db}},
-			Projects:           projects.NewStore(db),
+			Projects:           projectStore,
 			Architectures:      architecture.NewStore(db),
+			Conversations:      conversation.NewStore(db),
 			AllowedOrigins:     cfg.AllowedOrigins,
 			AllowedGitHubUsers: cfg.AllowedGitHubUsers,
 		}),

@@ -92,11 +92,11 @@ A **User** signs in with GitHub and opens a **Project**. They design its **Archi
 
 Each slice is built test-first and can ship on its own.
 
-1. **React migration.** Preact → React (ADR 0001), `/system-design` → `/ui-kit`, add a router.
-2. **Auth.** Supabase GitHub sign-in, JWT middleware, allowlist, home page and the redirect for signed-in Users.
-3. **Projects.** Migration (UUIDv7, `slug_suffix`), CRUD API, slug lookup and redirects, sidebar and empty state.
-4. **Canvas, manual editing only.** Component Type catalog, Connections, the Architecture document with its version number, and autosave.
-5. **Conversation without AI.** Messages, the Welcome Message on creation, and the chat pane.
+1. **React migration.** (done) Preact → React (ADR 0001), `/system-design` → `/ui-kit`, add a router.
+2. **Auth.** (done) Supabase GitHub sign-in, JWT middleware, allowlist, home page and the redirect for signed-in Users.
+3. **Projects.** (done) Migration (UUIDv7, `slug_suffix`), CRUD API, slug lookup and redirects, sidebar and empty state.
+4. **Canvas, manual editing only.** (done) Component Type catalog, Connections, the Architecture document with its version number, and autosave.
+5. **Conversation without AI.** (done) Messages, the Welcome Message on creation, and the chat pane.
 6. **Model connection.** `ChatModel`, the NVIDIA client, the fake model, SSE, Retry and the daily cap.
 7. **Proposals.** Tool calls, the diff overlay, accept/reject, dagre placement and stale detection.
 8. **Requirements and Decisions.** The Requirements panel, Experience Level, Decisions linked to Components and Connections, and the "needs review" flag.

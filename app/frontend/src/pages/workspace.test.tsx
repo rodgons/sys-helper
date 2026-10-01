@@ -31,6 +31,8 @@ function stubApi(extra: Parameters<typeof mockApi>[0] = {}) {
       'GET /api/projects/chat-app-a1b2c3d4e5': chat,
       'GET /api/projects/url-shortener-k3xa9q2m7p/architecture': emptyArchitecture,
       'GET /api/projects/chat-app-a1b2c3d4e5/architecture': emptyArchitecture,
+      'GET /api/projects/url-shortener-k3xa9q2m7p/messages': [],
+      'GET /api/projects/chat-app-a1b2c3d4e5/messages': [],
       ...extra,
     }),
   );

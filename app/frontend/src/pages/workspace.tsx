@@ -2,6 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import { useState } from 'react';
 import { Navigate, useParams } from 'react-router';
 import { ArchitectureCanvas } from '../architecture/canvas';
+import { ChatPane } from '../conversation/chat-pane';
 import { color, layout, media, space } from '../design/tokens.stylex';
 import { ApiError } from '../lib/api';
 import { useArchitecture } from '../lib/architecture';
@@ -10,7 +11,7 @@ import { ProjectSidebar } from '../projects/project-sidebar';
 import { ProjectTitle } from '../projects/project-title';
 import { Section, Stack } from '../ui/layout';
 import { ArrowLink } from '../ui/link';
-import { Display, Heading, Text } from '../ui/typography';
+import { Display, Text } from '../ui/typography';
 import { RequireUser } from './require-user';
 
 /** `/p/:slug`: Projects on the left, the Architecture canvas in the middle, the Conversation on the right. */
@@ -68,9 +69,7 @@ function Workspace({ slug, username }: { slug: string; username: string }) {
           <CanvasPane slug={project.data.slug} />
         </section>
         <aside aria-label="Conversation" {...stylex.props(styles.pane, styles.right)}>
-          <Heading as="h2" size="sm">
-            Conversation
-          </Heading>
+          <ChatPane key={slugSuffix(slug)} slug={project.data.slug} />
         </aside>
       </div>
     </main>
@@ -131,7 +130,6 @@ const styles = stylex.create({
   },
   placeholder: { display: 'grid', placeItems: 'center', flexGrow: 1 },
   right: {
-    padding: space['--space-4'],
     borderLeftWidth: 1,
     borderLeftStyle: 'solid',
     borderLeftColor: color['--color-line'],
