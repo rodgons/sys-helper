@@ -59,6 +59,31 @@ func TestStore(t *testing.T) {
 		}
 	})
 
+	t.Run("never reuses the number of a deleted requirement or decision", func(t *testing.T) {
+		user, suffix := newProject(t)
+		store.AddRequirement(ctx, user, suffix, "scale", "10k rps")
+		r2, _ := store.AddRequirement(ctx, user, suffix, "cost", "cheap")
+		d1, _ := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "A", Rationale: "R", Targets: []string{"api"}})
+		if err := store.RemoveRequirement(ctx, user, suffix, r2.Num); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.RemoveDecision(ctx, user, suffix, d1.Num); err != nil {
+			t.Fatal(err)
+		}
+
+		r3, err := store.AddRequirement(ctx, user, suffix, "security", "SSO only")
+		if err != nil {
+			t.Fatal(err)
+		}
+		d2, err := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "B", Rationale: "R", Targets: []string{"db"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r3.Num != 3 || d2.Num != 2 {
+			t.Errorf("new requirement R%d, decision D%d; want R3 and D2", r3.Num, d2.Num)
+		}
+	})
+
 	t.Run("rejects user decisions on missing items or requirements", func(t *testing.T) {
 		user, suffix := newProject(t)
 

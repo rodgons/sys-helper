@@ -206,9 +206,13 @@ func AddRequirement(ctx context.Context, db DB, projectID, category, statement s
 		return Requirement{}, err
 	}
 	r := Requirement{Category: category, Statement: statement}
+	// Numbers come from a counter that only moves forward, so a deleted R3 is never reused.
 	err = db.QueryRow(ctx, `
+		WITH n AS (
+			UPDATE projects SET next_requirement_num = next_requirement_num + 1
+			WHERE id = $2 RETURNING next_requirement_num - 1 AS num)
 		INSERT INTO requirements (id, project_id, num, category, statement)
-		VALUES ($1, $2, (SELECT coalesce(max(num), 0) + 1 FROM requirements WHERE project_id = $2), $3, $4)
+		SELECT $1, $2, n.num, $3, $4 FROM n
 		RETURNING num`, id, projectID, category, statement).Scan(&r.Num)
 	if err != nil {
 		return Requirement{}, fmt.Errorf("add requirement: %w", err)
@@ -272,9 +276,13 @@ func AddDecision(ctx context.Context, db DB, projectID string, d Decision) (Deci
 	if err != nil {
 		return Decision{}, err
 	}
+	// Like Requirements, numbered from a forward-only counter.
 	err = db.QueryRow(ctx, `
+		WITH n AS (
+			UPDATE projects SET next_decision_num = next_decision_num + 1
+			WHERE id = $2 RETURNING next_decision_num - 1 AS num)
 		INSERT INTO decisions (id, project_id, num, title, rationale, pattern, alternative, requirement_nums, targets, author)
-		VALUES ($1, $2, (SELECT coalesce(max(num), 0) + 1 FROM decisions WHERE project_id = $2), $3, $4, $5, $6, $7, $8, $9)
+		SELECT $1, $2, n.num, $3, $4, $5, $6, $7, $8, $9 FROM n
 		RETURNING num`, id, projectID, d.Title, d.Rationale, d.Pattern, d.Alternative, d.Requirements, d.Targets, d.Author).Scan(&d.Num)
 	if err != nil {
 		return Decision{}, fmt.Errorf("add decision: %w", err)

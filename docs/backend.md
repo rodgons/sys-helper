@@ -29,7 +29,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
   - `architecture.Store.AfterSave` = `knowledge.PruneDecisions` (drops vanished targets, deletes Decisions left with none).
   - `architecture.Store.SaveWith(…, also)`: `also` runs after the version check. Accepting a Proposal passes `conversation.Accept(seq)`.
 - **Versioned Architecture:** `architectures.version` starts at 0 (no row). A save carries its base version; a mismatch returns `architecture.ErrConflict` (→ 409 `conflict`) and saves nothing.
-- **IDs:** new rows use UUIDv7 generated in Go (`uuid.NewV7()`), which also orders Messages. Requirements and Decisions are numbered per Project (`num`), shown as `R1`/`D1` (`knowledge.RequirementID`, `ParseRequirementID`).
+- **IDs:** new rows use UUIDv7 generated in Go (`uuid.NewV7()`), which also orders Messages. Requirements and Decisions are numbered per Project (`num`), shown as `R1`/`D1` (`knowledge.RequirementID`, `ParseRequirementID`). Numbers come from the forward-only counters `projects.next_requirement_num` / `next_decision_num`, so a deleted item's number is never reused (anything seeding these tables directly must advance them too).
 - **Package-level functions taking a `DB`/`pgx.Tx`** (e.g. `knowledge.Load`, `knowledge.AddRequirement`) exist so other packages can act inside their own transaction. Store methods wrap them with ownership + locking.
 - **Effective Experience Level:** `knowledge.Load` coalesces `projects.experience_level` with `user_settings.experience_level`. Read the level only through it.
 

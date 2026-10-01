@@ -255,7 +255,9 @@ test('capture the workspace', async ({ page, signIn }) => {
     await sql`SELECT id FROM projects WHERE slug_suffix = ${slug.split('-').at(-1)}`,
   );
   await sql.begin(async (tx) => {
-    await tx`UPDATE projects SET experience_level = 'intermediate' WHERE id = ${project.id}`;
+    await tx`UPDATE projects SET experience_level = 'intermediate',
+               next_requirement_num = ${requirements.length + 1}, next_decision_num = ${decisions.length + 1}
+             WHERE id = ${project.id}`;
     for (const [i, [category, statement]] of requirements.entries()) {
       await tx`INSERT INTO requirements (id, project_id, num, category, statement)
                VALUES (${uuidv7()}, ${project.id}, ${i + 1}, ${category}, ${statement})`;
