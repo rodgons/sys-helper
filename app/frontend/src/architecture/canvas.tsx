@@ -110,7 +110,11 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
   // Where the last connection was clicked, on the canvas, so its window opens there.
   const [clicked, setClicked] = useState<({ id: string } & XY) | null>(null);
 
+  // Set while a Proposal is being accepted. The accept sends the canvas as it was when the User
+  // clicked, so an edit made meanwhile would either be lost or, saved afterwards, undo the Proposal.
+  const locked = useRef(false);
   const update = (nodes: ComponentNode[], edges: ConnectionEdge[], changed: boolean) => {
+    if (changed && locked.current) return;
     latest.current = { nodes, edges };
     setFlow(latest.current);
     if (changed) autosave.schedule(fromFlow(nodes, edges));
@@ -123,6 +127,7 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
     nodes,
     edges,
     latest,
+    locked,
     autosave,
     update,
   });
@@ -294,6 +299,10 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
           addComponent(type, { x: e.clientX, y: e.clientY });
         }}
         connectionMode={ConnectionMode.Loose}
+        // Read-only while a review is being sent; edits made then are dropped anyway (`locked`).
+        nodesDraggable={!review.state?.busy}
+        nodesConnectable={!review.state?.busy}
+        deleteKeyCode={review.state?.busy ? null : 'Backspace'}
         defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
         colorMode="system"
         fitView={fitOnLoad}
@@ -381,6 +390,7 @@ function useProposalReview({
   nodes,
   edges,
   latest,
+  locked,
   autosave,
   update,
 }: {
@@ -390,6 +400,7 @@ function useProposalReview({
   nodes: ComponentNode[];
   edges: ConnectionEdge[];
   latest: { current: Flow };
+  locked: { current: boolean };
   autosave: ReturnType<typeof useAutosave>;
   update: (nodes: ComponentNode[], edges: ConnectionEdge[], changed: boolean) => void;
 }) {
@@ -452,6 +463,7 @@ function useProposalReview({
   act.current.accept = async () => {
     if (!proposal || stale) return;
     setProgress({ busy: true, error: null });
+    locked.current = true;
     const [n, e] = applyProposal(
       latest.current.nodes,
       latest.current.edges,
@@ -477,6 +489,8 @@ function useProposalReview({
       setProgress({ busy: false, error: null });
     } catch (err) {
       setProgress({ busy: false, error: reviewError(err, refreshMessages) });
+    } finally {
+      locked.current = false;
     }
   };
   act.current.reject = async () => {

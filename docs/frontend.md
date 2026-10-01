@@ -47,7 +47,7 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 
 - `staleReason`: the Proposal references a component or connection that is no longer on the canvas → it can't be accepted.
 - `previewProposal` draws the result with added/changed/removed markers. New components are placed by dagre relative to the existing layout (existing components never move). Positions are remembered per `seq`, so accepting lands them exactly where previewed.
-- Accept: `applyProposal` → `autosave.commit` → `POST …/accept` → `setProposalStatus` + refresh knowledge. A `not_pending` error refreshes messages.
+- Accept: `applyProposal` → `autosave.commit` → `POST …/accept` → `setProposalStatus` + refresh knowledge. A `not_pending` error refreshes messages. The canvas is locked for the whole accept (`locked` drops edits in `update`; React Flow dragging, connecting and deleting are off), because the accept sends the canvas as it was when the User clicked: an edit made meanwhile would be lost or, saved afterwards, undo the Proposal.
 - Mirror of the server's ids: `p{seq}-{ref}` / `p{seq}-k{index}`. Keep it in sync with `proposal.ComponentID` / `ConnectionID`.
 
 ### Chat (`conversation/chat-pane.tsx`, `lib/conversation.ts`)

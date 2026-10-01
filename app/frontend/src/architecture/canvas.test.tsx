@@ -274,6 +274,51 @@ describe('ArchitectureCanvas', () => {
       expect(screen.getByRole('status')).toHaveTextContent('All changes saved');
     });
 
+    it('keeps the proposal when the canvas is edited during a slow accept', async () => {
+      let respond: () => void = () => {};
+      const accept = vi.fn(
+        ({ json }: { json?: unknown }) =>
+          new Promise((resolve) => {
+            respond = () => resolve({ version: (json as { version: number }).version + 1 });
+          }),
+      );
+      const save = vi.fn(({ json }: { json?: unknown }) => ({
+        version: (json as { version: number }).version + 1,
+      }));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          mockApi({
+            'POST /api/projects/shop-k3xa9q2m7p/proposals/2/accept': accept,
+            'PUT /api/projects/shop-k3xa9q2m7p/architecture': save,
+          }),
+        ),
+      );
+      renderWithQuery(
+        <ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} proposal={proposal} />,
+        { auth: signedIn() },
+      );
+
+      fireEvent.click(
+        within(screen.getByRole('region', { name: 'Proposal' })).getByRole('button', {
+          name: 'Accept',
+        }),
+      );
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(accept).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole('button', { name: 'Add Cache' }));
+      await act(async () => {
+        respond();
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+
+      expect(screen.getByText('Order Cache')).toBeInTheDocument();
+      for (const call of save.mock.calls) {
+        const doc = (call[0].json as { document: ArchitectureDocument }).document;
+        expect(doc.components.map((c) => c.id)).toContain('p2-cache');
+      }
+    });
+
     it("can't be tidied up while it is previewed, which would move its new components", () => {
       setup();
 
