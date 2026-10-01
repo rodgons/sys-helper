@@ -143,6 +143,29 @@ describe('ChatPane', () => {
     expect(await screen.findByText(/isn't set up/i)).toBeInTheDocument();
   });
 
+  it("renders the AI's markdown but keeps the user's text as written", async () => {
+    setup({}, [
+      welcome,
+      { role: 'user', body: 'Use **stars** literally', createdAt: at },
+      {
+        role: 'assistant',
+        body: 'Use a **cache**:\n\n- Redis\n- `TTL` of 60s\n\n<b>raw</b>',
+        createdAt: at,
+      },
+    ]);
+
+    const strong = await screen.findByText('cache');
+    expect(strong.tagName).toBe('STRONG');
+    expect(
+      within(messages())
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toContain('Redis');
+    expect(screen.getByText('TTL').tagName).toBe('CODE');
+    expect(screen.getByText('Use **stars** literally')).toBeInTheDocument();
+    expect(document.querySelector('b')).toBeNull();
+  });
+
   it('offers to get a reply for a message left unanswered', async () => {
     const { reply } = setup({}, [welcome, { role: 'user', body: 'Still waiting', createdAt: at }]);
 

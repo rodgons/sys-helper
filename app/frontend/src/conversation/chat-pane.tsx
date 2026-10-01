@@ -6,6 +6,7 @@ import { ApiError } from '../lib/api';
 import { useMessages, useReply, useSendMessage } from '../lib/conversation';
 import { Button } from '../ui/button';
 import { Text } from '../ui/typography';
+import { Markdown } from './markdown';
 import { ProposalCard } from './proposal-card';
 
 const MAX_LENGTH = 4000;
@@ -88,7 +89,11 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
             <span {...stylex.props(styles.author)}>
               {m.role === 'user' ? 'You' : 'AI architect'}
             </span>
-            <p {...stylex.props(styles.body)}>{m.body}</p>
+            {m.role === 'user' ? (
+              <p {...stylex.props(styles.body)}>{m.body}</p>
+            ) : (
+              <Markdown>{m.body}</Markdown>
+            )}
             {m.proposal && (
               <ProposalCard
                 proposal={m.proposal}
@@ -100,9 +105,11 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
         {replying && (
           <li aria-busy="true" {...stylex.props(styles.message, styles.fromAi)}>
             <span {...stylex.props(styles.author)}>AI architect</span>
-            <p {...stylex.props(styles.body, streamed === '' && styles.thinking)}>
-              {streamed || 'Thinking…'}
-            </p>
+            {streamed === '' ? (
+              <p {...stylex.props(styles.body, styles.thinking)}>Thinking…</p>
+            ) : (
+              <Markdown>{streamed}</Markdown>
+            )}
           </li>
         )}
         {!replying && unanswered && (
