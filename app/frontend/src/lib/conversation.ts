@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Proposal } from '../architecture/proposal';
 import { apiFetch, baseUrl } from './api';
-import { useAuth } from './auth';
+import { useToken } from './auth';
 import { slugSuffix } from './projects';
 import { readEvents } from './sse';
 
@@ -13,11 +13,6 @@ export type Message = {
   /** Set on AI messages that proposed changes to the canvas. */
   proposal?: Proposal;
 };
-
-function useToken() {
-  const auth = useAuth();
-  return auth.status === 'signedIn' ? auth.token : undefined;
-}
 
 const key = (slug: string) => ['messages', slugSuffix(slug)];
 

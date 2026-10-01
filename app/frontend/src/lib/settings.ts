@@ -1,16 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './api';
-import { useAuth } from './auth';
+import { useToken } from './auth';
 
 /** The User's settings across Projects. An empty `experienceLevel` means no default. */
 export type Settings = { experienceLevel: string };
 
 const key = ['settings'];
-
-function useToken() {
-  const auth = useAuth();
-  return auth.status === 'signedIn' ? auth.token : undefined;
-}
 
 export function useSettings() {
   const token = useToken();

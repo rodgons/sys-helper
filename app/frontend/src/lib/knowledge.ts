@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { apiFetch } from './api';
-import { useAuth } from './auth';
+import { useToken } from './auth';
 import { slugSuffix } from './projects';
 
 // Keep in sync with internal/knowledge in the backend.
@@ -51,11 +51,6 @@ export type Knowledge = {
 };
 
 const key = (slug: string) => ['knowledge', slugSuffix(slug)];
-
-function useToken() {
-  const auth = useAuth();
-  return auth.status === 'signedIn' ? auth.token : undefined;
-}
 
 /** The Project's Experience Level, Requirements and Decisions. */
 export function useKnowledge(slug: string) {

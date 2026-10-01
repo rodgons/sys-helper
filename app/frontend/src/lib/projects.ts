@@ -1,17 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './api';
-import { useAuth } from './auth';
+import { useToken } from './auth';
 
 /** A Project as the API shows it: identified by its slug, which follows renames. */
 export type Project = { slug: string; name: string; updatedAt: string };
 
 /** The fixed part of a Project Slug; it alone identifies the Project. */
 export const slugSuffix = (slug: string) => slug.slice(slug.lastIndexOf('-') + 1);
-
-function useToken() {
-  const auth = useAuth();
-  return auth.status === 'signedIn' ? auth.token : undefined;
-}
 
 const json = (method: string, body: unknown): RequestInit => ({
   method,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, apiFetch } from '../lib/api';
-import { useAuth } from '../lib/auth';
+import { useToken } from '../lib/auth';
 import type { ArchitectureDocument } from './model';
 
 export type SaveStatus = 'saved' | 'pending' | 'saving' | 'conflict' | 'error';
@@ -12,8 +12,7 @@ const DELAY_MS = 1000;
  * 409 means another tab (or a Proposal) saved first, and autosave stops so nothing is overwritten.
  */
 export function useAutosave(slug: string, initialVersion: number, onSaved?: () => void) {
-  const auth = useAuth();
-  const token = auth.status === 'signedIn' ? auth.token : undefined;
+  const token = useToken();
   const [status, setStatus] = useState<SaveStatus>('saved');
 
   const s = useRef({

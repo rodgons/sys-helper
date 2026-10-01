@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { color, radius, space, text } from '../design/tokens.stylex';
 import { ApiError, apiFetch } from '../lib/api';
 import type { VersionedArchitecture } from '../lib/architecture';
-import { useAuth } from '../lib/auth';
+import { useToken } from '../lib/auth';
 import { useRefreshMessages, useSetProposalStatus } from '../lib/conversation';
 import { useKnowledge, useRefreshKnowledge } from '../lib/knowledge';
 import { Button } from '../ui/button';
@@ -393,8 +393,7 @@ function useProposalReview({
   autosave: ReturnType<typeof useAutosave>;
   update: (nodes: ComponentNode[], edges: ConnectionEdge[], changed: boolean) => void;
 }) {
-  const auth = useAuth();
-  const token = auth.status === 'signedIn' ? auth.token : undefined;
+  const token = useToken();
   const setStatus = useSetProposalStatus(slug);
   const refreshKnowledge = useRefreshKnowledge(slug);
   const refreshMessages = useRefreshMessages(slug);

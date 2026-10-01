@@ -54,3 +54,9 @@ export function useAuth(): AuthContextValue {
   if (!auth) throw new Error('useAuth must be used inside <AuthProvider>');
   return auth;
 }
+
+/** The signed-in User's access token, or undefined while loading or signed out. */
+export function useToken(): string | undefined {
+  const auth = useAuth();
+  return auth.status === 'signedIn' ? auth.token : undefined;
+}

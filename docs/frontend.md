@@ -16,7 +16,7 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 
 ## Server state (TanStack Query)
 
-Each hook reads its token from `useAuth()` and is `enabled` only when signed in. Project-scoped keys use `slugSuffix(slug)`, so they survive renames.
+Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` only when signed in. Project-scoped keys use `slugSuffix(slug)`, so they survive renames.
 
 | Key | Hook | Notes |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ Each hook reads its token from `useAuth()` and is `enabled` only when signed in.
 | `['architecture', suffix]` | `useArchitecture` | Read **once** per visit (`staleTime: ∞`, `gcTime: 0`). The canvas owns the document afterwards; never refetch it into an open canvas |
 | `['messages', suffix]` | `useMessages` | Updated by `setQueryData` (send, reply `done`, Proposal status), not refetches. `usePendingProposal` derives from it |
 | `['knowledge', suffix]` | `useKnowledge` | Invalidated after every knowledge edit, every canvas save (pruning) and every accept. Saving settings invalidates all `['knowledge']` |
-| `['settings']`, `['me', token]` | `useSettings`, `useMe` | |
+| `['settings']`, `['me', token]` | `useSettings`, `useMe` | `useMe` keeps the previous profile while a refreshed token refetches; otherwise `RequireUser` would unmount the workspace (aborting a streaming reply) every hour |
 
 ## Workspace (`pages/workspace.tsx`)
 
