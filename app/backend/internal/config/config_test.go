@@ -74,13 +74,18 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
-	t.Run("defaults the AI to GLM-5.3 with a GPT-OSS-20B fallback", func(t *testing.T) {
-		cfg, err := config.Load(env(required(nil)))
+	t.Run("takes the models from the environment", func(t *testing.T) {
+		cfg, err := config.Load(env(required(map[string]string{
+			"NVIDIA_API_KEY":    "nvapi-x",
+			"AI_MODEL":          "z-ai/glm-5.3",
+			"AI_FALLBACK_MODEL": "openai/gpt-oss-20b",
+		})))
 		if err != nil {
 			t.Fatal(err)
 		}
 		want := config.AI{
 			BaseURL:           "https://integrate.api.nvidia.com/v1",
+			APIKey:            "nvapi-x",
 			Model:             "z-ai/glm-5.3",
 			FallbackModel:     "openai/gpt-oss-20b",
 			FirstTokenTimeout: 20 * time.Second,
@@ -93,9 +98,7 @@ func TestLoad(t *testing.T) {
 
 	t.Run("reads AI overrides", func(t *testing.T) {
 		cfg, err := config.Load(env(required(map[string]string{
-			"NVIDIA_API_KEY":         "nvapi-x",
-			"AI_MODEL":               "z-ai/glm-5.3",
-			"AI_FALLBACK_MODEL":      "none",
+			"AI_BASE_URL":            "http://models.test/v1",
 			"AI_FIRST_TOKEN_TIMEOUT": "5s",
 			"AI_DAILY_MESSAGE_LIMIT": "0",
 			"AI_FAKE":                "1",
@@ -104,13 +107,24 @@ func TestLoad(t *testing.T) {
 			t.Fatal(err)
 		}
 		ai := cfg.AI
-		if ai.APIKey != "nvapi-x" || ai.Model != "z-ai/glm-5.3" || ai.FallbackModel != "" ||
+		if ai.BaseURL != "http://models.test/v1" || ai.FallbackModel != "" ||
 			ai.FirstTokenTimeout != 5*time.Second || ai.DailyMessageLimit != 0 || !ai.Fake {
 			t.Errorf("AI = %+v", ai)
 		}
 	})
 
-	for _, bad := range []map[string]string{{"AI_FIRST_TOKEN_TIMEOUT": "soon"}, {"AI_DAILY_MESSAGE_LIMIT": "-1"}} {
+	t.Run("runs without a model when there is no API key", func(t *testing.T) {
+		cfg, err := config.Load(env(required(nil)))
+		if err != nil || cfg.AI.Model != "" || cfg.AI.FallbackModel != "" {
+			t.Fatalf("AI = %+v, err = %v", cfg.AI, err)
+		}
+	})
+
+	for _, bad := range []map[string]string{
+		{"AI_FIRST_TOKEN_TIMEOUT": "soon"},
+		{"AI_DAILY_MESSAGE_LIMIT": "-1"},
+		{"NVIDIA_API_KEY": "nvapi-x"}, // a key without AI_MODEL
+	} {
 		t.Run("rejects invalid AI settings", func(t *testing.T) {
 			if _, err := config.Load(env(required(bad))); err == nil {
 				t.Fatalf("Load(%v) succeeded", bad)

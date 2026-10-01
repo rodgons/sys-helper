@@ -13,16 +13,29 @@ import (
 	"sys-helper/backend/internal/llm"
 )
 
-// Calls the real NVIDIA API: `make test-ai-live` (needs NVIDIA_API_KEY). It checks each model
+// Calls the real NVIDIA API: `make test-ai-live` (needs NVIDIA_API_KEY and AI_MODEL). It checks each model
 // streams text and makes a tool call, and logs how long the first token took.
 func TestLiveModels(t *testing.T) {
 	key := os.Getenv("NVIDIA_API_KEY")
 	if key == "" {
 		t.Fatal("NVIDIA_API_KEY is required")
 	}
-	models := []string{"z-ai/glm-5.3", "openai/gpt-oss-20b"}
-	if m := os.Getenv("AI_LIVE_MODELS"); m != "" {
-		models = strings.Split(m, ",")
+	// The models configured in .env, or AI_LIVE_MODELS=a,b to try others.
+	var models []string
+	for _, m := range strings.Split(os.Getenv("AI_LIVE_MODELS"), ",") {
+		if m != "" {
+			models = append(models, m)
+		}
+	}
+	if len(models) == 0 {
+		for _, m := range []string{os.Getenv("AI_MODEL"), os.Getenv("AI_FALLBACK_MODEL")} {
+			if m != "" {
+				models = append(models, m)
+			}
+		}
+	}
+	if len(models) == 0 {
+		t.Fatal("set AI_MODEL in .env, or AI_LIVE_MODELS")
 	}
 	for _, model := range models {
 		client := llm.OpenAIClient{BaseURL: "https://integrate.api.nvidia.com/v1", APIKey: key, Model: model}

@@ -25,8 +25,8 @@ type Config struct {
 type AI struct {
 	BaseURL       string
 	APIKey        string
-	Model         string
-	FallbackModel string // empty disables the fallback
+	Model         string // AI_MODEL, required with an API key
+	FallbackModel string // AI_FALLBACK_MODEL; empty disables the fallback
 	// FirstTokenTimeout is how long the primary model gets to start answering before the fallback
 	// takes over.
 	FirstTokenTimeout time.Duration
@@ -65,14 +65,14 @@ func loadAI(getenv func(string) string) (AI, error) {
 	ai := AI{
 		BaseURL:           or(getenv("AI_BASE_URL"), "https://integrate.api.nvidia.com/v1"),
 		APIKey:            getenv("NVIDIA_API_KEY"),
-		Model:             or(getenv("AI_MODEL"), "z-ai/glm-5.3"),
-		FallbackModel:     or(getenv("AI_FALLBACK_MODEL"), "openai/gpt-oss-20b"),
+		Model:             getenv("AI_MODEL"),
+		FallbackModel:     getenv("AI_FALLBACK_MODEL"),
 		FirstTokenTimeout: 20 * time.Second,
 		DailyMessageLimit: 100,
 		Fake:              getenv("AI_FAKE") == "1",
 	}
-	if ai.FallbackModel == "none" {
-		ai.FallbackModel = ""
+	if ai.APIKey != "" && !ai.Fake && ai.Model == "" {
+		return AI{}, errors.New("AI_MODEL is required when NVIDIA_API_KEY is set (e.g. AI_MODEL=z-ai/glm-5.3)")
 	}
 	if v := getenv("AI_FIRST_TOKEN_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
