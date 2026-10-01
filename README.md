@@ -1,5 +1,9 @@
 # sys-helper
 
+A workspace where you design a software system's architecture on a canvas while an AI guides you through the design and explains the reasoning behind it. Tell it what you are building, answer its questions about traffic, data and constraints, and review every change as a Proposal you accept or reject as a whole.
+
+![The sys-helper workspace: a social app's architecture canvas in the middle, and the AI's conversation on the right with a pending proposal to add hashtag search.](app/frontend/src/assets/workspace-light.webp)
+
 | Part     | Stack                                                                 | Path            |
 | -------- | --------------------------------------------------------------------- | --------------- |
 | Backend  | Go (stdlib `net/http` ServeMux), pgx → Supabase Postgres               | `app/backend`   |
@@ -36,12 +40,39 @@ browser ──TanStack Query──▶ Go API (:8080) ──pgx──▶ Supabase
 
 Every app reads the single root `.env` (Make exports it, and Vite's `envDir` points at the root). `VITE_*` values are baked into the frontend bundle at build time.
 
+## Configuration
+
+Everything comes from the root `.env` (copied from `.env.example` by `make setup`). The values you are most likely to change:
+
+| Variable | What it does |
+| --- | --- |
+| `ALLOWED_GITHUB_IDS` | Beta allowlist of immutable numeric GitHub ids. Empty admits nobody; `ALLOW_ALL_GITHUB_USERS=1` admits every GitHub account. Get an id from `https://api.github.com/users/<name>`. |
+| `AI_PROVIDER`, `AI_MODEL`, `AI_FALLBACK_MODEL` | OpenAI-compatible provider (`nvidia` or `gemini`), the model to stream, and the fallback used when the primary sends nothing within `AI_FIRST_TOKEN_TIMEOUT`. No key → the API runs, AI replies answer "not set up". |
+| `NVIDIA_API_KEY` / `GEMINI_API_KEY` | The key for the chosen provider. |
+| `AI_DAILY_REPLY_LIMIT` | Model calls per User per UTC day (retries included); `0` disables. Sending a message is never capped. |
+| `AI_FAKE=1` | Canned model, no network. E2E sets it. |
+| `SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID` / `_SECRET` | The GitHub OAuth app used by local Supabase sign-in. Callback: `http://127.0.0.1:54321/auth/v1/callback`. |
+| `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Frontend endpoints; read by Vite in dev, baked into the bundle at build. |
+
 ## Database
 
 ```sh
 make db-migration name=create_profiles   # new file in supabase/migrations
 make db-reset                            # re-apply all migrations + supabase/seed.sql
 ```
+
+## Common commands
+
+| Command | What it does |
+| --- | --- |
+| `make setup` / `make dev` | Install deps; Supabase + API (Air) + Vite |
+| `make test` | Unit tests, both apps (no Supabase needed) |
+| `make test-integration` / `make test-e2e` | Need Supabase running (`make supabase-start`) |
+| `make test-all` | lint + unit + integration + E2E — what CI should run |
+| `make lint` / `make format` | tsc + Biome + gofmt + go vet / auto-fix |
+| `make test-ai-live` | Check the configured models stream and call tools (costs credits) |
+| `make build` | Both production Docker images |
+| `make demo-screenshots` | Recapture the home page's workspace screenshots |
 
 ## TDD strategy
 
@@ -93,3 +124,15 @@ docker run --rm -p 8080:8080 \
   -e CORS_ALLOWED_ORIGINS=http://localhost:8081 sys-helper/backend
 docker run --rm -p 8081:8080 sys-helper/frontend
 ```
+
+## Documentation
+
+| Doc | Holds |
+| --- | --- |
+| `CLAUDE.md` | Agent guidance: layout, commands, architecture, non-obvious constraints. |
+| `CONTEXT.md` | Domain glossary (Project, Architecture, Component, Connection, Proposal, Requirement, Decision…). |
+| `docs/backend.md` | Go packages, ownership scoping, locking and transaction hooks, endpoints, error codes, tables. |
+| `docs/frontend.md` | Query keys and cache updates, workspace panes, canvas state, autosave, Proposal review, chat streaming, styling, test helpers. |
+| `docs/ai.md` | The assistant turn, prompt, model clients and fallback, Proposal ops, accept flow. |
+| `docs/recipes.md` | Checklist of every file to touch when adding a Component Type, connection kind, Proposal op, category or level, endpoint, table or UI component. |
+| `docs/specs/`, `docs/adr/` | Feature specs and architecture decisions. |
