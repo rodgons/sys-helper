@@ -14,6 +14,7 @@ import (
 	"sys-helper/backend/internal/config"
 	"sys-helper/backend/internal/database"
 	"sys-helper/backend/internal/httpapi"
+	"sys-helper/backend/internal/projects"
 )
 
 func main() {
@@ -48,6 +49,7 @@ func run() error {
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			DB:                 db,
 			Auth:               auth.Authenticator{Tokens: tokens, Identities: auth.Identities{DB: db}},
+			Projects:           projects.NewStore(db),
 			AllowedOrigins:     cfg.AllowedOrigins,
 			AllowedGitHubUsers: cfg.AllowedGitHubUsers,
 		}),

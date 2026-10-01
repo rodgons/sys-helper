@@ -15,6 +15,7 @@ type Pinger interface {
 type Deps struct {
 	DB             Pinger
 	Auth           Authenticator
+	Projects       ProjectStore
 	AllowedOrigins []string
 	// AllowedGitHubUsers is the lowercase beta allowlist. Empty lets every GitHub user in.
 	AllowedGitHubUsers []string
@@ -24,7 +25,14 @@ func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.HandleFunc("GET /ready", handleReady(deps.DB))
-	mux.HandleFunc("GET /api/me", requireUser(deps.Auth, deps.AllowedGitHubUsers, handleMe))
+
+	user := func(h http.HandlerFunc) http.HandlerFunc { return requireUser(deps.Auth, deps.AllowedGitHubUsers, h) }
+	mux.HandleFunc("GET /api/me", user(handleMe))
+	mux.HandleFunc("GET /api/projects", user(handleListProjects(deps.Projects)))
+	mux.HandleFunc("POST /api/projects", user(handleCreateProject(deps.Projects)))
+	mux.HandleFunc("GET /api/projects/{slug}", user(handleGetProject(deps.Projects)))
+	mux.HandleFunc("PATCH /api/projects/{slug}", user(handleRenameProject(deps.Projects)))
+	mux.HandleFunc("DELETE /api/projects/{slug}", user(handleDeleteProject(deps.Projects)))
 	return withCORS(deps.AllowedOrigins, mux)
 }
 

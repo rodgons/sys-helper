@@ -13,14 +13,14 @@ const sql = postgres(required('DATABASE_URL'), { max: 1, onnotice: () => {} });
 const storageKey = `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
 
 type Fixtures = {
-  /** Signs `page` in as a fresh GitHub user and returns their GitHub username. */
-  signIn: () => Promise<string>;
+  /** Signs `target` (default: the test's page) in as a fresh GitHub user and returns their username. */
+  signIn: (target?: Page) => Promise<string>;
 };
 
 export const test = base.extend<Fixtures>({
   signIn: async ({ page }, use) => {
     const userIds: string[] = [];
-    await use(async () => {
+    await use(async (target = page) => {
       const username = `e2e-${crypto.randomUUID().slice(0, 8)}`;
       const session = await signUp(`${username}@e2e.test`);
       userIds.push(session.user.id);
@@ -28,7 +28,7 @@ export const test = base.extend<Fixtures>({
         INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, created_at, updated_at)
         VALUES (${`gh-${username}`}, ${session.user.id},
                 ${sql.json({ user_name: username, avatar_url: '' })}, 'github', now(), now())`;
-      await injectSession(page, session);
+      await injectSession(target, session);
       return username;
     });
     if (userIds.length > 0) await sql`DELETE FROM auth.users WHERE id IN ${sql(userIds)}`;

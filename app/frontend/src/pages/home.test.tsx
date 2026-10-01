@@ -1,7 +1,7 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Root } from '../root';
-import { mockFetchJson, renderWithQuery, signedIn, signedOut } from '../test/render';
+import { mockApi, renderWithQuery, signedIn, signedOut } from '../test/render';
 
 describe('Home page', () => {
   it('explains the product and offers GitHub sign-in', () => {
@@ -17,7 +17,12 @@ describe('Home page', () => {
   });
 
   it('sends signed-in users to their projects', async () => {
-    vi.stubGlobal('fetch', vi.fn(mockFetchJson({ username: 'octocat', avatarUrl: '' })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        mockApi({ 'GET /api/me': { username: 'octocat', avatarUrl: '' }, 'GET /api/projects': [] }),
+      ),
+    );
 
     renderWithQuery(<Root />, { route: '/', auth: signedIn() });
 

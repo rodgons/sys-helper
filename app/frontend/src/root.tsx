@@ -3,6 +3,7 @@ import { useAuth } from './lib/auth';
 import { HomePage } from './pages/home';
 import { ProjectsPage } from './pages/projects';
 import { UiKitPage } from './pages/ui-kit';
+import { WorkspacePage } from './pages/workspace';
 import { Button } from './ui/button';
 import { SiteHeader } from './ui/site-header';
 
@@ -22,6 +23,7 @@ export function Root() {
       <Routes>
         <Route path="/ui-kit" element={<UiKitPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/p/:slug" element={<WorkspacePage />} />
         <Route path="*" element={<HomePage />} />
       </Routes>
     </>

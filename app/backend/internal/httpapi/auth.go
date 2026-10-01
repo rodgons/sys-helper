@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -36,8 +35,7 @@ func requireUser(authn Authenticator, allowlist []string, next http.HandlerFunc)
 			writeError(w, http.StatusForbidden, "github_required")
 			return
 		case err != nil:
-			slog.ErrorContext(r.Context(), "authenticate", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal")
+			internalError(w, r, err)
 			return
 		}
 		if len(allowlist) > 0 && !slices.Contains(allowlist, strings.ToLower(user.GitHubUsername)) {

@@ -8,6 +8,7 @@ import { CommandLine } from '../ui/command-line';
 import { Cluster, Grid, Section, Stack } from '../ui/layout';
 import { ArrowLink, TextLink } from '../ui/link';
 import { MeterList } from '../ui/meter';
+import { TextField } from '../ui/text-field';
 import { Display, Heading, InlineCode, Label, Readout, Text } from '../ui/typography';
 
 /** Living reference for the design system: every token and base component, rendered. */
@@ -238,6 +239,13 @@ export function UiKitPage() {
               <Readout>{n}</Readout>
             </div>
           ))}
+        </Grid>
+      </DocSection>
+
+      <DocSection id="inputs" index="10" title="Inputs">
+        <Grid columns={2} gap={6}>
+          <TextField label="Project name" placeholder="e.g. URL shortener" />
+          <TextField label="Hidden label" hideLabel placeholder="Label kept for screen readers" />
         </Grid>
       </DocSection>
     </main>

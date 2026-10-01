@@ -1,63 +1,55 @@
+import * as stylex from '@stylexjs/stylex';
 import { Navigate } from 'react-router';
-import { ApiError } from '../lib/api';
-import { useAuth } from '../lib/auth';
-import { useMe } from '../lib/me';
-import { Button } from '../ui/button';
+import { layout } from '../design/tokens.stylex';
+import { useProjects } from '../lib/projects';
+import { NewProjectForm } from '../projects/new-project-form';
 import { Section, Stack } from '../ui/layout';
 import { Display, Label, Text } from '../ui/typography';
+import { RequireUser } from './require-user';
 
-/** Signed-in landing page. For now it only shows the empty state; Projects arrive in slice 3. */
+/** Signed-in landing page: opens the most recent Project, or offers to create the first one. */
 export function ProjectsPage() {
-  const auth = useAuth();
-  const me = useMe();
+  return <RequireUser>{(me) => <ProjectsIndex username={me.username} />}</RequireUser>;
+}
 
-  if (auth.status === 'loading') return null;
-  if (auth.status === 'signedOut') return <Navigate to="/" replace />;
+function ProjectsIndex({ username }: { username: string }) {
+  const projects = useProjects();
 
-  if (me.isError) {
-    const code = me.error instanceof ApiError ? me.error.code : undefined;
+  if (projects.isError) {
     return (
       <main>
         <Section>
-          <Stack gap={4}>
-            <Display as="h1" size="sm">
-              {code === 'not_allowed'
-                ? "You're not on the beta list yet"
-                : code === 'github_required'
-                  ? 'Sign in with GitHub to continue'
-                  : "We couldn't load your account"}
-            </Display>
-            <Text tone="muted">
-              {code === 'not_allowed'
-                ? 'sys-helper is in a private beta. Ask for access with your GitHub username.'
-                : 'Sign out and try again.'}
-            </Text>
-            <div>
-              <Button variant="outline" onClick={auth.signOut}>
-                Sign out
-              </Button>
-            </div>
-          </Stack>
+          <Text tone="muted">Couldn't load your projects. Refresh to try again.</Text>
         </Section>
       </main>
     );
   }
+  if (!projects.isSuccess) return null;
 
-  if (!me.isSuccess) return null;
+  const [latest] = projects.data;
+  if (latest) return <Navigate to={`/p/${latest.slug}`} replace />;
 
   return (
     <main>
       <Section>
-        <Stack gap={4}>
-          <Label tone="accent">Signed in as {me.data.username}</Label>
-          <Display as="h1" size="sm">
-            No projects yet
-          </Display>
-          <Text tone="muted">
-            A project is where you and the AI design an architecture together.
-          </Text>
+        <Stack gap={6} xstyle={styles.narrow}>
+          <Stack gap={4}>
+            <Label tone="accent">Signed in as {username}</Label>
+            <Display as="h1" size="sm">
+              No projects yet
+            </Display>
+            <Text tone="muted">
+              A project is the system you want to build. Name it, and the AI will start by asking
+              what it needs to do.
+            </Text>
+          </Stack>
+          <NewProjectForm />
         </Stack>
       </Section>
     </main>
   );
 }
+
+const styles = stylex.create({
+  narrow: { maxWidth: layout['--container-narrow'] },
+});

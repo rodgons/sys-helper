@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { vi } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../lib/auth';
 
@@ -40,4 +40,31 @@ export function renderWithQuery(
 
 export function mockFetchJson(body: unknown, status = 200) {
   return () => Promise.resolve(new Response(JSON.stringify(body), { status }));
+}
+
+type Reply = unknown | { status: number; body?: unknown };
+type Route = Reply | ((init: RequestInit & { json?: unknown }) => Reply);
+
+/**
+ * A `fetch` stub that routes on `"METHOD /path"` (path relative to VITE_API_URL). A route is a JSON
+ * body, `{ status, body }`, or a function of the request. Unmatched requests fail the test loudly.
+ */
+export function mockApi(routes: Record<string, Route>) {
+  return async (url: string, init: RequestInit = {}) => {
+    const key = `${init.method ?? 'GET'} ${url.replace('http://api.test', '')}`;
+    if (!(key in routes)) throw new Error(`unexpected request: ${key}`);
+    const route = routes[key];
+    const json = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
+    const reply = typeof route === 'function' ? route({ ...init, json }) : route;
+    const { status, body } =
+      reply !== null && typeof reply === 'object' && 'status' in reply
+        ? (reply as { status: number; body?: unknown })
+        : { status: 200, body: reply };
+    return new Response(status === 204 ? null : JSON.stringify(body), { status });
+  };
+}
+
+/** Renders the current router path, so tests can assert on navigation. */
+export function LocationProbe() {
+  return <output data-testid="location">{useLocation().pathname}</output>;
 }
