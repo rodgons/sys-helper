@@ -25,6 +25,13 @@ const components: Components = {
       {children}
     </a>
   ),
+  // Never load images: a URL in model output (which pasted text can steer) would be fetched with no
+  // click. Show them as links instead.
+  img: ({ src, alt }) => (
+    <a href={src} target="_blank" rel="noreferrer noopener" {...stylex.props(styles.link)}>
+      {alt || src}
+    </a>
+  ),
   blockquote: ({ children }) => (
     <blockquote {...stylex.props(styles.block, styles.quote)}>{children}</blockquote>
   ),
@@ -57,7 +64,7 @@ const components: Components = {
 
 /**
  * Renders an AI Message's markdown (GitHub-flavored), sized for the chat. Raw HTML in the text is
- * shown as text, never rendered.
+ * shown as text, never rendered, and images are shown as links.
  */
 export function Markdown({ children }: { children: string }) {
   return (

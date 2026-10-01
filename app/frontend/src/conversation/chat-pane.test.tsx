@@ -205,6 +205,18 @@ describe('ChatPane', () => {
     expect(document.querySelector('b')).toBeNull();
   });
 
+  it("never loads images from the AI's markdown, showing them as links", async () => {
+    setup({}, [
+      welcome,
+      { role: 'user', body: 'Show me', createdAt: at },
+      { role: 'assistant', body: 'Here: ![diagram](https://evil.test/track.png)', createdAt: at },
+    ]);
+
+    const link = await screen.findByRole('link', { name: 'diagram' });
+    expect(link).toHaveAttribute('href', 'https://evil.test/track.png');
+    expect(document.querySelector('img')).toBeNull();
+  });
+
   it('offers to get a reply for a message left unanswered', async () => {
     const { reply } = setup({}, [welcome, { role: 'user', body: 'Still waiting', createdAt: at }]);
 

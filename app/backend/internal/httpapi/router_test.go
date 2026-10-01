@@ -29,6 +29,16 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestSecurityHeaders(t *testing.T) {
+	for _, path := range []string{"/health", "/api/me"} { // a public route, and a refused one
+		rec := serve(t, httpapi.Deps{DB: fakePinger{}}, httptest.NewRequest(http.MethodGet, path, nil))
+
+		if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s: X-Content-Type-Options = %q, want nosniff", path, got)
+		}
+	}
+}
+
 func TestReady(t *testing.T) {
 	tests := []struct {
 		name string

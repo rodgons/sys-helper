@@ -58,7 +58,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("PATCH /api/projects/{slug}/decisions/{id}", user(handleUpdateDecision(deps.Knowledge)))
 	mux.HandleFunc("DELETE /api/projects/{slug}/decisions/{id}", user(handleRemoveDecision(deps.Knowledge)))
 	mux.HandleFunc("PUT /api/projects/{slug}/experience-level", user(handleSetExperienceLevel(deps.Knowledge)))
-	return withCORS(deps.AllowedOrigins, mux)
+	return withSecurityHeaders(withCORS(deps.AllowedOrigins, mux))
 }
 
 // handleHealth is a liveness probe: the process is up.

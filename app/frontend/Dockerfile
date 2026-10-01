@@ -18,10 +18,28 @@ ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_PUBLISHABLE_KEY
 RUN pnpm --filter frontend build
 
+# Security headers for every response. The CSP lets the page talk only to itself, the API and
+# Supabase, and load images only from itself and GitHub avatars (chat markdown never loads remote
+# images). Inline styles are allowed because React Flow positions elements with style attributes.
+RUN test -n "$VITE_API_URL" && test -n "$VITE_SUPABASE_URL" && \
+    printf '%s\n' \
+      '[advanced]' \
+      '[[advanced.headers]]' \
+      'source = "**"' \
+      '[advanced.headers.headers]' \
+      "Content-Security-Policy = \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://avatars.githubusercontent.com; font-src 'self'; connect-src 'self' ${VITE_API_URL} ${VITE_SUPABASE_URL}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'\"" \
+      'X-Frame-Options = "DENY"' \
+      'X-Content-Type-Options = "nosniff"' \
+      'Referrer-Policy = "strict-origin-when-cross-origin"' \
+      > /repo/sws.toml
+
 # static-web-server: tiny static (scratch-based) Rust file server.
 FROM joseluisq/static-web-server:2
 COPY --from=build /repo/app/frontend/dist /public
+COPY --from=build /repo/sws.toml /sws.toml
 ENV SERVER_ROOT=/public \
+    SERVER_CONFIG_FILE=/sws.toml \
+    SERVER_SECURITY_HEADERS=true \
     SERVER_PORT=8080 \
     SERVER_FALLBACK_PAGE=/public/index.html \
     SERVER_COMPRESSION=true \
