@@ -29,7 +29,7 @@ func (f *fakeSettings) SetDefaultExperienceLevel(_ context.Context, userID, leve
 func TestSettings(t *testing.T) {
 	newDeps := func() (httpapi.Deps, *fakeSettings) {
 		f := &fakeSettings{levels: map[string]string{}}
-		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Settings: f}, f
+		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone, Settings: f}, f
 	}
 
 	t.Run("starts with no default experience level", func(t *testing.T) {

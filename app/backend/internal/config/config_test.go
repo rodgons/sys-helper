@@ -33,8 +33,8 @@ func TestLoad(t *testing.T) {
 		if len(cfg.AllowedOrigins) != 0 {
 			t.Errorf("AllowedOrigins = %v, want empty", cfg.AllowedOrigins)
 		}
-		if len(cfg.AllowedGitHubUsers) != 0 {
-			t.Errorf("AllowedGitHubUsers = %v, want empty", cfg.AllowedGitHubUsers)
+		if len(cfg.AllowedGitHubIDs) != 0 || cfg.AllowAllGitHubUsers {
+			t.Errorf("allowlist = %v (all: %v), want empty and closed", cfg.AllowedGitHubIDs, cfg.AllowAllGitHubUsers)
 		}
 	})
 
@@ -51,16 +51,26 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
-	t.Run("parses the GitHub allowlist case-insensitively", func(t *testing.T) {
+	t.Run("parses the GitHub allowlist of numeric ids", func(t *testing.T) {
 		cfg, err := config.Load(env(required(map[string]string{
-			"ALLOWED_GITHUB_USERS": "Octocat, hubot,",
+			"ALLOWED_GITHUB_IDS": "583231, 9919,",
 		})))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := []string{"octocat", "hubot"}
-		if !slices.Equal(cfg.AllowedGitHubUsers, want) {
-			t.Errorf("AllowedGitHubUsers = %v, want %v", cfg.AllowedGitHubUsers, want)
+		want := []string{"583231", "9919"}
+		if !slices.Equal(cfg.AllowedGitHubIDs, want) {
+			t.Errorf("AllowedGitHubIDs = %v, want %v", cfg.AllowedGitHubIDs, want)
+		}
+	})
+
+	t.Run("opts in to every GitHub user explicitly", func(t *testing.T) {
+		cfg, err := config.Load(env(required(map[string]string{"ALLOW_ALL_GITHUB_USERS": "1"})))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.AllowAllGitHubUsers {
+			t.Error("AllowAllGitHubUsers = false, want true")
 		}
 	})
 
@@ -148,6 +158,17 @@ func TestLoad(t *testing.T) {
 		{"AI_PROVIDER": "openai"},
 	} {
 		t.Run("rejects invalid AI settings", func(t *testing.T) {
+			if _, err := config.Load(env(required(bad))); err == nil {
+				t.Fatalf("Load(%v) succeeded", bad)
+			}
+		})
+	}
+
+	for _, bad := range []map[string]string{
+		{"ALLOWED_GITHUB_IDS": "octocat"},   // usernames aren't ids
+		{"ALLOWED_GITHUB_USERS": "octocat"}, // the old username allowlist must be migrated
+	} {
+		t.Run("rejects an allowlist of usernames", func(t *testing.T) {
 			if _, err := config.Load(env(required(bad))); err == nil {
 				t.Fatalf("Load(%v) succeeded", bad)
 			}

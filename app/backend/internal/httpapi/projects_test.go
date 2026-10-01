@@ -91,7 +91,7 @@ func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 func TestProjects(t *testing.T) {
 	newDeps := func() (httpapi.Deps, *fakeProjects) {
 		store := newFakeProjects()
-		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Projects: store}, store
+		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone, Projects: store}, store
 	}
 
 	t.Run("requires a signed-in user", func(t *testing.T) {

@@ -41,7 +41,7 @@ func TestArchitecture(t *testing.T) {
 		store := &fakeArchitectures{stored: map[string]architecture.Versioned{
 			"k3xa9q2m7p": {Version: 0, Document: architecture.Empty()},
 		}}
-		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Architectures: store}, store
+		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone, Architectures: store}, store
 	}
 	const doc = `{"components":[{"id":"a","type":"service","name":"API","position":{"x":1,"y":2}}],"connections":[]}`
 

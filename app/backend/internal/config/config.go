@@ -15,9 +15,11 @@ type Config struct {
 	AllowedOrigins []string
 	// SupabaseURL is the Supabase API base URL; access tokens are verified against its Auth JWKS.
 	SupabaseURL string
-	// AllowedGitHubUsers is the lowercase beta allowlist. Empty lets every GitHub user in.
-	AllowedGitHubUsers []string
-	AI                 AI
+	// AllowedGitHubIDs is the beta allowlist of numeric GitHub user ids (ALLOWED_GITHUB_IDS). Empty
+	// admits nobody unless AllowAllGitHubUsers (ALLOW_ALL_GITHUB_USERS=1) opts in to everyone.
+	AllowedGitHubIDs    []string
+	AllowAllGitHubUsers bool
+	AI                  AI
 }
 
 // AI configures the chat model behind the assistant: a provider's OpenAI-compatible endpoint, a
@@ -40,11 +42,21 @@ type AI struct {
 // Load builds a Config from getenv (os.Getenv in production, a stub in tests).
 func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
-		Port:               getenv("PORT"),
-		DatabaseURL:        getenv("DATABASE_URL"),
-		SupabaseURL:        getenv("SUPABASE_URL"),
-		AllowedOrigins:     splitList(getenv("CORS_ALLOWED_ORIGINS")),
-		AllowedGitHubUsers: splitList(strings.ToLower(getenv("ALLOWED_GITHUB_USERS"))),
+		Port:                getenv("PORT"),
+		DatabaseURL:         getenv("DATABASE_URL"),
+		SupabaseURL:         getenv("SUPABASE_URL"),
+		AllowedOrigins:      splitList(getenv("CORS_ALLOWED_ORIGINS")),
+		AllowedGitHubIDs:    splitList(getenv("ALLOWED_GITHUB_IDS")),
+		AllowAllGitHubUsers: getenv("ALLOW_ALL_GITHUB_USERS") == "1",
+	}
+	if getenv("ALLOWED_GITHUB_USERS") != "" {
+		return Config{}, errors.New("ALLOWED_GITHUB_USERS was replaced by ALLOWED_GITHUB_IDS: list numeric GitHub user ids " +
+			"(see https://api.github.com/users/<username>), because usernames can change hands")
+	}
+	for _, id := range cfg.AllowedGitHubIDs {
+		if _, err := strconv.ParseUint(id, 10, 64); err != nil {
+			return Config{}, fmt.Errorf("ALLOWED_GITHUB_IDS must list numeric GitHub user ids, got %q", id)
+		}
 	}
 	ai, err := loadAI(getenv)
 	if err != nil {

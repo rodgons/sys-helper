@@ -53,7 +53,7 @@ func TestConversation(t *testing.T) {
 		store := &fakeConversations{msgs: []conversation.Message{
 			{Role: conversation.RoleAssistant, Body: conversation.WelcomeMessage, CreatedAt: time.Unix(0, 0).UTC()},
 		}}
-		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Conversations: store}, store
+		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone, Conversations: store}, store
 	}
 
 	t.Run("lists the messages", func(t *testing.T) {

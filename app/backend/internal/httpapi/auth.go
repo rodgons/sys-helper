@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"slices"
 	"strings"
 
 	"sys-helper/backend/internal/auth"
@@ -17,9 +16,9 @@ type Authenticator interface {
 
 type userKey struct{}
 
-// requireUser rejects requests without a valid GitHub-backed session, or from GitHub users missing
-// from a non-empty allowlist, and passes the User to next through the request context.
-func requireUser(authn Authenticator, allowlist []string, next http.HandlerFunc) http.HandlerFunc {
+// requireUser rejects requests without a valid GitHub-backed session, or from GitHub accounts the
+// allowlist doesn't admit, and passes the User to next through the request context.
+func requireUser(authn Authenticator, allowlist auth.Allowlist, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok || token == "" {
@@ -38,7 +37,7 @@ func requireUser(authn Authenticator, allowlist []string, next http.HandlerFunc)
 			internalError(w, r, err)
 			return
 		}
-		if len(allowlist) > 0 && !slices.Contains(allowlist, strings.ToLower(user.GitHubUsername)) {
+		if !allowlist.Admits(user) {
 			writeError(w, http.StatusForbidden, "not_allowed")
 			return
 		}

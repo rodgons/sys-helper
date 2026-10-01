@@ -28,7 +28,7 @@ export const test = base.extend<Fixtures>({
       userIds.push(session.user.id);
       await sql`
         INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, created_at, updated_at)
-        VALUES (${`gh-${username}`}, ${session.user.id},
+        VALUES (${String(1e9 + Math.floor(Math.random() * 1e9))}, ${session.user.id},
                 ${sql.json({ user_name: username, avatar_url: '' })}, 'github', now(), now())`;
       await injectSession(target, session);
       return username;

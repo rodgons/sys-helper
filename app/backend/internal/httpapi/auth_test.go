@@ -28,7 +28,10 @@ func (f fakeAuth) Authenticate(_ context.Context, token string) (auth.User, erro
 	}
 }
 
-var octocat = auth.User{ID: "0192f0c4-0000-7000-8000-000000000001", GitHubUsername: "octocat", AvatarURL: "https://avatars.test/octocat"}
+var octocat = auth.User{ID: "0192f0c4-0000-7000-8000-000000000001", GitHubID: "583231", GitHubUsername: "octocat", AvatarURL: "https://avatars.test/octocat"}
+
+// everyone admits every GitHub account, for tests that aren't about the allowlist.
+var everyone = auth.Allowlist{Everyone: true}
 
 func getMe(t *testing.T, deps httpapi.Deps, authorization string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -40,7 +43,7 @@ func getMe(t *testing.T, deps httpapi.Deps, authorization string) *httptest.Resp
 }
 
 func TestMe(t *testing.T) {
-	deps := httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}}
+	deps := httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone}
 
 	t.Run("returns the signed-in user", func(t *testing.T) {
 		rec := getMe(t, deps, "Bearer good")
@@ -63,21 +66,23 @@ func TestMe(t *testing.T) {
 	tests := []struct {
 		name          string
 		authorization string
-		allowlist     []string
+		allowlist     auth.Allowlist
 		wantStatus    int
 		wantError     string
 	}{
-		{"missing token", "", nil, http.StatusUnauthorized, "unauthenticated"},
-		{"not a bearer token", "Basic good", nil, http.StatusUnauthorized, "unauthenticated"},
-		{"invalid token", "Bearer forged", nil, http.StatusUnauthorized, "unauthenticated"},
-		{"no GitHub identity", "Bearer no-github", nil, http.StatusForbidden, "github_required"},
-		{"not on the allowlist", "Bearer good", []string{"hubot"}, http.StatusForbidden, "not_allowed"},
-		{"on the allowlist", "Bearer good", []string{"hubot", "octocat"}, http.StatusOK, ""},
-		{"authenticator failure", "Bearer error", nil, http.StatusInternalServerError, "internal"},
+		{"missing token", "", everyone, http.StatusUnauthorized, "unauthenticated"},
+		{"not a bearer token", "Basic good", everyone, http.StatusUnauthorized, "unauthenticated"},
+		{"invalid token", "Bearer forged", everyone, http.StatusUnauthorized, "unauthenticated"},
+		{"no GitHub identity", "Bearer no-github", everyone, http.StatusForbidden, "github_required"},
+		{"not on the allowlist", "Bearer good", auth.Allowlist{GitHubIDs: []string{"9919"}}, http.StatusForbidden, "not_allowed"},
+		{"on the allowlist", "Bearer good", auth.Allowlist{GitHubIDs: []string{"9919", "583231"}}, http.StatusOK, ""},
+		{"listed by username, not id", "Bearer good", auth.Allowlist{GitHubIDs: []string{"octocat"}}, http.StatusForbidden, "not_allowed"},
+		{"empty allowlist admits nobody", "Bearer good", auth.Allowlist{}, http.StatusForbidden, "not_allowed"},
+		{"authenticator failure", "Bearer error", everyone, http.StatusInternalServerError, "internal"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			deps := httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, AllowedGitHubUsers: tt.allowlist}
+			deps := httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: tt.allowlist}
 
 			rec := getMe(t, deps, tt.authorization)
 

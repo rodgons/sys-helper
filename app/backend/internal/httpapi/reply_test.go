@@ -67,7 +67,7 @@ func readSSE(t *testing.T, body string) []sseEvent {
 func TestReply(t *testing.T) {
 	const path = "/api/projects/shop-k3xa9q2m7p/reply"
 	deps := func(r httpapi.Replier) httpapi.Deps {
-		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Assistant: r}
+		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone, Assistant: r}
 	}
 
 	t.Run("streams the reply as server-sent events", func(t *testing.T) {

@@ -68,7 +68,7 @@ A **User** signs in with GitHub and opens a **Project**. They design its **Archi
 ## Backend
 
 - **Auth:** Supabase Auth with the GitHub provider. The Go API checks the Supabase JWT on every request and scopes all data by user ID. GitHub is used only for identity.
-- **Access control:** an optional allowlist of GitHub usernames (empty means anyone can sign in) and a daily per-User message cap, both set in `.env`.
+- **Access control:** an allowlist of numeric GitHub user ids (empty admits nobody; `ALLOW_ALL_GITHUB_USERS=1` opts in to everyone) and a daily per-User AI cap, both set in `.env`. (Usernames were replaced by ids after the 2026-10-01 code review: usernames can change hands.)
 - **AI:**
   - The Go API calls an OpenAI-compatible endpoint behind a `ChatModel` interface: NVIDIA (build.nvidia.com) or Gemini, chosen by `AI_PROVIDER`. The base URL, model and key come from `.env`.
   - Only models that support tool calling are allowed. Tool calls are how the AI produces Proposals, Decisions and Requirements.

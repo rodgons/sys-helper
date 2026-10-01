@@ -8,7 +8,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | --- | --- |
 | `cmd/server` | The only place real dependencies are built and hooks are wired (`OnCreate`, `AfterSave`). |
 | `internal/config` | `.env` → `Config`, through an injected `getenv`. |
-| `internal/auth` | JWKS token check (`verifier.go`), GitHub username from `auth.identities` (`identities.go`). |
+| `internal/auth` | JWKS token check (`verifier.go`), GitHub identity from `auth.identities` (`identities.go`; `provider_id` is the numeric GitHub id), the beta `Allowlist` (zero value admits nobody). |
 | `internal/httpapi` | Routes (`router.go`), handlers, the store interfaces they need (declared next to each handler), error mapping. |
 | `internal/projects` | Projects and Project Slugs. |
 | `internal/architecture` | The canvas document, the Component Type catalog (`document.go`) and versioned saves. |

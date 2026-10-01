@@ -108,7 +108,7 @@ func TestKnowledge(t *testing.T) {
 		f := &fakeKnowledge{k: knowledge.Knowledge{Requirements: []knowledge.Requirement{}, Decisions: []knowledge.Decision{
 			{Num: 1, Title: "Postgres", Rationale: "ACID", Targets: []string{"db"}, Requirements: []int{}, NeedsReview: true},
 		}}}
-		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Knowledge: f}, f
+		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone, Knowledge: f}, f
 	}
 
 	t.Run("adds a requirement and returns the project's knowledge", func(t *testing.T) {

@@ -5,6 +5,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"sys-helper/backend/internal/auth"
 )
 
 // Pinger reports whether a dependency (e.g. the database) is reachable.
@@ -25,8 +27,8 @@ type Deps struct {
 	// DailyMessageLimit caps the messages a User can send per UTC day. 0 means no cap.
 	DailyMessageLimit int
 	AllowedOrigins    []string
-	// AllowedGitHubUsers is the lowercase beta allowlist. Empty lets every GitHub user in.
-	AllowedGitHubUsers []string
+	// Allowlist admits GitHub accounts to the beta. Its zero value admits nobody.
+	Allowlist auth.Allowlist
 }
 
 func NewRouter(deps Deps) http.Handler {
@@ -34,7 +36,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.HandleFunc("GET /ready", handleReady(deps.DB))
 
-	user := func(h http.HandlerFunc) http.HandlerFunc { return requireUser(deps.Auth, deps.AllowedGitHubUsers, h) }
+	user := func(h http.HandlerFunc) http.HandlerFunc { return requireUser(deps.Auth, deps.Allowlist, h) }
 	mux.HandleFunc("GET /api/me", user(handleMe))
 	mux.HandleFunc("GET /api/settings", user(handleGetSettings(deps.Settings)))
 	mux.HandleFunc("PUT /api/settings", user(handleSaveSettings(deps.Settings)))

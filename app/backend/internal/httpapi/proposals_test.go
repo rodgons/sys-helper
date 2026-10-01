@@ -47,7 +47,7 @@ func TestProposalReviews(t *testing.T) {
 	const doc = `{"components":[{"id":"c-1","type":"cache","name":"Cache","position":{"x":0,"y":0}}],"connections":[]}`
 	newDeps := func() (httpapi.Deps, *fakeReviews) {
 		f := &fakeReviews{status: map[int]string{1: "superseded", 2: "pending"}}
-		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Reviews: f}, f
+		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone, Reviews: f}, f
 	}
 
 	t.Run("accepts with the resulting architecture and returns the new version", func(t *testing.T) {

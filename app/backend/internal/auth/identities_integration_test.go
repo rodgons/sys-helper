@@ -22,8 +22,13 @@ func TestIdentities(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if gh.Username != "octocat" || gh.AvatarURL != "https://avatars.test/octocat" {
-			t.Errorf("GitHub = %+v", gh)
+		var githubID string
+		if err := pool.QueryRow(context.Background(),
+			`SELECT provider_id FROM auth.identities WHERE user_id = $1`, id).Scan(&githubID); err != nil {
+			t.Fatal(err)
+		}
+		if gh.ID != githubID || gh.Username != "octocat" || gh.AvatarURL != "https://avatars.test/octocat" {
+			t.Errorf("GitHub = %+v, want id %s", gh, githubID)
 		}
 	})
 

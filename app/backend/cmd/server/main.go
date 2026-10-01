@@ -72,12 +72,12 @@ func run() error {
 				HistoryLimit:  30,
 				Timeout:       3 * time.Minute,
 			},
-			Reviews:            conversation.Reviews{Conversations: conversations, Architectures: architectures},
-			Knowledge:          knowledgeStore,
-			Settings:           knowledgeStore, // the default Experience Level lives with the per-Project one
-			DailyMessageLimit:  cfg.AI.DailyMessageLimit,
-			AllowedOrigins:     cfg.AllowedOrigins,
-			AllowedGitHubUsers: cfg.AllowedGitHubUsers,
+			Reviews:           conversation.Reviews{Conversations: conversations, Architectures: architectures},
+			Knowledge:         knowledgeStore,
+			Settings:          knowledgeStore, // the default Experience Level lives with the per-Project one
+			DailyMessageLimit: cfg.AI.DailyMessageLimit,
+			AllowedOrigins:    cfg.AllowedOrigins,
+			Allowlist:         allowlist(cfg),
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -103,6 +103,18 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// allowlist admits the configured GitHub ids, or everyone on explicit opt-in. Both risky setups are
+// logged loudly: nobody can sign in, or anyone can spend AI credits.
+func allowlist(cfg config.Config) auth.Allowlist {
+	switch {
+	case cfg.AllowAllGitHubUsers && !cfg.AI.Fake:
+		slog.Warn("ALLOW_ALL_GITHUB_USERS=1: every GitHub account can sign in and use the AI model")
+	case !cfg.AllowAllGitHubUsers && len(cfg.AllowedGitHubIDs) == 0:
+		slog.Warn("ALLOWED_GITHUB_IDS is empty: nobody can sign in (set ALLOW_ALL_GITHUB_USERS=1 to admit everyone)")
+	}
+	return auth.Allowlist{GitHubIDs: cfg.AllowedGitHubIDs, Everyone: cfg.AllowAllGitHubUsers}
 }
 
 // chatModel builds the assistant's model: the fake, or the primary model with its fallback. It

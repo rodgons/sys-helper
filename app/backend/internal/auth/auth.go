@@ -5,6 +5,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"slices"
 )
 
 var (
@@ -16,14 +17,28 @@ var (
 
 // User is a signed-in User. ID is the Supabase user ID and never leaves the server.
 type User struct {
-	ID             string
+	ID string
+	// GitHubID is the immutable numeric GitHub user id. Usernames can change and be re-registered by
+	// someone else, so the allowlist matches this, and the username is for display only.
+	GitHubID       string
 	GitHubUsername string
 	AvatarURL      string
 }
 
 type GitHubIdentity struct {
+	ID        string
 	Username  string
 	AvatarURL string
+}
+
+// Allowlist is the beta allowlist. The zero value admits nobody.
+type Allowlist struct {
+	GitHubIDs []string
+	Everyone  bool // explicit opt-in to admit every GitHub account
+}
+
+func (a Allowlist) Admits(u User) bool {
+	return a.Everyone || (u.GitHubID != "" && slices.Contains(a.GitHubIDs, u.GitHubID))
 }
 
 // Authenticator turns an access token into a User.
@@ -45,5 +60,5 @@ func (a Authenticator) Authenticate(ctx context.Context, token string) (User, er
 	if err != nil {
 		return User{}, err
 	}
-	return User{ID: id, GitHubUsername: gh.Username, AvatarURL: gh.AvatarURL}, nil
+	return User{ID: id, GitHubID: gh.ID, GitHubUsername: gh.Username, AvatarURL: gh.AvatarURL}, nil
 }

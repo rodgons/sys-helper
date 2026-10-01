@@ -30,7 +30,8 @@ func Pool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// User creates a Supabase user, linked to a GitHub identity when githubUsername is not empty, and
+// User creates a Supabase user, linked to a GitHub identity (with a random numeric GitHub user id)
+// when githubUsername is not empty, and
 // deletes it (and everything that cascades from it) when the test ends. It returns the user ID.
 func User(t *testing.T, pool *pgxpool.Pool, githubUsername string) string {
 	t.Helper()
@@ -53,8 +54,8 @@ func User(t *testing.T, pool *pgxpool.Pool, githubUsername string) string {
 	}
 	_, err = pool.Exec(ctx, `
 		INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, created_at, updated_at)
-		VALUES ($1, $2, jsonb_build_object('user_name', $3::text, 'avatar_url', $4::text), 'github', now(), now())`,
-		"gh-"+id, id, githubUsername, fmt.Sprintf("https://avatars.test/%s", githubUsername))
+		VALUES ((1e9 + floor(random() * 1e9))::bigint::text, $1, jsonb_build_object('user_name', $2::text, 'avatar_url', $3::text), 'github', now(), now())`,
+		id, githubUsername, fmt.Sprintf("https://avatars.test/%s", githubUsername))
 	if err != nil {
 		t.Fatalf("insert auth.identities: %v", err)
 	}
