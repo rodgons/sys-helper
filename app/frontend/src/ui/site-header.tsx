@@ -88,6 +88,8 @@ const styles = stylex.create({
     alignItems: 'center',
     gap: space['--space-6'],
     height: layout['--header-h'],
+    // Full width, so the brand and the actions sit at the window's edges, not the page column's.
+    maxWidth: 'none',
   },
   brand: {
     display: 'flex',
