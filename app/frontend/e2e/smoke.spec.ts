@@ -1,7 +1,8 @@
 import { expect, test } from './fixtures';
+import { apiUrl } from './servers';
 
 test('the API is up and reaches the database', async ({ request }) => {
-  const res = await request.get('http://localhost:8080/ready');
+  const res = await request.get(`${apiUrl}/ready`);
 
   expect(await res.json()).toEqual({ status: 'ok', database: 'up' });
 });

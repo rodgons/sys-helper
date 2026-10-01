@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import postgres from 'postgres';
 import { expect, test } from '../e2e/fixtures';
+import { apiUrl } from '../e2e/servers';
 import { dagreLayout } from '../src/architecture/layout';
 import type { ComponentNode, ConnectionEdge } from '../src/architecture/model';
 
@@ -11,7 +12,6 @@ import type { ComponentNode, ConnectionEdge } from '../src/architecture/model';
 // Run it with `make demo-screenshots`.
 
 const sql = postgres(process.env.DATABASE_URL ?? '', { max: 1, onnotice: () => {} });
-const apiUrl = process.env.VITE_API_URL ?? 'http://localhost:8080';
 const outDir = 'src/assets';
 
 const architecture = {

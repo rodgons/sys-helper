@@ -65,5 +65,5 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 ## Tests
 
 - Vitest + Testing Library: `renderWithQuery(ui, { route, auth: signedIn() })`, `mockApi({ 'GET /api/…': body | {status, body} | fn })` (unmatched requests throw), `sseResponse(...)` for replies, `<LocationProbe />` for navigation. All in `src/test/render.tsx`.
-- E2E in `e2e/*.spec.ts`, using `test` from `e2e/fixtures.ts` (`signIn()`), against the real API with `AI_FAKE=1`.
+- E2E in `e2e/*.spec.ts`, using `test` from `e2e/fixtures.ts` (`signIn()`), against the real API with `AI_FAKE=1`. Playwright builds and runs its own API and Vite on dedicated ports (`e2e/servers.ts`: 18080/15173), so it never reuses a `make dev` server that would call the real model.
 - `demo/workspace.capture.ts` (`make demo-screenshots`) regenerates the home page screenshots. It is not a test suite.
