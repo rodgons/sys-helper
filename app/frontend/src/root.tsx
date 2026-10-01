@@ -1,7 +1,9 @@
 import { Route, Routes, useLocation } from 'react-router';
-import { App } from './app';
+import { useAuth } from './lib/auth';
+import { HomePage } from './pages/home';
+import { ProjectsPage } from './pages/projects';
 import { UiKitPage } from './pages/ui-kit';
-import { ButtonLink } from './ui/button';
+import { Button } from './ui/button';
 import { SiteHeader } from './ui/site-header';
 
 const NAV_LINKS = [
@@ -16,19 +18,26 @@ export function Root() {
 
   return (
     <>
-      <SiteHeader
-        links={NAV_LINKS}
-        currentPath={normalized}
-        actions={
-          <ButtonLink href="/ui-kit" size="sm" variant="secondary">
-            Components
-          </ButtonLink>
-        }
-      />
+      <SiteHeader links={NAV_LINKS} currentPath={normalized} actions={<AuthAction />} />
       <Routes>
         <Route path="/ui-kit" element={<UiKitPage />} />
-        <Route path="*" element={<App />} />
+        <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="*" element={<HomePage />} />
       </Routes>
     </>
+  );
+}
+
+function AuthAction() {
+  const auth = useAuth();
+  if (auth.status === 'loading') return null;
+  return auth.status === 'signedIn' ? (
+    <Button size="sm" variant="ghost" onClick={auth.signOut}>
+      Sign out
+    </Button>
+  ) : (
+    <Button size="sm" variant="secondary" onClick={auth.signIn}>
+      Sign in
+    </Button>
   );
 }

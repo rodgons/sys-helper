@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { SiteHeader } from './site-header';
 
@@ -9,14 +10,22 @@ const links = [
 
 describe('SiteHeader', () => {
   it('marks the current page link', () => {
-    render(<SiteHeader links={links} currentPath="/ui-kit" />);
+    render(
+      <MemoryRouter>
+        <SiteHeader links={links} currentPath="/ui-kit" />
+      </MemoryRouter>,
+    );
 
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(nav.querySelector('[aria-current="page"]')).toHaveTextContent('UI kit');
   });
 
   it('toggles the mobile menu', () => {
-    render(<SiteHeader links={links} currentPath="/" />);
+    render(
+      <MemoryRouter>
+        <SiteHeader links={links} currentPath="/" />
+      </MemoryRouter>,
+    );
     const toggle = screen.getByRole('button', { name: 'Menu' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 

@@ -1,9 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
-test('frontend reaches the API and the API reaches the database', async ({ page }) => {
-  await page.goto('/');
+test('the API is up and reaches the database', async ({ request }) => {
+  const res = await request.get('http://localhost:8080/ready');
 
-  await expect(page.getByRole('status')).toHaveText('API: ok · database: up');
+  expect(await res.json()).toEqual({ status: 'ok', database: 'up' });
 });
 
 test('UI kit page renders the component reference', async ({ page }) => {

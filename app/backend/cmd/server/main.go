@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"sys-helper/backend/internal/auth"
 	"sys-helper/backend/internal/config"
 	"sys-helper/backend/internal/database"
 	"sys-helper/backend/internal/httpapi"
@@ -37,9 +38,19 @@ func run() error {
 	}
 	defer db.Close()
 
+	tokens, err := auth.NewVerifier(ctx, cfg.SupabaseURL)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           httpapi.NewRouter(httpapi.Deps{DB: db, AllowedOrigins: cfg.AllowedOrigins}),
+		Addr: ":" + cfg.Port,
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			DB:                 db,
+			Auth:               auth.Authenticator{Tokens: tokens, Identities: auth.Identities{DB: db}},
+			AllowedOrigins:     cfg.AllowedOrigins,
+			AllowedGitHubUsers: cfg.AllowedGitHubUsers,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

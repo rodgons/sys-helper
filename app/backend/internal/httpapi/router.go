@@ -14,13 +14,17 @@ type Pinger interface {
 
 type Deps struct {
 	DB             Pinger
+	Auth           Authenticator
 	AllowedOrigins []string
+	// AllowedGitHubUsers is the lowercase beta allowlist. Empty lets every GitHub user in.
+	AllowedGitHubUsers []string
 }
 
 func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.HandleFunc("GET /ready", handleReady(deps.DB))
+	mux.HandleFunc("GET /api/me", requireUser(deps.Auth, deps.AllowedGitHubUsers, handleMe))
 	return withCORS(deps.AllowedOrigins, mux)
 }
 

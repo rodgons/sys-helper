@@ -32,6 +32,7 @@ pnpm --filter frontend exec playwright test e2e/smoke.spec.ts
 ## Architecture
 
 - **Data flow:** the browser uses TanStack Query (`@tanstack/react-query`) to call the Go API (`src/lib/api.ts`, base URL `VITE_API_URL`). The API connects to Supabase Postgres directly with a pgx pool. The frontend also gets a `supabase-js` client (`src/lib/supabase.ts`) for Supabase features (auth, storage, realtime), but nothing uses it yet. The API allows browser calls from other origins only for those listed in `CORS_ALLOWED_ORIGINS`.
+- **Auth:** the browser signs in with GitHub through Supabase Auth (`src/lib/auth.tsx`, `useAuth()`) and sends the access token as a bearer token (`apiFetch(path, { token })`). The API wraps protected routes in `requireUser` (`internal/httpapi/auth.go`). It verifies the token against Supabase's JWKS (`internal/auth`), reads the GitHub username from `auth.identities`, and applies `ALLOWED_GITHUB_USERS`. Never trust `user_metadata`, because users can edit it.
 - **Frontend routing:** React Router in declarative mode (`<Routes>` in `src/root.tsx`, `BrowserRouter` in `main.tsx`).
 - **Config:** a single root `.env` serves every app. Make loads and exports it (`-include .env` + `export`), and Vite reads it because `envDir: '../..'`. `VITE_*` values are compiled into the bundle at build time, so production values are passed as Docker build args (`make build-frontend VITE_API_URL=…`).
 - **Backend wiring:** `cmd/server/main.go` is the only place real dependencies are built. Handlers in `internal/httpapi` depend on small interfaces (e.g. `Pinger`) passed in through `httpapi.Deps`, and `config.Load` takes an injected `getenv`. Tests supply fakes through these seams. Keep that pattern for new dependencies. Routes use Go 1.22+ `ServeMux` patterns (`"GET /path"`), with no router library.
@@ -39,7 +40,8 @@ pnpm --filter frontend exec playwright test e2e/smoke.spec.ts
 - **Tests:** follow test-first (red/green/refactor; README has the strategy).
   - **Go:** black-box `package x_test`. Integration tests live in `*_integration_test.go` files with `//go:build integration`.
   - **Frontend:** render with `renderWithQuery` from `src/test/render.tsx` (pass `{ route }` to start the MemoryRouter at a path) and stub network calls with `vi.stubGlobal('fetch', …)`. Vitest gets fixed `VITE_*` values from `test.env` in `vite.config.ts`.
-  - **E2E:** Playwright starts the real API and Vite through `webServer`.
+  - **Go integration:** `internal/testdb` gives you `Pool(t)` and `User(t, pool, githubUsername)`, which creates a Supabase user and removes it after the test.
+  - **E2E:** Playwright starts the real API and Vite through `webServer`. Import `test` from `e2e/fixtures.ts`. Its `signIn()` fixture creates a GitHub-linked user and injects the session, because real GitHub OAuth can't run in tests.
 
 ## Non-obvious constraints (each one was a real bug)
 

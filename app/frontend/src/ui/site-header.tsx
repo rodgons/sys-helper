@@ -1,5 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { type ReactNode, useState } from 'react';
+import { Link } from 'react-router';
 import { color, font, layout, media, motion, radius, space, text } from '../design/tokens.stylex';
 import { Container } from './layout';
 
@@ -24,20 +25,20 @@ export function SiteHeader({
   return (
     <header {...stylex.props(styles.header)}>
       <Container xstyle={styles.bar}>
-        <a href="/" {...stylex.props(styles.brand)}>
+        <Link to="/" {...stylex.props(styles.brand)}>
           <span aria-hidden="true" {...stylex.props(styles.mark)} />
           sys-helper
-        </a>
+        </Link>
         <nav aria-label="Main" {...stylex.props(styles.desktopNav)}>
           {links.map((link) => (
-            <a
+            <Link
               key={link.href}
-              href={link.href}
+              to={link.href}
               aria-current={current(link.href)}
               {...stylex.props(styles.navLink)}
             >
               {link.label}
-            </a>
+            </Link>
           ))}
         </nav>
         <div {...stylex.props(styles.actions)}>{actions}</div>
@@ -55,14 +56,15 @@ export function SiteHeader({
         <nav id="mobile-menu" aria-label="Mobile" {...stylex.props(styles.mobileNav)}>
           <Container>
             {links.map((link) => (
-              <a
+              <Link
                 key={link.href}
-                href={link.href}
+                to={link.href}
                 aria-current={current(link.href)}
+                onClick={() => setOpen(false)}
                 {...stylex.props(styles.mobileLink)}
               >
                 {link.label}
-              </a>
+              </Link>
             ))}
           </Container>
         </nav>
