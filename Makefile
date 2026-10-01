@@ -89,7 +89,7 @@ db-migration: ## Create a migration: make db-migration name=create_users
 	$(SUPABASE) migration new $(name)
 
 ##@ Testing (TDD)
-.PHONY: test test-backend test-frontend test-watch-backend test-watch-frontend test-integration test-e2e test-all coverage
+.PHONY: test test-backend test-frontend test-watch-backend test-watch-frontend test-integration test-e2e demo-screenshots test-ai-live test-all coverage
 
 test: test-backend test-frontend ## Fast unit tests for both apps (no external deps)
 
@@ -108,8 +108,18 @@ test-watch-frontend: ## Vitest watch mode (red-green loop)
 test-integration: ## Go integration tests against local Supabase Postgres
 	cd $(BACKEND_DIR) && go tool gotestsum --format testname -- -race -tags integration ./...
 
+# The E2E fixture creates users with the Auth admin API, which needs the local stack's secret key.
+# It's read from the running stack, so it never has to live in a tracked file.
+test-e2e demo-screenshots: export SUPABASE_SECRET_KEY = $(shell $(SUPABASE) status -o env 2>/dev/null </dev/null | sed -n 's/^SECRET_KEY="\{0,1\}\([^"]*\)"\{0,1\}$$/\1/p')
+
 test-e2e: ## Playwright full-stack tests (needs Supabase running)
 	$(FE) test:e2e
+
+demo-screenshots: ## Recapture the home page's workspace screenshots (needs Supabase running)
+	$(FE) exec playwright test -c playwright.demo.config.ts
+
+test-ai-live: ## Check the AI_PROVIDER models stream and call tools (needs its API key; costs credits)
+	cd $(BACKEND_DIR) && go test -tags live -run TestLiveModels -v -count=1 ./internal/llm
 
 test-all: lint test test-integration test-e2e ## Everything CI should run
 

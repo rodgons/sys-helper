@@ -10,6 +10,7 @@ app/frontend/test-results/
 app/frontend/playwright-report/
 app/frontend/blob-report/
 app/frontend/coverage/
+*.tsbuildinfo
 app/frontend/playwright/.cache/
 
 # Go / backend

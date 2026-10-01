@@ -1,5 +1,5 @@
-import preact from '@preact/preset-vite';
 import stylex from '@stylexjs/unplugin';
+import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
 // Under Vitest use the plain Rollup adapter: the Vite adapter's dev-server HMR
@@ -9,7 +9,7 @@ const stylexPlugin = process.env.VITEST ? stylex.rollup() : stylex.vite();
 export default defineConfig({
   // Single .env at the repo root is shared by every app.
   envDir: '../..',
-  plugins: [stylexPlugin, preact()],
+  plugins: [stylexPlugin, react()],
   server: { port: 5173, strictPort: true },
   test: {
     environment: 'happy-dom',

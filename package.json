@@ -7,6 +7,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
-    "supabase": "^2.118.0"
+    "supabase": "^2.119.0"
   }
 }

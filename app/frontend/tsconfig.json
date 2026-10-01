@@ -5,7 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "jsxImportSource": "preact",
+    "jsxImportSource": "react",
     "types": ["vite/client", "@testing-library/jest-dom/vitest"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -16,5 +16,12 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts"]
+  "include": [
+    "src",
+    "e2e",
+    "demo",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "playwright.demo.config.ts"
+  ]
 }

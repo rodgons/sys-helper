@@ -3,7 +3,7 @@
 | Part     | Stack                                                                 | Path            |
 | -------- | --------------------------------------------------------------------- | --------------- |
 | Backend  | Go (stdlib `net/http` ServeMux), pgx → Supabase Postgres               | `app/backend`   |
-| Frontend | Preact + Vite, TypeScript, StyleX, TanStack Query, supabase-js, Biome | `app/frontend`  |
+| Frontend | React + Vite, TypeScript, React Router, StyleX, TanStack Query, supabase-js, Biome | `app/frontend`  |
 | Database | Supabase local stack via Supabase CLI (Docker)                        | `supabase`      |
 
 The root only holds shared config (`Makefile`, `.env`, `biome.json`, pnpm workspace). Run `make` to list every command.
@@ -77,11 +77,13 @@ make build   # → sys-helper/backend:latest, sys-helper/frontend:latest
 ```
 
 - **backend:** a static Go binary on `scratch`, running as a non-root user (~12 MB). It needs `DATABASE_URL` and `CORS_ALLOWED_ORIGINS`, and `PORT` (default 8080) can be overridden.
-- **frontend:** the Vite build served by `static-web-server` with SPA fallback, compression and `/health`, running as a non-root user on port 8080 (~11 MB). Pass the production `VITE_*` values at build time:
+- **frontend:** the Vite build served by `static-web-server` with SPA fallback, compression and `/health`, running as a non-root user on port 8080 (~11 MB). It sends security headers on every response, including a Content-Security-Policy built from `VITE_API_URL` and `VITE_SUPABASE_URL`: the page may only connect to itself, the API and Supabase, and load images only from itself and GitHub avatars. Pass the production `VITE_*` values at build time:
 
   ```sh
   make build-frontend VITE_API_URL=https://api.example.com VITE_SUPABASE_URL=… VITE_SUPABASE_PUBLISHABLE_KEY=…
   ```
+
+**Hosted Supabase:** `supabase/config.toml` only configures the local stack. In the hosted project's Auth settings, keep GitHub as the only provider and turn the **Email** provider off. Otherwise an email/password account could end up linked to someone's GitHub identity.
 
 To run the images locally against local Supabase:
 
