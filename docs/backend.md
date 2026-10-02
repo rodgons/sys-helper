@@ -14,7 +14,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | `internal/architecture` | The canvas document, the Component Type catalog (`document.go`) and versioned saves. |
 | `internal/conversation` | Messages, Proposals stored with them, accept and reject. |
 | `internal/knowledge` | Experience Level, Requirements, Decisions, user settings. |
-| `internal/usage` | The daily AI cap: `Meter.Record` logs each model call in `ai_usage` and refuses past `AI_DAILY_REPLY_LIMIT` (check + insert under a per-User advisory lock). |
+| `internal/usage` | The daily AI caps: `Meter.Record` logs each model call in `ai_usage` and refuses past `AI_DAILY_REPLY_LIMIT` (check + insert under a per-User advisory lock). `Budget.Spend` logs every request to OpenRouter, fallbacks included, in `ai_requests` and refuses past `AI_GLOBAL_DAILY_LIMIT` (`ErrGlobalLimit`, which is an `ErrDailyLimit`; one global advisory lock). |
 | `internal/proposal` | Proposal ops, `Normalize`, `Validate`, the `propose_changes` tool schema. |
 | `internal/assistant`, `internal/llm` | The AI turn and the model clients (see `docs/ai.md`). |
 | `internal/testdb` | Integration helpers: `Pool(t)`, `User(t, pool, githubUsername, opts...)` (`""` = no GitHub identity; `WithGoogle(fullName)` links a Google one, so it makes GitHub-only, Google-only, linked and identity-less users). |
@@ -52,8 +52,8 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | 401 / 403 | `unauthenticated` / `identity_required` (no GitHub or Google identity), `not_allowed` (allowlist; +`identities`) |
 | 404 | `not_found` (also other Users' Projects, bad slugs, bad `seq`/ids) |
 | 409 | `conflict` (stale version), `not_pending` (Proposal already resolved), `busy` (reply in flight), `nothing_to_reply`, `limit_reached` (+detail for knowledge; see Limits) |
-| 429 | `daily_limit` from `/reply` (`AI_DAILY_REPLY_LIMIT` model calls per User per UTC day; 0 disables). Sending a message is never capped. |
-| 502 / 503 | `ai_failed` / `ai_unavailable` (no API key) |
+| 429 | `daily_limit` from `/reply` (`AI_DAILY_REPLY_LIMIT` model calls per User, or `AI_GLOBAL_DAILY_LIMIT` requests for everyone, per UTC day; 0 disables). Sending a message is never capped. |
+| 502 / 503 | `ai_failed` / `ai_unavailable` (no API key, or every free model tried was busy or failing: try again shortly) |
 
 ## Limits
 
@@ -80,7 +80,7 @@ All under `/api`, all need a User.
 
 ## Database
 
-Migrations live in `supabase/migrations` (`make db-migration name=x`, `make db-reset`). Tables: `projects` (+`experience_level`), `architectures` (one jsonb document per Project), `messages`, `proposals` (`seq`, `status`, `base_version`, partial unique index = one pending per Project), `requirements`, `decisions` (`requirement_nums int[]`, `targets text[]` of canvas ids), `user_settings`, `ai_usage` (one row per model call; hangs off `auth.users`, so deleting a Project doesn't reset the count).
+Migrations live in `supabase/migrations` (`make db-migration name=x`, `make db-reset`). Tables: `projects` (+`experience_level`), `architectures` (one jsonb document per Project), `messages`, `proposals` (`seq`, `status`, `base_version`, partial unique index = one pending per Project), `requirements`, `decisions` (`requirement_nums int[]`, `targets text[]` of canvas ids), `user_settings`, `ai_usage` (one row per model call; hangs off `auth.users`, so deleting a Project doesn't reset the count), `ai_requests` (one row per request to OpenRouter, for the global budget). `messages.model` records which model wrote an AI Message (debugging only; not sent to the client).
 
 Every new table:
 - `enable row level security` with **no policies**. Only the Go API (table owner) touches data; this keeps it out of Supabase's Data API.

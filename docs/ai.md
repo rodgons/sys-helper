@@ -15,11 +15,13 @@ SSE contract (`httpapi/reply.go`): errors before the first byte are plain JSON (
 ## Models (`internal/llm`)
 
 - `ChatModel.Stream(ctx, req) iter.Seq2[Event, error]`. Tool calls are emitted only once complete.
-- `OpenAIClient` speaks OpenAI-compatible `/chat/completions` for `AI_PROVIDER` = `nvidia` | `gemini` (key variable and base URL in `config.providers`; `AI_BASE_URL` overrides). `ToolCall.Extra` round-trips Gemini's thought signature; keep it when replaying calls.
-- Models come only from `.env`: `AI_MODEL` is required once the provider key is set. There is no default in code. `Fallback` switches to `AI_FALLBACK_MODEL` only if the primary fails or sends nothing within `AI_FIRST_TOKEN_TIMEOUT` (20s). Once the primary has started, it is never abandoned.
-- No key → `chatModel` returns nil → 503 `ai_unavailable`.
+- `OpenAIClient` streams one model from OpenRouter's OpenAI-compatible `/chat/completions` (`AI_BASE_URL` overrides). A non-200 is an `*HTTPError`; `AccountLimited` marks OpenRouter's own 429 (it carries `X-RateLimit-*` headers, a provider's doesn't). An SSE chunk with a top-level `error` (OpenRouter's way of failing after a 200) ends the stream with an error.
+- `Catalog` (`catalog.go`) finds the models: `GET /models` at startup and every `AI_MODELS_REFRESH` (1h), retrying every minute while it has none and keeping the last good list on failure. **Eligible:** id ends in `:free`, both prices `"0"`, text output, `tools` in `supported_parameters`, `context_length` ≥ 64K, `max_completion_tokens` (if given) ≥ 4096, no past `expiration_date`, not in `AI_EXCLUDE_MODELS`. **Ranked:** Artificial Analysis agentic index, then coding index (unrated last), then newest, then largest context. `AI_MODELS` pins the list instead. A model that fails is demoted to the back for 10 minutes.
+- `Chain` (`chain.go`) tries up to 3 models per call, best first. It moves on (and demotes) when a model fails, answers nothing, or sends nothing within `AI_FIRST_TOKEN_TIMEOUT` (20s); reasoning counts as starting. Once a model has started it is never abandoned. It stops early on the account's 429 (→ `ErrExhausted`) and on 400/401/402 (the request or key is wrong). Every attempt first spends the global `usage.Budget` (`AI_GLOBAL_DAILY_LIMIT`, default 50: OpenRouter's free quota is account-wide). Each event carries the `Model` that produced it; the assistant saves the last one on the Message (`messages.model`).
+- `llm.ErrExhausted` → `ErrUnavailable` → 503 `ai_unavailable` ("try again in a minute"); there is no server-side backoff. No key → `chatModel` returns nil → the same 503.
+- An invalid Proposal's retry sets `Request.Avoid` to the model that made it, so `Chain` tries another one first. If no model takes the retry (exhausted, or the global budget is spent), the reply so far is saved with a note.
 - `AI_FAKE=1` → `llm.Fake`: echoes the last user message, and when that message contains "propose", sends `FakeProposal` (it touches every knowledge op). E2E relies on it, so keep it valid when ops change.
-- `make test-ai-live` checks the real configured models (costs credits).
+- `make test-ai-live` discovers the free models and checks the best 3 (`AI_LIVE_COUNT`, or `AI_LIVE_MODELS=a,b`): text, a tool call, a replayed call, a valid Proposal, and time to first token. It spends about a dozen requests of the free quota. Add models that fail it to `AI_EXCLUDE_MODELS`.
 
 ## Proposal ops (`internal/proposal`)
 

@@ -5,7 +5,10 @@ package conversation_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/conversation"
@@ -39,7 +42,7 @@ func TestProposals(t *testing.T) {
 	}}
 	reply := func(t *testing.T, user, suffix string) conversation.Message {
 		t.Helper()
-		m, err := store.AppendReply(ctx, user, suffix, "Here is a cache.", &changes, 0)
+		m, err := store.AppendReply(ctx, user, suffix, "Here is a cache.", "vendor/model:free", &changes, 0)
 		if err != nil {
 			t.Fatalf("AppendReply: %v", err)
 		}
@@ -61,6 +64,28 @@ func TestProposals(t *testing.T) {
 		}
 		if msgs[0].Proposal != nil {
 			t.Errorf("welcome message has a proposal: %+v", msgs[0])
+		}
+	})
+
+	t.Run("records which model wrote a reply", func(t *testing.T) {
+		user, suffix := newProject(t)
+		reply(t, user, suffix)
+		if _, err := store.AppendReply(ctx, user, suffix, "No model known.", "", nil, 0); err != nil {
+			t.Fatal(err)
+		}
+
+		rows, err := pool.Query(ctx, `
+			SELECT coalesce(m.model, '') FROM messages m JOIN projects p ON p.id = m.project_id
+			WHERE p.user_id = $1 AND p.slug_suffix = $2 ORDER BY m.id`, user, suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		models, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := models[len(models)-2:], []string{"vendor/model:free", ""}; !slices.Equal(got, want) || models[0] != "" {
+			t.Errorf("models = %q, want the welcome without one and the replies ending %q", models, want)
 		}
 	})
 
@@ -140,7 +165,7 @@ func TestProposals(t *testing.T) {
 		if err := store.Reject(ctx, intruder, suffix, 1); !errors.Is(err, projects.ErrNotFound) {
 			t.Errorf("Reject: err = %v, want ErrNotFound", err)
 		}
-		if _, err := store.AppendReply(ctx, intruder, suffix, "x", &changes, 0); !errors.Is(err, projects.ErrNotFound) {
+		if _, err := store.AppendReply(ctx, intruder, suffix, "x", "m", &changes, 0); !errors.Is(err, projects.ErrNotFound) {
 			t.Errorf("AppendReply: err = %v, want ErrNotFound", err)
 		}
 	})
@@ -156,7 +181,7 @@ func TestProposals(t *testing.T) {
 			{Op: "add_decision", Title: "Read-through cache", Rationale: "Reads dominate", Pattern: "Cache-aside",
 				Requirements: []string{"reads"}, Targets: []string{"cache"}},
 		}}
-		m, err := store.AppendReply(ctx, user, suffix, "Here.", &changes, 0)
+		m, err := store.AppendReply(ctx, user, suffix, "Here.", "m", &changes, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

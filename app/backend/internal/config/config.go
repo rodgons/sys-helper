@@ -24,19 +24,23 @@ type Config struct {
 	AI               AI
 }
 
-// AI configures the chat model behind the assistant: a provider's OpenAI-compatible endpoint, a
-// primary model, and a fallback used when the primary is slow to start.
+// AI configures the assistant's models: OpenRouter's free models, discovered at runtime (or
+// pinned), tried best first.
 type AI struct {
-	Provider      string // AI_PROVIDER: "nvidia" (default) or "gemini"
-	BaseURL       string // AI_BASE_URL, defaulting to the provider's endpoint
-	APIKey        string // read from KeyVar
-	KeyVar        string // the provider's key variable, e.g. GEMINI_API_KEY
-	Model         string // AI_MODEL, required with an API key
-	FallbackModel string // AI_FALLBACK_MODEL; empty disables the fallback
-	// FirstTokenTimeout is how long the primary model gets to start answering before the fallback
-	// takes over.
+	BaseURL string // AI_BASE_URL, defaulting to OpenRouter's API
+	APIKey  string // OPENROUTER_API_KEY; empty disables AI replies
+	// Models (AI_MODELS) pins the free models to try, in order, instead of discovering them.
+	// ExcludeModels (AI_EXCLUDE_MODELS) are never used.
+	Models        []string
+	ExcludeModels []string
+	// RefreshInterval is how often the free model list is fetched again (AI_MODELS_REFRESH).
+	RefreshInterval time.Duration
+	// FirstTokenTimeout is how long a model gets to start answering before the next one is tried.
 	FirstTokenTimeout time.Duration
 	DailyReplyLimit   int // model calls per User per UTC day (AI_DAILY_REPLY_LIMIT); 0 means no cap
+	// GlobalDailyLimit caps requests to OpenRouter per UTC day across all Users, fallbacks included
+	// (AI_GLOBAL_DAILY_LIMIT), to stay within the account's free quota; 0 means no cap.
+	GlobalDailyLimit int
 	// Fake replaces the model with a canned one (E2E tests, offline development).
 	Fake bool
 }
@@ -86,48 +90,58 @@ func Load(getenv func(string) string) (Config, error) {
 	return cfg, nil
 }
 
-// providers maps each AI_PROVIDER to its key variable and OpenAI-compatible endpoint.
-var providers = map[string]struct{ keyVar, baseURL, exampleModel string }{
-	"nvidia": {"NVIDIA_API_KEY", "https://integrate.api.nvidia.com/v1", "z-ai/glm-5.3"},
-	"gemini": {"GEMINI_API_KEY", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.8-flash"},
-}
+// removedAI are the settings of the providers OpenRouter replaced.
+var removedAI = []string{"AI_PROVIDER", "AI_MODEL", "AI_FALLBACK_MODEL", "NVIDIA_API_KEY", "GEMINI_API_KEY"}
 
 func loadAI(getenv func(string) string) (AI, error) {
-	name := or(getenv("AI_PROVIDER"), "nvidia")
-	p, ok := providers[name]
-	if !ok {
-		return AI{}, fmt.Errorf("AI_PROVIDER must be nvidia or gemini, got %q", name)
-	}
-	ai := AI{
-		Provider:          name,
-		BaseURL:           or(getenv("AI_BASE_URL"), p.baseURL),
-		APIKey:            getenv(p.keyVar),
-		KeyVar:            p.keyVar,
-		Model:             getenv("AI_MODEL"),
-		FallbackModel:     getenv("AI_FALLBACK_MODEL"),
-		FirstTokenTimeout: 20 * time.Second,
-		DailyReplyLimit:   100,
-		Fake:              getenv("AI_FAKE") == "1",
-	}
-	if ai.APIKey != "" && !ai.Fake && ai.Model == "" {
-		return AI{}, fmt.Errorf("AI_MODEL is required when %s is set (e.g. AI_MODEL=%s)", p.keyVar, p.exampleModel)
-	}
-	if v := getenv("AI_FIRST_TOKEN_TIMEOUT"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil || d <= 0 {
-			return AI{}, fmt.Errorf("AI_FIRST_TOKEN_TIMEOUT must be a positive duration like 20s, got %q", v)
+	for _, name := range removedAI {
+		if getenv(name) != "" {
+			return AI{}, fmt.Errorf("%s was removed: the assistant now uses OpenRouter's free models, found at runtime. "+
+				"Set OPENROUTER_API_KEY instead (AI_MODELS pins free models if you need to)", name)
 		}
-		ai.FirstTokenTimeout = d
 	}
 	if getenv("AI_DAILY_MESSAGE_LIMIT") != "" {
 		return AI{}, errors.New("AI_DAILY_MESSAGE_LIMIT was replaced by AI_DAILY_REPLY_LIMIT, which counts model calls (each reply, and each proposal retry) instead of messages")
 	}
-	if v := getenv("AI_DAILY_REPLY_LIMIT"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
-			return AI{}, fmt.Errorf("AI_DAILY_REPLY_LIMIT must be 0 or more, got %q", v)
+	ai := AI{
+		BaseURL:           or(getenv("AI_BASE_URL"), "https://openrouter.ai/api/v1"),
+		APIKey:            getenv("OPENROUTER_API_KEY"),
+		Models:            splitList(getenv("AI_MODELS")),
+		ExcludeModels:     splitList(getenv("AI_EXCLUDE_MODELS")),
+		RefreshInterval:   time.Hour,
+		FirstTokenTimeout: 20 * time.Second,
+		DailyReplyLimit:   100,
+		GlobalDailyLimit:  50, // OpenRouter's free quota without purchased credits
+		Fake:              getenv("AI_FAKE") == "1",
+	}
+	for _, m := range ai.Models {
+		if !strings.HasSuffix(m, ":free") {
+			return AI{}, fmt.Errorf("AI_MODELS must list free model ids (ending in :free), got %q", m)
 		}
-		ai.DailyReplyLimit = n
+	}
+	for _, d := range []struct {
+		name string
+		into *time.Duration
+	}{{"AI_MODELS_REFRESH", &ai.RefreshInterval}, {"AI_FIRST_TOKEN_TIMEOUT", &ai.FirstTokenTimeout}} {
+		if v := getenv(d.name); v != "" {
+			parsed, err := time.ParseDuration(v)
+			if err != nil || parsed <= 0 {
+				return AI{}, fmt.Errorf("%s must be a positive duration like 20s or 1h, got %q", d.name, v)
+			}
+			*d.into = parsed
+		}
+	}
+	for _, l := range []struct {
+		name string
+		into *int
+	}{{"AI_DAILY_REPLY_LIMIT", &ai.DailyReplyLimit}, {"AI_GLOBAL_DAILY_LIMIT", &ai.GlobalDailyLimit}} {
+		if v := getenv(l.name); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				return AI{}, fmt.Errorf("%s must be 0 or more, got %q", l.name, v)
+			}
+			*l.into = n
+		}
 	}
 	return ai, nil
 }

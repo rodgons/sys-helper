@@ -174,12 +174,12 @@ describe('ChatPane', () => {
     expect(screen.queryByText(/couldn't reply/i)).not.toBeInTheDocument();
   });
 
-  it('says when the AI is not configured', async () => {
+  it('says when the AI is unavailable, and to try again shortly', async () => {
     setup({ [`POST ${API}/reply`]: { status: 503, body: { error: 'ai_unavailable' } } });
 
     await send('Hello');
 
-    expect(await screen.findByText(/isn't set up/i)).toBeInTheDocument();
+    expect(await screen.findByText(/isn't available right now.*try again/i)).toBeInTheDocument();
   });
 
   it("renders the AI's markdown but keeps the user's text as written", async () => {

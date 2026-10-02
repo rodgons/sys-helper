@@ -13,8 +13,8 @@ import (
 	"strings"
 )
 
-// OpenAIClient streams from an OpenAI-compatible /chat/completions endpoint, such as NVIDIA's API
-// catalog or Gemini's compatibility layer (see config.AI).
+// OpenAIClient streams one model from an OpenAI-compatible /chat/completions endpoint (OpenRouter's,
+// see config.AI).
 type OpenAIClient struct {
 	BaseURL string
 	APIKey  string
@@ -32,12 +32,10 @@ type wireMessage struct {
 }
 
 type wireToolCall struct {
-	Index int    `json:"index"`
-	ID    string `json:"id,omitempty"`
-	Type  string `json:"type,omitempty"`
-	// ExtraContent carries provider data, e.g. Gemini's {"google": {"thought_signature": …}}.
-	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
-	Function     struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Function struct {
 		Name      string `json:"name,omitempty"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
@@ -53,6 +51,11 @@ type wireTool struct {
 }
 
 type chunk struct {
+	// Error is set when the request fails after the stream has started (HTTP 200).
+	Error *struct {
+		Code    any    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
 	Choices []struct {
 		Delta struct {
 			Content          string         `json:"content"`
@@ -96,10 +99,14 @@ func (c OpenAIClient) Stream(ctx context.Context, req Request) iter.Seq2[Event, 
 				yield(Event{}, fmt.Errorf("decode stream chunk: %w", err))
 				return
 			}
+			if ch.Error != nil {
+				yield(Event{}, fmt.Errorf("%s: stream error %v: %s", c.Model, ch.Error.Code, ch.Error.Message))
+				return
+			}
 			for _, choice := range ch.Choices {
 				d := choice.Delta
 				for _, tc := range d.ToolCalls {
-					// A new id at a known index is a new call: Gemini sends whole calls without an index.
+					// A new id at a known index is a new call: some providers send whole calls without an index.
 					call := streaming[tc.Index]
 					if call == nil || (tc.ID != "" && call.ID != "" && tc.ID != call.ID) {
 						call = &ToolCall{}
@@ -113,9 +120,6 @@ func (c OpenAIClient) Stream(ctx context.Context, req Request) iter.Seq2[Event, 
 						call.Name = tc.Function.Name
 					}
 					call.Arguments += tc.Function.Arguments
-					if len(tc.ExtraContent) > 0 {
-						call.Extra = string(tc.ExtraContent)
-					}
 				}
 				ev := Event{Text: d.Content, Reasoning: d.ReasoningContent + d.Reasoning}
 				if ev.Text != "" || ev.Reasoning != "" {
@@ -173,7 +177,12 @@ func (c OpenAIClient) post(ctx context.Context, req Request) (*http.Response, er
 	if res.StatusCode != http.StatusOK {
 		defer res.Body.Close()
 		detail, _ := io.ReadAll(io.LimitReader(res.Body, 2<<10))
-		return nil, fmt.Errorf("%s: HTTP %d: %s", c.Model, res.StatusCode, bytes.TrimSpace(detail))
+		return nil, &HTTPError{
+			Model:          c.Model,
+			Status:         res.StatusCode,
+			AccountLimited: res.StatusCode == http.StatusTooManyRequests && res.Header.Get("X-RateLimit-Limit") != "",
+			Body:           string(bytes.TrimSpace(detail)),
+		}
 	}
 	return res, nil
 }
@@ -186,11 +195,22 @@ func toWire(msgs []Message) []wireMessage {
 			w := wireToolCall{Index: j, ID: tc.ID, Type: "function"}
 			w.Function.Name = tc.Name
 			w.Function.Arguments = tc.Arguments
-			if tc.Extra != "" {
-				w.ExtraContent = json.RawMessage(tc.Extra)
-			}
 			out[i].ToolCalls = append(out[i].ToolCalls, w)
 		}
 	}
 	return out
+}
+
+// HTTPError is a non-200 answer to a chat request, before anything streamed.
+type HTTPError struct {
+	Model  string
+	Status int
+	// AccountLimited means OpenRouter's own rate limit for the whole account was hit (its 429s carry
+	// X-RateLimit-* headers; a provider's don't), so no other free model will answer either.
+	AccountLimited bool
+	Body           string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("%s: HTTP %d: %s", e.Model, e.Status, e.Body)
 }

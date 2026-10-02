@@ -1,5 +1,6 @@
 // Package llm talks to chat models through one small interface, so the assistant doesn't care
-// which provider (or fake) answers.
+// which model (or fake) answers. Catalog finds OpenRouter's free models, and Chain falls back
+// across them.
 package llm
 
 import (
@@ -36,15 +37,15 @@ type ToolCall struct {
 	ID        string
 	Name      string
 	Arguments string // JSON, as the model produced it
-	// Extra is provider data to send back with the call unchanged, as raw JSON (Gemini's thought
-	// signature, which it requires when the call is replayed). Empty when there is none.
-	Extra string
 }
 
 type Request struct {
 	Messages  []Message
 	Tools     []Tool
 	MaxTokens int
+	// Avoid lists models to try only after the others (Chain), e.g. one that just sent an invalid
+	// tool call.
+	Avoid []string
 }
 
 // Event is one piece of a streamed reply: visible text, hidden reasoning, or a complete tool call
@@ -53,6 +54,8 @@ type Event struct {
 	Text      string
 	Reasoning string
 	ToolCall  *ToolCall
+	// Model is the model that produced the event, when the ChatModel picks among several.
+	Model string
 }
 
 // ChatModel streams a reply. The sequence ends after the last event, or yields a non-nil error

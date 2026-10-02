@@ -3,6 +3,7 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -93,7 +94,7 @@ func TestOpenAIClient(t *testing.T) {
 	})
 
 	t.Run("keeps whole tool calls apart when they arrive without an index", func(t *testing.T) {
-		// Gemini's OpenAI-compatible stream sends each call complete and may leave out "index".
+		// Some providers stream each call complete and may leave out "index".
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			sse(w, `{"choices":[{"delta":{"tool_calls":[`+
 				`{"id":"a","type":"function","function":{"name":"one","arguments":"{}"}},`+
@@ -101,40 +102,12 @@ func TestOpenAIClient(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		events, err := collect(t, llm.OpenAIClient{BaseURL: srv.URL, Model: "gemini-3.8-flash"}, llm.Request{})
+		events, err := collect(t, llm.OpenAIClient{BaseURL: srv.URL, Model: "m"}, llm.Request{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(events) != 2 || events[0].ToolCall.Arguments != "{}" || events[1].ToolCall.Name != "two" || events[1].ToolCall.Arguments != `{"x":1}` {
 			t.Errorf("events = %+v", events)
-		}
-	})
-
-	t.Run("hands back a tool call's provider data, such as Gemini's thought signature", func(t *testing.T) {
-		const extra = `{"google":{"thought_signature":"sig-A"}}`
-		var sent map[string]any
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_ = json.NewDecoder(r.Body).Decode(&sent)
-			sse(w, `{"choices":[{"delta":{"tool_calls":[{"id":"a","extra_content":`+extra+`,"function":{"name":"one","arguments":"{}"}}]}}]}`)
-		}))
-		defer srv.Close()
-		client := llm.OpenAIClient{BaseURL: srv.URL, Model: "gemini-3.8-flash"}
-
-		events, err := collect(t, client, llm.Request{})
-		if err != nil || len(events) != 1 {
-			t.Fatalf("events = %+v, err = %v", events, err)
-		}
-		call := *events[0].ToolCall
-		if _, err := collect(t, client, llm.Request{Messages: []llm.Message{
-			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
-			{Role: llm.RoleTool, ToolCallID: "a", Content: "invalid"},
-		}}); err != nil {
-			t.Fatal(err)
-		}
-
-		returned := sent["messages"].([]any)[0].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)
-		if got, _ := json.Marshal(returned["extra_content"]); string(got) != extra {
-			t.Errorf("extra_content sent back = %s, want %s", got, extra)
 		}
 	})
 
@@ -161,8 +134,51 @@ func TestOpenAIClient(t *testing.T) {
 		defer srv.Close()
 
 		_, err := collect(t, llm.OpenAIClient{BaseURL: srv.URL, Model: "m"}, llm.Request{})
-		if err == nil || !strings.Contains(err.Error(), "401") {
-			t.Fatalf("err = %v, want a 401 error", err)
+		var httpErr *llm.HTTPError
+		if !errors.As(err, &httpErr) || httpErr.Status != http.StatusUnauthorized || !strings.Contains(err.Error(), "401") {
+			t.Fatalf("err = %v, want a 401 HTTPError", err)
+		}
+	})
+
+	t.Run("tells the account's rate limit apart from a model's", func(t *testing.T) {
+		// Only OpenRouter's own limits carry X-RateLimit-* headers; an upstream provider's 429 doesn't.
+		for _, tc := range []struct {
+			name    string
+			headers bool
+			want    bool
+		}{{"account limit", true, true}, {"provider limit", false, false}} {
+			t.Run(tc.name, func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if tc.headers {
+						w.Header().Set("X-RateLimit-Limit", "50")
+						w.Header().Set("X-RateLimit-Remaining", "0")
+					}
+					http.Error(w, `{"error":{"code":429,"message":"Rate limit exceeded"}}`, http.StatusTooManyRequests)
+				}))
+				defer srv.Close()
+
+				_, err := collect(t, llm.OpenAIClient{BaseURL: srv.URL, Model: "m"}, llm.Request{})
+				var httpErr *llm.HTTPError
+				if !errors.As(err, &httpErr) || httpErr.Status != http.StatusTooManyRequests || httpErr.AccountLimited != tc.want {
+					t.Fatalf("err = %#v, want a 429 with AccountLimited=%v", err, tc.want)
+				}
+			})
+		}
+	})
+
+	t.Run("fails on an error chunk in the stream", func(t *testing.T) {
+		// After a 200, OpenRouter reports errors as a chunk with a top-level error, sometimes as the
+		// only event.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, ": OPENROUTER PROCESSING\n\n")
+			fmt.Fprint(w, `data: {"error":{"code":502,"message":"Provider returned error"},"choices":[{"delta":{"content":""},"finish_reason":"error"}]}`+"\n\n")
+		}))
+		defer srv.Close()
+
+		events, err := collect(t, llm.OpenAIClient{BaseURL: srv.URL, Model: "m"}, llm.Request{})
+		if err == nil || !strings.Contains(err.Error(), "Provider returned error") || len(events) != 0 {
+			t.Fatalf("events = %+v, err = %v, want the provider's error", events, err)
 		}
 	})
 

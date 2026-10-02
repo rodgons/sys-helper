@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,33 +18,42 @@ import (
 	"sys-helper/backend/internal/proposal"
 )
 
-// Calls the real API of the provider in .env: `make test-ai-live` (needs AI_PROVIDER's key and
-// AI_MODEL). It checks each model streams text and makes a tool call, and logs how long the first
-// token took.
+// Calls OpenRouter for real: `make test-ai-live` (needs OPENROUTER_API_KEY; spends about a dozen
+// requests of the free quota). It discovers the free models the assistant would use and checks the
+// best AI_LIVE_COUNT of them (default 3), or the models in AI_LIVE_MODELS=a,b: each must stream
+// text, call a tool, retry a rejected call, and make a valid Proposal. It logs how long the first
+// token took, which together tell which models are worth keeping (AI_EXCLUDE_MODELS drops the rest).
 func TestLiveModels(t *testing.T) {
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.AI.APIKey == "" {
-		t.Fatalf("%s is required", cfg.AI.KeyVar)
+		t.Fatal("OPENROUTER_API_KEY is required")
 	}
-	// The models configured in .env, or AI_LIVE_MODELS=a,b to try others.
 	var models []string
 	for _, m := range strings.Split(os.Getenv("AI_LIVE_MODELS"), ",") {
-		if m != "" {
+		if m = strings.TrimSpace(m); m != "" {
 			models = append(models, m)
 		}
 	}
 	if len(models) == 0 {
-		for _, m := range []string{os.Getenv("AI_MODEL"), os.Getenv("AI_FALLBACK_MODEL")} {
-			if m != "" {
-				models = append(models, m)
+		catalog := &llm.Catalog{BaseURL: cfg.AI.BaseURL, APIKey: cfg.AI.APIKey, Exclude: cfg.AI.ExcludeModels, Pinned: cfg.AI.Models}
+		if err := catalog.Refresh(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		discovered := catalog.Models()
+		t.Logf("eligible free models, best first: %v", discovered)
+		count := 3
+		if v := os.Getenv("AI_LIVE_COUNT"); v != "" {
+			if count, err = strconv.Atoi(v); err != nil || count < 1 {
+				t.Fatalf("AI_LIVE_COUNT must be a positive number, got %q", v)
 			}
 		}
+		models = discovered[:min(count, len(discovered))]
 	}
 	if len(models) == 0 {
-		t.Fatal("set AI_MODEL in .env, or AI_LIVE_MODELS")
+		t.Fatal("no free models found")
 	}
 	for _, model := range models {
 		client := llm.OpenAIClient{BaseURL: cfg.AI.BaseURL, APIKey: cfg.AI.APIKey, Model: model}
@@ -100,8 +110,7 @@ func TestLiveModels(t *testing.T) {
 			}
 			t.Logf("tool call: %s(%s)", calls[0].Name, calls[0].Arguments)
 
-			// The assistant replays a rejected call with the error so the model can fix it. Gemini
-			// requires the call's thought signature on that replay.
+			// The assistant replays a rejected call with the error so a model can fix it.
 			var retried []llm.ToolCall
 			for ev, err := range client.Stream(ctx, llm.Request{MaxTokens: 1024, Tools: []llm.Tool{tool}, Messages: []llm.Message{
 				{Role: llm.RoleUser, Content: "Add a Redis cache named Session Cache to the canvas."},

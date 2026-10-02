@@ -118,7 +118,7 @@ test-e2e: ## Playwright full-stack tests (needs Supabase running)
 demo-screenshots: ## Recapture the home page's workspace screenshots (needs Supabase running)
 	$(FE) exec playwright test -c playwright.demo.config.ts
 
-test-ai-live: ## Check the AI_PROVIDER models stream and call tools (needs its API key; costs credits)
+test-ai-live: ## Check the best free OpenRouter models stream, call tools and make valid Proposals (needs OPENROUTER_API_KEY; spends free quota)
 	cd $(BACKEND_DIR) && go test -tags live -run TestLiveModels -v -count=1 ./internal/llm
 
 test-all: lint test test-integration test-e2e ## Everything CI should run
