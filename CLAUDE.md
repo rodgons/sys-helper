@@ -42,7 +42,7 @@ pnpm --filter frontend exec playwright test e2e/smoke.spec.ts
 ## Architecture
 
 - **Data flow:** the browser calls the Go API through TanStack Query hooks in `src/lib/` (`apiFetch`, base URL `VITE_API_URL`). The API talks to Supabase Postgres directly with a pgx pool; nothing uses supabase-js except auth. Cross-origin calls are allowed only from `CORS_ALLOWED_ORIGINS`.
-- **Auth:** GitHub sign-in through Supabase Auth (`src/lib/auth.tsx`, `useAuth()`). The access token goes as a bearer token. `requireUser` (`internal/httpapi/auth.go`) verifies it against Supabase's JWKS, reads the GitHub identity from `auth.identities` and applies `ALLOWED_GITHUB_IDS` (immutable numeric GitHub ids; empty admits nobody unless `ALLOW_ALL_GITHUB_USERS=1`). Never trust `user_metadata`, because users can edit it.
+- **Auth:** GitHub or Google sign-in through Supabase Auth (`src/lib/auth.tsx`, `useAuth()`, `signIn(provider)`). A second provider with the same verified email links to the same User (Supabase automatic linking). The access token goes as a bearer token. `requireUser` (`internal/httpapi/auth.go`) verifies it against Supabase's JWKS, reads the User's GitHub and Google identities from `auth.identities` and admits the User if any identity is listed in `ALLOWED_GITHUB_IDS` (numeric GitHub ids) or `ALLOWED_GOOGLE_IDS` (Google subs, never emails). Both empty admit nobody unless `ALLOW_ALL_USERS=1`. Never trust `user_metadata`, because users can edit it. Local Google sign-in needs `skip_nonce_check = true` in `supabase/config.toml`.
 - **Ownership:** every store query is scoped to the User and the Project's slug suffix. Another User's Project is a 404, never a 403.
 - **AI:** the AI changes the canvas and knowledge only through Proposals (the `propose_changes` tool), which the User accepts or rejects as a whole. Models come only from `.env` (`AI_PROVIDER`, `AI_MODEL`, `AI_FALLBACK_MODEL`). `AI_FAKE=1` gives a canned model for E2E and offline work.
 - **Canvas ↔ server:** the canvas owns the Architecture document while open and autosaves it with a base version (409 on conflict). Accepting a Proposal applies it on the client and saves it in the same transaction that resolves it. Canvas saves prune Decisions whose targets are gone.
@@ -52,9 +52,9 @@ pnpm --filter frontend exec playwright test e2e/smoke.spec.ts
 - **Backend wiring:** `cmd/server/main.go` is the only place real dependencies are built. Handlers in `internal/httpapi` depend on small interfaces passed through `httpapi.Deps`, and `config.Load` takes an injected `getenv`. Tests supply fakes through these seams. Keep that pattern. Routes use Go 1.22+ `ServeMux` patterns, with no router library.
 - **Design system:** this term means only the UI tokens (`src/design/tokens.stylex.ts`) and base components (`src/ui/`, all shown on `/ui-kit`). What a User draws is an **Architecture**. Use token roles (`color['--color-fg']`), not raw values.
 - **Tests:** test-first (red/green/refactor; README has the strategy).
-  - **Go:** black-box `package x_test`. Integration tests live in `*_integration_test.go` with `//go:build integration` and use `internal/testdb` (`Pool(t)`, `User(t, pool, githubUsername)`).
+  - **Go:** black-box `package x_test`. Integration tests live in `*_integration_test.go` with `//go:build integration` and use `internal/testdb` (`Pool(t)`, `User(t, pool, githubUsername, testdb.WithGoogle(name)…)`).
   - **Frontend:** `renderWithQuery` + `mockApi` + `signedIn()` from `src/test/render.tsx`. Stub fetch with `vi.stubGlobal('fetch', vi.fn(mockApi({...})))`.
-  - **E2E:** import `test` from `e2e/fixtures.ts`; its `signIn()` fixture creates a GitHub-linked user, because real OAuth can't run in tests.
+  - **E2E:** import `test` from `e2e/fixtures.ts`; its `signIn({ provider })` fixture creates a GitHub- or Google-linked user, because real OAuth can't run in tests.
 
 ## Non-obvious constraints (each one was a real bug)
 
