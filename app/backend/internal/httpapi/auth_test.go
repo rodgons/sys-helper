@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"sys-helper/backend/internal/auth"
@@ -65,6 +66,51 @@ func TestMe(t *testing.T) {
 		}
 	})
 
+	t.Run("tells Users off the allowlist which identities to ask with", func(t *testing.T) {
+		linked := auth.User{ID: "u", Identities: []auth.Identity{
+			octocat.Identities[0],
+			{Provider: auth.Google, ID: "108", Name: "Ada Lovelace", Email: "ada@example.com"},
+		}}
+		deps := httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{linked}, Allowlist: auth.Allowlist{}}
+
+		rec := getMe(t, deps, "Bearer good")
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", rec.Code)
+		}
+		var body struct {
+			Error      string              `json:"error"`
+			Identities []map[string]string `json:"identities"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		want := []map[string]string{
+			{"provider": "github", "id": "583231", "name": "octocat"},
+			{"provider": "google", "id": "108", "name": "Ada Lovelace"},
+		}
+		if body.Error != "not_allowed" || !reflect.DeepEqual(body.Identities, want) {
+			t.Errorf("body = %+v, want identities %v", body, want)
+		}
+	})
+
+	t.Run("shows a Google-only User by name, else email", func(t *testing.T) {
+		google := auth.User{ID: "u", Identities: []auth.Identity{
+			{Provider: auth.Google, ID: "108", Email: "ada@example.com", AvatarURL: "https://avatars.test/ada"},
+		}}
+		deps := httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{google}, Allowlist: auth.Allowlist{GoogleIDs: []string{"108"}}}
+
+		rec := getMe(t, deps, "Bearer good")
+
+		var body map[string]string
+		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusOK || body["displayName"] != "ada@example.com" || body["avatarUrl"] != "https://avatars.test/ada" {
+			t.Errorf("status = %d, body = %v", rec.Code, body)
+		}
+	})
+
 	tests := []struct {
 		name          string
 		authorization string
@@ -94,12 +140,12 @@ func TestMe(t *testing.T) {
 			if tt.wantError == "" {
 				return
 			}
-			var body map[string]string
+			var body struct{ Error string }
 			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 				t.Fatal(err)
 			}
-			if body["error"] != tt.wantError {
-				t.Errorf("error = %q, want %q", body["error"], tt.wantError)
+			if body.Error != tt.wantError {
+				t.Errorf("error = %q, want %q", body.Error, tt.wantError)
 			}
 		})
 	}

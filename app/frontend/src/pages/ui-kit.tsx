@@ -7,6 +7,7 @@ import { Badge } from '../ui/badge';
 import { Button, ButtonLink } from '../ui/button';
 import { Card } from '../ui/card';
 import { CommandLine } from '../ui/command-line';
+import { CopyValue } from '../ui/copy-value';
 import { Dialog } from '../ui/dialog';
 import { Cluster, Grid, Section, Stack } from '../ui/layout';
 import { ArrowLink, TextLink } from '../ui/link';
@@ -247,6 +248,9 @@ export function UiKitPage() {
             <Stat label="Cold start" value="42" unit="ms" />
           </Grid>
         </Grid>
+        <Specimen meta="CopyValue · an id to send, e.g. on the not-allowed page">
+          <CopyValue label="Google id" value="108378921029384756123" />
+        </Specimen>
       </DocSection>
 
       <DocSection id="layout" index="09" title="Layout primitives">

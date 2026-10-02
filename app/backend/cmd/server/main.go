@@ -110,12 +110,12 @@ func run() error {
 // logged loudly: nobody can sign in, or anyone can spend AI credits.
 func allowlist(cfg config.Config) auth.Allowlist {
 	switch {
-	case cfg.AllowAllGitHubUsers && !cfg.AI.Fake:
-		slog.Warn("ALLOW_ALL_GITHUB_USERS=1: every GitHub account can sign in and use the AI model")
-	case !cfg.AllowAllGitHubUsers && len(cfg.AllowedGitHubIDs) == 0:
-		slog.Warn("ALLOWED_GITHUB_IDS is empty: nobody can sign in (set ALLOW_ALL_GITHUB_USERS=1 to admit everyone)")
+	case cfg.AllowAllUsers && !cfg.AI.Fake:
+		slog.Warn("ALLOW_ALL_USERS=1: everyone with a GitHub or Google account can sign in and use the AI model")
+	case !cfg.AllowAllUsers && len(cfg.AllowedGitHubIDs) == 0 && len(cfg.AllowedGoogleIDs) == 0:
+		slog.Warn("ALLOWED_GITHUB_IDS and ALLOWED_GOOGLE_IDS are empty: nobody can sign in (set ALLOW_ALL_USERS=1 to admit everyone)")
 	}
-	return auth.Allowlist{GitHubIDs: cfg.AllowedGitHubIDs, Everyone: cfg.AllowAllGitHubUsers}
+	return auth.Allowlist{GitHubIDs: cfg.AllowedGitHubIDs, GoogleIDs: cfg.AllowedGoogleIDs, Everyone: cfg.AllowAllUsers}
 }
 
 // chatModel builds the assistant's model: the fake, or the primary model with its fallback. It

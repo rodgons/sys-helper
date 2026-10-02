@@ -12,11 +12,17 @@ export type AuthState =
   | { status: 'signedOut' }
   | { status: 'signedIn'; token: string };
 
-export type AuthContextValue = AuthState & { signIn: () => void; signOut: () => void };
+/** The sign-in providers a User can use. Both reach the same User when their verified emails match. */
+export type Provider = 'github' | 'google';
+
+export type AuthContextValue = AuthState & {
+  signIn: (provider: Provider) => void;
+  signOut: () => void;
+};
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Tracks the Supabase session. Users sign in with GitHub only and land on /projects. */
+/** Tracks the Supabase session. Users sign in with GitHub or Google and land on /projects. */
 export function AuthProvider({ client, children }: { client: AuthClient; children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: 'loading' });
 
@@ -33,9 +39,9 @@ export function AuthProvider({ client, children }: { client: AuthClient; childre
   const value = useMemo<AuthContextValue>(
     () => ({
       ...state,
-      signIn: () => {
+      signIn: (provider) => {
         void client.signInWithOAuth({
-          provider: 'github',
+          provider,
           options: { redirectTo: `${window.location.origin}/projects` },
         });
       },

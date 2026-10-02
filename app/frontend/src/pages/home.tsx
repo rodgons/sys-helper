@@ -6,7 +6,7 @@ import { color, font, radius, space, text } from '../design/tokens.stylex';
 import { useAuth } from '../lib/auth';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { Grid, Section, Stack } from '../ui/layout';
+import { Cluster, Grid, Section, Stack } from '../ui/layout';
 import { Logo } from '../ui/logo';
 import { Display, Heading, Label, Text } from '../ui/typography';
 
@@ -44,11 +44,25 @@ export function HomePage() {
             or talk it through and let the AI propose components, connections and the trade-offs
             behind each one.
           </Text>
-          <div>
-            <Button size="lg" onClick={auth.signIn} disabled={auth.status === 'loading'}>
+          <Cluster gap={3}>
+            {/* Equal weight: neither provider is the default. */}
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => auth.signIn('github')}
+              disabled={auth.status === 'loading'}
+            >
               Sign in with GitHub
             </Button>
-          </div>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => auth.signIn('google')}
+              disabled={auth.status === 'loading'}
+            >
+              Sign in with Google
+            </Button>
+          </Cluster>
         </Stack>
       </Section>
 

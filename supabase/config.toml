@@ -217,8 +217,9 @@ web3 = 30
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
-# Off: the product is GitHub-only. With email on, an unconfirmed email account could be linked to
-# someone's GitHub identity. Mirror this in the hosted project's Auth settings (Email provider off).
+# Off: Users sign in only with GitHub or Google. With email on, an unconfirmed email account could be
+# linked to someone's GitHub or Google identity by automatic linking. Mirror this in the hosted
+# project's Auth settings (Email provider off).
 enable_signup = false
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
@@ -335,7 +336,7 @@ skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
 
-# Sign in with GitHub, the only sign-in method the app offers. Create a GitHub OAuth app with the
+# Sign in with GitHub, one of the two sign-in methods the app offers. Create a GitHub OAuth app with the
 # callback URL http://127.0.0.1:54321/auth/v1/callback and put its credentials in the root .env.
 [auth.external.github]
 enabled = true
@@ -345,6 +346,20 @@ redirect_uri = ""
 url = ""
 skip_nonce_check = false
 email_optional = true
+
+# Sign in with Google, the other sign-in method. Create a Google Cloud OAuth client (web application)
+# with the authorised redirect URI http://127.0.0.1:54321/auth/v1/callback and put its credentials in
+# the root .env. Without real credentials the Google button fails at Google, and everything else works.
+# A Google sign-in with the same verified email as a GitHub User links to that User (automatic linking).
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+redirect_uri = ""
+url = ""
+# Required for local sign-in with Google.
+skip_nonce_check = true
+email_optional = false
 
 # Allow Solana wallet holders to sign in to your project via the Sign in with Solana (SIWS, EIP-4361) standard.
 # You can configure "web3" rate limit in the [auth.rate_limit] section and set up [auth.captcha] if self-hosting.

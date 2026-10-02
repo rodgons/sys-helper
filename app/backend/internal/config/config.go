@@ -15,11 +15,13 @@ type Config struct {
 	AllowedOrigins []string
 	// SupabaseURL is the Supabase API base URL; access tokens are verified against its Auth JWKS.
 	SupabaseURL string
-	// AllowedGitHubIDs is the beta allowlist of numeric GitHub user ids (ALLOWED_GITHUB_IDS). Empty
-	// admits nobody unless AllowAllGitHubUsers (ALLOW_ALL_GITHUB_USERS=1) opts in to everyone.
-	AllowedGitHubIDs    []string
-	AllowAllGitHubUsers bool
-	AI                  AI
+	// AllowedGitHubIDs and AllowedGoogleIDs are the beta allowlist: numeric GitHub user ids
+	// (ALLOWED_GITHUB_IDS) and Google subs (ALLOWED_GOOGLE_IDS). Both empty admit nobody unless
+	// AllowAllUsers (ALLOW_ALL_USERS=1) opts in to everyone.
+	AllowedGitHubIDs []string
+	AllowedGoogleIDs []string
+	AllowAllUsers    bool
+	AI               AI
 }
 
 // AI configures the chat model behind the assistant: a provider's OpenAI-compatible endpoint, a
@@ -42,12 +44,16 @@ type AI struct {
 // Load builds a Config from getenv (os.Getenv in production, a stub in tests).
 func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
-		Port:                getenv("PORT"),
-		DatabaseURL:         getenv("DATABASE_URL"),
-		SupabaseURL:         getenv("SUPABASE_URL"),
-		AllowedOrigins:      splitList(getenv("CORS_ALLOWED_ORIGINS")),
-		AllowedGitHubIDs:    splitList(getenv("ALLOWED_GITHUB_IDS")),
-		AllowAllGitHubUsers: getenv("ALLOW_ALL_GITHUB_USERS") == "1",
+		Port:             getenv("PORT"),
+		DatabaseURL:      getenv("DATABASE_URL"),
+		SupabaseURL:      getenv("SUPABASE_URL"),
+		AllowedOrigins:   splitList(getenv("CORS_ALLOWED_ORIGINS")),
+		AllowedGitHubIDs: splitList(getenv("ALLOWED_GITHUB_IDS")),
+		AllowedGoogleIDs: splitList(getenv("ALLOWED_GOOGLE_IDS")),
+		AllowAllUsers:    getenv("ALLOW_ALL_USERS") == "1",
+	}
+	if getenv("ALLOW_ALL_GITHUB_USERS") != "" {
+		return Config{}, errors.New("ALLOW_ALL_GITHUB_USERS was replaced by ALLOW_ALL_USERS, which admits everyone on any sign-in provider")
 	}
 	if getenv("ALLOWED_GITHUB_USERS") != "" {
 		return Config{}, errors.New("ALLOWED_GITHUB_USERS was replaced by ALLOWED_GITHUB_IDS: list numeric GitHub user ids " +
@@ -56,6 +62,11 @@ func Load(getenv func(string) string) (Config, error) {
 	for _, id := range cfg.AllowedGitHubIDs {
 		if _, err := strconv.ParseUint(id, 10, 64); err != nil {
 			return Config{}, fmt.Errorf("ALLOWED_GITHUB_IDS must list numeric GitHub user ids, got %q", id)
+		}
+	}
+	for _, id := range cfg.AllowedGoogleIDs {
+		if strings.ContainsAny(id, " \t@") {
+			return Config{}, fmt.Errorf("ALLOWED_GOOGLE_IDS must list comma-separated Google account ids (not emails), got %q", id)
 		}
 	}
 	ai, err := loadAI(getenv)

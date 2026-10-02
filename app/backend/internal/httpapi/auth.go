@@ -38,11 +38,26 @@ func requireUser(authn Authenticator, allowlist auth.Allowlist, next http.Handle
 			return
 		}
 		if !allowlist.Admits(user) {
-			writeError(w, http.StatusForbidden, "not_allowed")
+			writeNotAllowed(w, user)
 			return
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user)))
 	}
+}
+
+// writeNotAllowed refuses a User the allowlist doesn't admit, listing their own identities so the
+// page can tell them what to ask for access with (their GitHub username, or their Google id).
+func writeNotAllowed(w http.ResponseWriter, user auth.User) {
+	type identity struct {
+		Provider auth.Provider `json:"provider"`
+		ID       string        `json:"id"`
+		Name     string        `json:"name"`
+	}
+	identities := make([]identity, len(user.Identities))
+	for i, id := range user.Identities {
+		identities[i] = identity{id.Provider, id.ID, id.Name}
+	}
+	writeJSON(w, http.StatusForbidden, map[string]any{"error": "not_allowed", "identities": identities})
 }
 
 // userFrom returns the User set by requireUser.

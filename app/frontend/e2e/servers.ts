@@ -4,3 +4,6 @@ export const apiPort = 18080;
 export const webPort = 15173;
 export const apiUrl = `http://localhost:${apiPort}`;
 export const webUrl = `http://localhost:${webPort}`;
+// A second API that admits nobody, for the not-allowed tests (they route their API calls to it).
+export const closedApiPort = 18081;
+export const closedApiUrl = `http://localhost:${closedApiPort}`;

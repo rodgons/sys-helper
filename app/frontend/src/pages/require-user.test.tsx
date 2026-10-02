@@ -67,4 +67,47 @@ describe('RequireUser', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(auth.signOut).toHaveBeenCalled();
   });
+
+  const notAllowed = (identities: { provider: string; id: string; name: string }[]) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        mockApi({ 'GET /api/me': { status: 403, body: { error: 'not_allowed', identities } } }),
+      ),
+    );
+
+  it('asks GitHub Users for access with their username', async () => {
+    notAllowed([{ provider: 'github', id: '583231', name: 'octocat' }]);
+    renderWithQuery(<RequireUser>{() => 'secret'}</RequireUser>, { auth: signedIn() });
+
+    expect(
+      await screen.findByRole('heading', { name: "You're not on the beta list yet" }),
+    ).toBeVisible();
+    expect(screen.getByText(/ask for access with your GitHub username/i)).toBeVisible();
+    expect(screen.getByText('octocat')).toBeVisible();
+    expect(screen.queryByText(/Google id/i)).not.toBeInTheDocument();
+  });
+
+  it('shows Google Users their Google id to copy', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    notAllowed([{ provider: 'google', id: '108378921029384756123', name: 'Ada Lovelace' }]);
+    renderWithQuery(<RequireUser>{() => 'secret'}</RequireUser>, { auth: signedIn() });
+
+    expect(await screen.findByText('108378921029384756123')).toBeVisible();
+    expect(screen.queryByText(/GitHub username/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Google id' }));
+    expect(writeText).toHaveBeenCalledWith('108378921029384756123');
+  });
+
+  it('shows a linked User both ways to ask', async () => {
+    notAllowed([
+      { provider: 'github', id: '583231', name: 'octocat' },
+      { provider: 'google', id: '108', name: 'Ada Lovelace' },
+    ]);
+    renderWithQuery(<RequireUser>{() => 'secret'}</RequireUser>, { auth: signedIn() });
+
+    expect(await screen.findByText('octocat')).toBeVisible();
+    expect(screen.getByText('108')).toBeVisible();
+  });
 });

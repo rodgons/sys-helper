@@ -1,8 +1,17 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { apiFetch } from './api';
+import { ApiError, apiFetch } from './api';
 import { useToken } from './auth';
 
 export type Me = { displayName: string; avatarUrl: string };
+
+/** One of a refused User's identities, as the 403 `not_allowed` body lists them. */
+export type Identity = { provider: 'github' | 'google'; id: string; name: string };
+
+/** The identities a `not_allowed` error lists, so the User knows what to ask for access with. */
+export function refusedIdentities(err: unknown): Identity[] {
+  const identities = err instanceof ApiError ? err.body?.identities : undefined;
+  return Array.isArray(identities) ? (identities as Identity[]) : [];
+}
 
 /**
  * The signed-in User's profile: GitHub username, else Google name, else email. Fails with code `not_allowed` outside the beta allowlist.

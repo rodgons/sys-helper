@@ -4,16 +4,18 @@ import { Root } from '../root';
 import { mockApi, renderWithQuery, signedIn, signedOut } from '../test/render';
 
 describe('Home page', () => {
-  it('explains the product and offers GitHub sign-in', () => {
+  it('explains the product and offers GitHub and Google sign-in', () => {
     const auth = signedOut();
     renderWithQuery(<Root />, { route: '/', auth });
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/architecture/i);
     expect(screen.getByRole('heading', { name: /how it works/i })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /sign in with github/i, hidden: false }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
+    expect(auth.signIn).toHaveBeenLastCalledWith('github');
 
-    expect(auth.signIn).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    expect(auth.signIn).toHaveBeenLastCalledWith('google');
   });
 
   it('shows what the workspace looks like when signed in', () => {

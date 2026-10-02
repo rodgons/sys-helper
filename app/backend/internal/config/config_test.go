@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,8 +34,8 @@ func TestLoad(t *testing.T) {
 		if len(cfg.AllowedOrigins) != 0 {
 			t.Errorf("AllowedOrigins = %v, want empty", cfg.AllowedOrigins)
 		}
-		if len(cfg.AllowedGitHubIDs) != 0 || cfg.AllowAllGitHubUsers {
-			t.Errorf("allowlist = %v (all: %v), want empty and closed", cfg.AllowedGitHubIDs, cfg.AllowAllGitHubUsers)
+		if len(cfg.AllowedGitHubIDs) != 0 || len(cfg.AllowedGoogleIDs) != 0 || cfg.AllowAllUsers {
+			t.Errorf("allowlist = %v, %v (all: %v), want empty and closed", cfg.AllowedGitHubIDs, cfg.AllowedGoogleIDs, cfg.AllowAllUsers)
 		}
 	})
 
@@ -64,13 +65,33 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
-	t.Run("opts in to every GitHub user explicitly", func(t *testing.T) {
-		cfg, err := config.Load(env(required(map[string]string{"ALLOW_ALL_GITHUB_USERS": "1"})))
+	t.Run("parses the Google allowlist of subs", func(t *testing.T) {
+		cfg, err := config.Load(env(required(map[string]string{
+			"ALLOWED_GOOGLE_IDS": "108378921029384756123, 42,",
+		})))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !cfg.AllowAllGitHubUsers {
-			t.Error("AllowAllGitHubUsers = false, want true")
+		want := []string{"108378921029384756123", "42"}
+		if !slices.Equal(cfg.AllowedGoogleIDs, want) {
+			t.Errorf("AllowedGoogleIDs = %v, want %v", cfg.AllowedGoogleIDs, want)
+		}
+	})
+
+	t.Run("opts in to every user explicitly", func(t *testing.T) {
+		cfg, err := config.Load(env(required(map[string]string{"ALLOW_ALL_USERS": "1"})))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.AllowAllUsers {
+			t.Error("AllowAllUsers = false, want true")
+		}
+	})
+
+	t.Run("names the replacement for ALLOW_ALL_GITHUB_USERS", func(t *testing.T) {
+		_, err := config.Load(env(required(map[string]string{"ALLOW_ALL_GITHUB_USERS": "1"})))
+		if err == nil || !strings.Contains(err.Error(), "ALLOW_ALL_USERS") {
+			t.Fatalf("err = %v, want one naming ALLOW_ALL_USERS", err)
 		}
 	})
 
@@ -166,10 +187,12 @@ func TestLoad(t *testing.T) {
 	}
 
 	for _, bad := range []map[string]string{
-		{"ALLOWED_GITHUB_IDS": "octocat"},   // usernames aren't ids
-		{"ALLOWED_GITHUB_USERS": "octocat"}, // the old username allowlist must be migrated
+		{"ALLOWED_GITHUB_IDS": "octocat"},       // usernames aren't ids
+		{"ALLOWED_GITHUB_USERS": "octocat"},     // the old username allowlist must be migrated
+		{"ALLOWED_GOOGLE_IDS": "ada@gmail.com"}, // emails aren't ids
+		{"ALLOWED_GOOGLE_IDS": "108 109"},       // a missing comma
 	} {
-		t.Run("rejects an allowlist of usernames", func(t *testing.T) {
+		t.Run("rejects an allowlist of usernames or emails", func(t *testing.T) {
 			if _, err := config.Load(env(required(bad))); err == nil {
 				t.Fatalf("Load(%v) succeeded", bad)
 			}

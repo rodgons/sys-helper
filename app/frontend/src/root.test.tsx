@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Root } from './root';
-import { mockApi, renderWithQuery, signedIn } from './test/render';
+import { mockApi, renderWithQuery, signedIn, signedOut } from './test/render';
 
 describe('Root', () => {
   it('renders the UI kit page at /ui-kit', () => {
@@ -46,12 +46,17 @@ describe('Root', () => {
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument();
   });
 
-  it('offers sign-in when signed out', () => {
-    renderWithQuery(<Root />, { route: '/ui-kit' });
+  it('offers GitHub and Google sign-in from the header when signed out', () => {
+    const auth = signedOut();
+    renderWithQuery(<Root />, { route: '/ui-kit', auth });
 
-    expect(
-      within(screen.getByRole('banner')).getByRole('button', { name: /sign in/i }),
-    ).toBeVisible();
+    fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Sign in' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'GitHub' }));
+    expect(auth.signIn).toHaveBeenLastCalledWith('github');
+
+    fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Sign in' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Google' }));
+    expect(auth.signIn).toHaveBeenLastCalledWith('google');
   });
 
   it("shows the signed-in User's avatar, with their name and sign-out in its menu", async () => {
