@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// ErrExhausted means no model could answer: every one tried failed or was slow to start, or the
-// account's free quota is used up. It passes, so the User can try again shortly.
+// ErrExhausted means no model could answer: every one tried failed or was slow to start, the
+// account's free quota is used up, or OpenRouter refused the key.
 var ErrExhausted = errors.New("every free model is busy or failing")
 
 // Chain streams from the first of several models that starts answering. It moves on to the next
@@ -66,17 +66,10 @@ func (c *Chain) Stream(ctx context.Context, req Request) iter.Seq2[Event, error]
 				yield(Event{}, ctxErr)
 				return
 			}
-			var httpErr *HTTPError
-			if errors.As(err, &httpErr) {
-				if httpErr.AccountLimited {
-					yield(Event{}, fmt.Errorf("%w: %w", ErrExhausted, err))
-					return
-				}
-				switch httpErr.Status {
-				case http.StatusBadRequest, http.StatusUnauthorized, http.StatusPaymentRequired:
-					yield(Event{}, err) // the request or the key is wrong: no other model would fix it
-					return
-				}
+			if stopsEveryModel(err) {
+				slog.ErrorContext(ctx, "no free model can answer", "error", err)
+				yield(Event{}, fmt.Errorf("%w: %w", ErrExhausted, err))
+				return
 			}
 			slog.WarnContext(ctx, "model failed before answering, trying the next", "model", model, "error", err)
 			c.Models.Demote(model)
@@ -141,12 +134,26 @@ func (c *Chain) try(ctx context.Context, model string, req Request, yield func(E
 				return true, nil
 			}
 		}
+		// A cancelled stream can end without reporting it; the reply is cut, not complete.
+		if err := ctx.Err(); err != nil {
+			yield(Event{}, err)
+		}
 		return true, nil
 	case <-timeout:
 		return false, errSlow
 	case <-ctx.Done():
 		return false, ctx.Err()
 	}
+}
+
+// stopsEveryModel says whether err would fail on any model: the account's free quota is used up,
+// or the key is refused (401) or out of credit (402).
+func stopsEveryModel(err error) bool {
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	return httpErr.AccountLimited || httpErr.Status == http.StatusUnauthorized || httpErr.Status == http.StatusPaymentRequired
 }
 
 func boolToInt(b bool) int {

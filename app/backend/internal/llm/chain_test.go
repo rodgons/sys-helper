@@ -40,6 +40,21 @@ func (s scripted) Stream(ctx context.Context, _ llm.Request) iter.Seq2[llm.Event
 	}
 }
 
+// endless streams text until its context ends, then stops without an error, like a model whose
+// stream is cut by cancellation.
+type endless struct{}
+
+func (endless) Stream(ctx context.Context, _ llm.Request) iter.Seq2[llm.Event, error] {
+	return func(yield func(llm.Event, error) bool) {
+		for ctx.Err() == nil {
+			if !yield(llm.Event{Text: "more "}, nil) {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+}
+
 // list is a fixed model list that records demotions.
 type list struct {
 	models  []string
@@ -162,18 +177,50 @@ func TestChain(t *testing.T) {
 		}
 	})
 
-	t.Run("stops on errors no other model would fix", func(t *testing.T) {
-		for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusPaymentRequired} {
-			c, _, called := chain(map[string]scripted{
+	t.Run("stops, unavailable, when the key is refused", func(t *testing.T) {
+		for _, status := range []int{http.StatusUnauthorized, http.StatusPaymentRequired} {
+			c, l, called := chain(map[string]scripted{
 				"a": {err: &llm.HTTPError{Model: "a", Status: status}},
 				"b": {events: []string{"second"}},
 			}, "a", "b")
 
 			_, _, err := run(c, llm.Request{})
 			var httpErr *llm.HTTPError
-			if !errors.As(err, &httpErr) || errors.Is(err, llm.ErrExhausted) || len(*called) != 1 {
-				t.Errorf("HTTP %d: err = %v, called %v", status, err, *called)
+			if !errors.As(err, &httpErr) || !errors.Is(err, llm.ErrExhausted) || len(*called) != 1 || len(l.demoted) != 0 {
+				t.Errorf("HTTP %d: err = %v, called %v, demoted %v", status, err, *called, l.demoted)
 			}
+		}
+	})
+
+	t.Run("moves on when one model rejects the request", func(t *testing.T) {
+		c, _, _ := chain(map[string]scripted{
+			"a": {err: &llm.HTTPError{Model: "a", Status: http.StatusBadRequest}},
+			"b": {events: []string{"second"}},
+		}, "a", "b")
+
+		if got, _, err := run(c, llm.Request{}); err != nil || got != "second" {
+			t.Fatalf("got %q, %v", got, err)
+		}
+	})
+
+	t.Run("fails, not finishes, when cancelled after the model started", func(t *testing.T) {
+		c, _, _ := chain(nil, "a")
+		c.Client = func(string) llm.ChatModel { return endless{} }
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		var err error
+		for ev, e := range c.Stream(ctx, llm.Request{}) {
+			if e != nil {
+				err = e
+				break
+			}
+			if ev.Text != "" {
+				cancel()
+			}
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
 		}
 	})
 

@@ -22,6 +22,8 @@ const (
 	MinCompletionTokens = 4096
 	// DemotionPeriod is how long a model that just failed waits at the back of the list.
 	DemotionPeriod = 10 * time.Minute
+	// refreshTimeout bounds one GET /models, so a hung request can't stop the refreshes.
+	refreshTimeout = 30 * time.Second
 )
 
 // Catalog is the list of free OpenRouter models the assistant may use, best first. It discovers
@@ -129,6 +131,8 @@ func (c *Catalog) Refresh(ctx context.Context) error {
 	if len(c.Pinned) > 0 {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.BaseURL, "/")+"/models", nil)
 	if err != nil {
 		return err

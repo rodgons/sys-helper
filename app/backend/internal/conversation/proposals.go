@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -35,6 +36,9 @@ type Proposal struct {
 	BaseVersion int               `json:"baseVersion"`
 }
 
+// maxModel is the longest model id stored on a Message (the messages.model check).
+const maxModel = 200
+
 // AppendReply adds an AI Message written by model ("" if unknown) and, if changes is set, the
 // Proposal it carries, superseding any pending one. Both are saved together or not at all.
 func (s *Store) AppendReply(ctx context.Context, userID, suffix, body, model string, changes *proposal.Changes, baseVersion int) (Message, error) {
@@ -53,6 +57,9 @@ func (s *Store) AppendReply(ctx context.Context, userID, suffix, body, model str
 		messageID, err := uuid.NewV7()
 		if err != nil {
 			return err
+		}
+		if utf8.RuneCountInString(model) > maxModel {
+			model = string([]rune(model)[:maxModel]) // keep the paid-for reply over a full model id
 		}
 		m = Message{Role: RoleAssistant, Body: body}
 		if err := tx.QueryRow(ctx, `
