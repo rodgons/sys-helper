@@ -9,10 +9,10 @@ import { RequireUser } from './require-user';
 
 /** Signed-in landing page: opens the most recent Project, or offers to create the first one. */
 export function ProjectsPage() {
-  return <RequireUser>{(me) => <ProjectsIndex username={me.username} />}</RequireUser>;
+  return <RequireUser>{(me) => <ProjectsIndex displayName={me.displayName} />}</RequireUser>;
 }
 
-function ProjectsIndex({ username }: { username: string }) {
+function ProjectsIndex({ displayName }: { displayName: string }) {
   const projects = useProjects();
 
   if (projects.isError) {
@@ -34,7 +34,7 @@ function ProjectsIndex({ username }: { username: string }) {
       <Section>
         <Stack gap={6} xstyle={styles.narrow}>
           <Stack gap={4}>
-            <Label tone="accent">Signed in as {username}</Label>
+            <Label tone="accent">Signed in as {displayName}</Label>
             <Display as="h1" size="sm">
               No projects yet
             </Display>

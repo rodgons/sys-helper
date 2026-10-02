@@ -19,8 +19,8 @@ func (f fakeAuth) Authenticate(_ context.Context, token string) (auth.User, erro
 	switch token {
 	case "good":
 		return f.user, nil
-	case "no-github":
-		return auth.User{}, auth.ErrNoGitHubIdentity
+	case "no-identity":
+		return auth.User{}, auth.ErrNoIdentity
 	case "error":
 		return auth.User{}, errors.New("db down")
 	default:
@@ -28,9 +28,11 @@ func (f fakeAuth) Authenticate(_ context.Context, token string) (auth.User, erro
 	}
 }
 
-var octocat = auth.User{ID: "0192f0c4-0000-7000-8000-000000000001", GitHubID: "583231", GitHubUsername: "octocat", AvatarURL: "https://avatars.test/octocat"}
+var octocat = auth.User{ID: "0192f0c4-0000-7000-8000-000000000001", Identities: []auth.Identity{
+	{Provider: auth.GitHub, ID: "583231", Name: "octocat", AvatarURL: "https://avatars.test/octocat"},
+}}
 
-// everyone admits every GitHub account, for tests that aren't about the allowlist.
+// everyone admits every User, for tests that aren't about the allowlist.
 var everyone = auth.Allowlist{Everyone: true}
 
 func getMe(t *testing.T, deps httpapi.Deps, authorization string) *httptest.ResponseRecorder {
@@ -55,7 +57,7 @@ func TestMe(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body["username"] != "octocat" || body["avatarUrl"] != "https://avatars.test/octocat" {
+		if body["displayName"] != "octocat" || body["avatarUrl"] != "https://avatars.test/octocat" {
 			t.Errorf("body = %v", body)
 		}
 		if _, ok := body["id"]; ok {
@@ -73,7 +75,7 @@ func TestMe(t *testing.T) {
 		{"missing token", "", everyone, http.StatusUnauthorized, "unauthenticated"},
 		{"not a bearer token", "Basic good", everyone, http.StatusUnauthorized, "unauthenticated"},
 		{"invalid token", "Bearer forged", everyone, http.StatusUnauthorized, "unauthenticated"},
-		{"no GitHub identity", "Bearer no-github", everyone, http.StatusForbidden, "github_required"},
+		{"no supported identity", "Bearer no-identity", everyone, http.StatusForbidden, "identity_required"},
 		{"not on the allowlist", "Bearer good", auth.Allowlist{GitHubIDs: []string{"9919"}}, http.StatusForbidden, "not_allowed"},
 		{"on the allowlist", "Bearer good", auth.Allowlist{GitHubIDs: []string{"9919", "583231"}}, http.StatusOK, ""},
 		{"listed by username, not id", "Bearer good", auth.Allowlist{GitHubIDs: []string{"octocat"}}, http.StatusForbidden, "not_allowed"},

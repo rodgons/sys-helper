@@ -18,7 +18,7 @@ func TestIdentities(t *testing.T) {
 	t.Run("reads the GitHub identity", func(t *testing.T) {
 		id := testdb.User(t, pool, "octocat")
 
-		gh, err := identities.GitHub(context.Background(), id)
+		got, err := identities.List(context.Background(), id)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -27,16 +27,17 @@ func TestIdentities(t *testing.T) {
 			`SELECT provider_id FROM auth.identities WHERE user_id = $1`, id).Scan(&githubID); err != nil {
 			t.Fatal(err)
 		}
-		if gh.ID != githubID || gh.Username != "octocat" || gh.AvatarURL != "https://avatars.test/octocat" {
-			t.Errorf("GitHub = %+v, want id %s", gh, githubID)
+		want := auth.Identity{Provider: auth.GitHub, ID: githubID, Name: "octocat", AvatarURL: "https://avatars.test/octocat"}
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("List = %+v, want [%+v]", got, want)
 		}
 	})
 
-	t.Run("reports users without a GitHub identity", func(t *testing.T) {
+	t.Run("reports users without a supported identity", func(t *testing.T) {
 		id := testdb.User(t, pool, "")
 
-		if _, err := identities.GitHub(context.Background(), id); !errors.Is(err, auth.ErrNoGitHubIdentity) {
-			t.Fatalf("err = %v, want ErrNoGitHubIdentity", err)
+		if _, err := identities.List(context.Background(), id); !errors.Is(err, auth.ErrNoIdentity) {
+			t.Fatalf("err = %v, want ErrNoIdentity", err)
 		}
 	})
 }

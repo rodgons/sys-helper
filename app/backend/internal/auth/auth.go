@@ -1,5 +1,5 @@
 // Package auth identifies the User behind a request: it verifies Supabase access tokens and
-// resolves the GitHub identity linked to the Supabase user.
+// resolves the identities (GitHub, Google) linked to the Supabase user.
 package auth
 
 import (
@@ -11,34 +11,87 @@ import (
 var (
 	// ErrInvalidToken means the access token is malformed, expired or not signed by Supabase.
 	ErrInvalidToken = errors.New("invalid access token")
-	// ErrNoGitHubIdentity means the Supabase user did not sign in with GitHub.
-	ErrNoGitHubIdentity = errors.New("user has no GitHub identity")
+	// ErrNoIdentity means the Supabase user has no identity from a supported provider.
+	ErrNoIdentity = errors.New("user has no supported identity")
 )
 
-// User is a signed-in User. ID is the Supabase user ID and never leaves the server.
-type User struct {
-	ID string
-	// GitHubID is the immutable numeric GitHub user id. Usernames can change and be re-registered by
-	// someone else, so the allowlist matches this, and the username is for display only.
-	GitHubID       string
-	GitHubUsername string
-	AvatarURL      string
-}
+// Provider is a sign-in provider whose identities can belong to a User.
+type Provider string
 
-type GitHubIdentity struct {
-	ID        string
-	Username  string
+const (
+	GitHub Provider = "github"
+	Google Provider = "google"
+)
+
+// Identity is one provider account linked to a User.
+type Identity struct {
+	Provider Provider
+	// ID is the provider's immutable account id: the numeric GitHub user id, or the Google sub.
+	// Usernames and emails can change hands, so the allowlist matches this and nothing else.
+	ID string
+	// Name is for display only: the GitHub username, or the Google full name.
+	Name      string
+	Email     string
 	AvatarURL string
 }
 
-// Allowlist is the beta allowlist. The zero value admits nobody.
+// User is a signed-in User. ID is the Supabase user ID and never leaves the server. Identities is
+// never empty, and lists GitHub before Google.
+type User struct {
+	ID         string
+	Identities []Identity
+}
+
+// Identity returns the User's identity from provider, if one is linked.
+func (u User) Identity(provider Provider) (Identity, bool) {
+	i := slices.IndexFunc(u.Identities, func(id Identity) bool { return id.Provider == provider })
+	if i < 0 {
+		return Identity{}, false
+	}
+	return u.Identities[i], true
+}
+
+// DisplayName is the GitHub username if one is linked, otherwise the Google full name, otherwise
+// the Google email.
+func (u User) DisplayName() string {
+	if gh, ok := u.Identity(GitHub); ok {
+		return gh.Name
+	}
+	if g, ok := u.Identity(Google); ok {
+		if g.Name != "" {
+			return g.Name
+		}
+		return g.Email
+	}
+	return ""
+}
+
+// AvatarURL is the avatar of the identity DisplayName comes from.
+func (u User) AvatarURL() string {
+	for _, p := range []Provider{GitHub, Google} {
+		if id, ok := u.Identity(p); ok {
+			return id.AvatarURL
+		}
+	}
+	return ""
+}
+
+// Allowlist is the beta allowlist. It admits a User if any of their identities is listed under its
+// provider. The zero value admits nobody.
 type Allowlist struct {
 	GitHubIDs []string
-	Everyone  bool // explicit opt-in to admit every GitHub account
+	GoogleIDs []string
+	Everyone  bool // explicit opt-in to admit every User
 }
 
 func (a Allowlist) Admits(u User) bool {
-	return a.Everyone || (u.GitHubID != "" && slices.Contains(a.GitHubIDs, u.GitHubID))
+	if a.Everyone {
+		return true
+	}
+	ids := map[Provider][]string{GitHub: a.GitHubIDs, Google: a.GoogleIDs}
+	return slices.ContainsFunc(u.Identities, func(id Identity) bool {
+		return id.ID != "" && slices.Contains(ids[id.Provider], id.ID)
+	})
 }
 
 // Authenticator turns an access token into a User.
@@ -47,7 +100,7 @@ type Authenticator struct {
 		UserID(token string) (string, error)
 	}
 	Identities interface {
-		GitHub(ctx context.Context, userID string) (GitHubIdentity, error)
+		List(ctx context.Context, userID string) ([]Identity, error)
 	}
 }
 
@@ -56,9 +109,9 @@ func (a Authenticator) Authenticate(ctx context.Context, token string) (User, er
 	if err != nil {
 		return User{}, err
 	}
-	gh, err := a.Identities.GitHub(ctx, id)
+	identities, err := a.Identities.List(ctx, id)
 	if err != nil {
 		return User{}, err
 	}
-	return User{ID: id, GitHubID: gh.ID, GitHubUsername: gh.Username, AvatarURL: gh.AvatarURL}, nil
+	return User{ID: id, Identities: identities}, nil
 }

@@ -2,10 +2,10 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { apiFetch } from './api';
 import { useToken } from './auth';
 
-export type Me = { username: string; avatarUrl: string };
+export type Me = { displayName: string; avatarUrl: string };
 
 /**
- * The signed-in User's GitHub profile. Fails with code `not_allowed` outside the beta allowlist.
+ * The signed-in User's profile: GitHub username, else Google name, else email. Fails with code `not_allowed` outside the beta allowlist.
  * Keyed by token, but a token refresh keeps the previous profile while it refetches, so pages gated
  * on it (`RequireUser`) never unmount mid-session.
  */

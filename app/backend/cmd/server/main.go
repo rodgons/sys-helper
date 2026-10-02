@@ -106,7 +106,7 @@ func run() error {
 	return srv.Shutdown(shutdownCtx)
 }
 
-// allowlist admits the configured GitHub ids, or everyone on explicit opt-in. Both risky setups are
+// allowlist admits Users with a configured provider id, or everyone on explicit opt-in. Both risky setups are
 // logged loudly: nobody can sign in, or anyone can spend AI credits.
 func allowlist(cfg config.Config) auth.Allowlist {
 	switch {

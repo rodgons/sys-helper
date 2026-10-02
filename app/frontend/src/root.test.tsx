@@ -32,7 +32,7 @@ describe('Root', () => {
   it('links to the home page only when signed out, and never to the UI kit', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(mockApi({ 'GET /api/me': { username: 'octocat', avatarUrl: '' } })),
+      vi.fn(mockApi({ 'GET /api/me': { displayName: 'octocat', avatarUrl: '' } })),
     );
     const { unmount } = renderWithQuery(<Root />, { route: '/' });
     const nav = within(screen.getByRole('navigation', { name: 'Main' }));
@@ -59,7 +59,7 @@ describe('Root', () => {
       'fetch',
       vi.fn(
         mockApi({
-          'GET /api/me': { username: 'octocat', avatarUrl: 'https://example.test/o.png' },
+          'GET /api/me': { displayName: 'octocat', avatarUrl: 'https://example.test/o.png' },
         }),
       ),
     );
@@ -85,7 +85,7 @@ describe('Root', () => {
       'fetch',
       vi.fn(
         mockApi({
-          'GET /api/me': { username: 'octocat', avatarUrl: '' },
+          'GET /api/me': { displayName: 'octocat', avatarUrl: '' },
           'GET /api/settings': { experienceLevel: '' },
           'PUT /api/settings': put,
         }),
@@ -107,10 +107,10 @@ describe('Root', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
-  it("falls back to the username's first letter without a photo", async () => {
+  it("falls back to the display name's first letter without a photo", async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(mockApi({ 'GET /api/me': { username: 'octocat', avatarUrl: '' } })),
+      vi.fn(mockApi({ 'GET /api/me': { displayName: 'octocat', avatarUrl: '' } })),
     );
     renderWithQuery(<Root />, { route: '/ui-kit', auth: signedIn() });
 

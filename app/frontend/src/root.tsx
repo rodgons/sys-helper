@@ -52,7 +52,7 @@ function AuthAction() {
   );
 }
 
-/** The User's GitHub avatar, opening a menu of account actions. */
+/** The User's avatar, opening a menu of account actions. */
 function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
   const me = useMe();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -60,7 +60,7 @@ function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
     <>
       <Menu
         label="Account"
-        trigger={<Avatar name={me.data?.username ?? ''} src={me.data?.avatarUrl} />}
+        trigger={<Avatar name={me.data?.displayName ?? ''} src={me.data?.avatarUrl} />}
       >
         {me.data && (
           <>
@@ -68,7 +68,7 @@ function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
               <Text size="sm" tone="muted">
                 Signed in as
               </Text>
-              {me.data.username}
+              {me.data.displayName}
             </MenuHeader>
             <MenuSeparator />
           </>

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext } from '../lib/auth';
-import { mockApi, signedIn } from '../test/render';
+import { mockApi, renderWithQuery, signedIn } from '../test/render';
 import { RequireUser } from './require-user';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -26,7 +26,7 @@ describe('RequireUser', () => {
           if ((init.headers as Record<string, string>).Authorization === 'Bearer tok-2') {
             await refreshed;
           }
-          return { username: 'ada', avatarUrl: '' };
+          return { displayName: 'ada', avatarUrl: '' };
         },
       }),
     );
@@ -36,7 +36,7 @@ describe('RequireUser', () => {
       <QueryClientProvider client={client}>
         <AuthContext.Provider value={signedIn(token)}>
           <MemoryRouter>
-            <RequireUser>{(me) => <Draft key={me.username} />}</RequireUser>
+            <RequireUser>{(me) => <Draft key={me.displayName} />}</RequireUser>
           </MemoryRouter>
         </AuthContext.Provider>
       </QueryClientProvider>
@@ -50,5 +50,21 @@ describe('RequireUser', () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     release();
     await vi.waitFor(() => expect(screen.getByLabelText('draft')).toHaveValue('half-written'));
+  });
+
+  it('asks Users without a supported identity to sign in with GitHub or Google', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(mockApi({ 'GET /api/me': { status: 403, body: { error: 'identity_required' } } })),
+    );
+    const auth = signedIn();
+    renderWithQuery(<RequireUser>{() => 'secret'}</RequireUser>, { auth });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in with GitHub or Google to continue' }),
+    ).toBeVisible();
+    expect(screen.queryByText('secret')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(auth.signOut).toHaveBeenCalled();
   });
 });

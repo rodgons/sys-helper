@@ -9,7 +9,7 @@ import { Display, Text } from '../ui/typography';
 
 /**
  * Renders `children` for a signed-in User the API accepts. Signed-out visitors go to the home page;
- * Users the API refuses (not on the allowlist, no GitHub identity) get an explanation and a sign-out.
+ * Users the API refuses (not on the allowlist, no supported identity) get an explanation and a sign-out.
  */
 export function RequireUser({ children }: { children: (me: Me) => ReactNode }) {
   const auth = useAuth();
@@ -27,8 +27,8 @@ export function RequireUser({ children }: { children: (me: Me) => ReactNode }) {
             <Display as="h1" size="sm">
               {code === 'not_allowed'
                 ? "You're not on the beta list yet"
-                : code === 'github_required'
-                  ? 'Sign in with GitHub to continue'
+                : code === 'identity_required'
+                  ? 'Sign in with GitHub or Google to continue'
                   : "We couldn't load your account"}
             </Display>
             <Text tone="muted">

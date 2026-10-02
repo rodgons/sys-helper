@@ -27,7 +27,10 @@ describe('Home page', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
-        mockApi({ 'GET /api/me': { username: 'octocat', avatarUrl: '' }, 'GET /api/projects': [] }),
+        mockApi({
+          'GET /api/me': { displayName: 'octocat', avatarUrl: '' },
+          'GET /api/projects': [],
+        }),
       ),
     );
 
