@@ -17,7 +17,7 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 ## Sign-in
 
 - `AuthProvider` (`lib/auth.tsx`) tracks the Supabase session. `signIn('github' | 'google')` starts that provider's OAuth and returns to `/projects`.
-- The home page shows **Sign in with GitHub** and **Sign in with Google** as two equal outline buttons (neither is primary), and the header's **Sign in** opens a menu with both. Say "Google", never "Gmail".
+- Sign-in lives on its own page, `/login` (`pages/login.tsx`): **Continue with GitHub** and **Continue with Google** as two equal outline buttons (neither is primary). The home page's **Get started** and the header's **Sign in** (hidden on `/login`) link to it with `ButtonRouteLink` (`ui/button.tsx`, a Button-styled router `Link`). Signed-in Users visiting `/login` go to `/projects`. Say "Google", never "Gmail".
 - `RequireUser` (`pages/require-user.tsx`) explains the API's refusals. `identity_required`: "Sign in with GitHub or Google to continue". `not_allowed`: reads the identities from the error body (`refusedIdentities` in `lib/me.ts`, via `ApiError.body`) and tells a GitHub User to ask with their username and a Google User to send their Google id, which it shows in a `CopyValue` (`ui/copy-value.tsx`). A linked User sees both.
 - `useMe()` returns `{displayName, avatarUrl}`. Avatars may come from GitHub or Google, so the production CSP (`Dockerfile`) admits `avatars.githubusercontent.com` and `lh3.googleusercontent.com`.
 

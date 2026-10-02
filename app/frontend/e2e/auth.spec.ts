@@ -1,12 +1,18 @@
 import { expect, test } from './fixtures';
 import { apiUrl, closedApiUrl } from './servers';
 
-test('visitors see the home page and both sign-in options', async ({ page }) => {
+test('visitors go from the home page to a login page with both providers', async ({ page }) => {
   await page.goto('/');
-
   await expect(page.getByRole('heading', { level: 1 })).toContainText('architecture');
-  await expect(page.getByRole('button', { name: 'Sign in with GitHub' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sign in with Google' })).toBeVisible();
+
+  await page.getByRole('main').getByRole('link', { name: 'Get started' }).click();
+
+  await expect(page).toHaveURL('/login');
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Sign in to sys-helper' }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue with GitHub' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue with Google' })).toBeVisible();
 });
 
 test('signed-in users land on their projects and can sign out', async ({ page, signIn }) => {
@@ -22,7 +28,7 @@ test('signed-in users land on their projects and can sign out', async ({ page, s
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
 
   await expect(page).toHaveURL('/');
-  await expect(page.getByRole('button', { name: 'Sign in with GitHub' })).toBeVisible();
+  await expect(page.getByRole('banner').getByRole('link', { name: 'Sign in' })).toBeVisible();
 });
 
 test('a Google-only user can sign in and create a project', async ({ page, signIn }) => {
