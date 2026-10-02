@@ -6,9 +6,17 @@ import { Button } from './button';
 /** A labelled value to send to someone (an account id, a token), in mono with a copy button. */
 export function CopyValue({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
 
+  // The clipboard API is missing on insecure origins and can reject (permissions), so fall back to a manual copy.
   const copy = async () => {
-    await navigator.clipboard.writeText(value);
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      setFailed(true);
+      return;
+    }
+    setFailed(false);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -25,6 +33,11 @@ export function CopyValue({ label, value }: { label: string; value: string }) {
       >
         {copied ? 'Copied' : 'Copy'}
       </Button>
+      {failed && (
+        <span role="status" {...stylex.props(styles.hint)}>
+          Copy failed. Select the {label} and copy it manually.
+        </span>
+      )}
     </div>
   );
 }
@@ -48,6 +61,11 @@ const styles = stylex.create({
     fontSize: text['--text-2xs'],
     letterSpacing: '0.06em',
     textTransform: 'uppercase',
+    color: color['--color-fg-muted'],
+  },
+  hint: {
+    flexBasis: '100%',
+    fontSize: text['--text-sm'],
     color: color['--color-fg-muted'],
   },
   value: {
