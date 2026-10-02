@@ -4,6 +4,7 @@ import { type ReactNode, useId, useState } from 'react';
 import { color, font, media, radius, space, text } from '../design/tokens.stylex';
 import { Avatar } from '../ui/avatar';
 import { Badge } from '../ui/badge';
+import { GitHubIcon, GoogleIcon } from '../ui/brand-icons';
 import { Button, ButtonLink } from '../ui/button';
 import { Card } from '../ui/card';
 import { CommandLine } from '../ui/command-line';
@@ -172,6 +173,19 @@ export function UiKitPage() {
               </Cluster>
             </Stack>
           ))}
+          <Stack gap={2}>
+            <Label>with a provider icon (login page)</Label>
+            <Cluster gap={3}>
+              <Button variant="outline" size="lg">
+                <GitHubIcon />
+                Continue with GitHub
+              </Button>
+              <Button variant="outline" size="lg">
+                <GoogleIcon />
+                Continue with Google
+              </Button>
+            </Cluster>
+          </Stack>
         </Stack>
       </DocSection>
 

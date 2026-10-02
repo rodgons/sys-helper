@@ -19,6 +19,16 @@ describe('Login page', () => {
     expect(auth.signIn).toHaveBeenLastCalledWith('google');
   });
 
+  it('marks each option with its provider icon, hidden from screen readers', () => {
+    renderWithQuery(<Root />, { route: '/login', auth: signedOut() });
+
+    for (const name of ['Continue with GitHub', 'Continue with Google']) {
+      const icon = screen.getByRole('button', { name }).querySelector('svg');
+      expect(icon).not.toBeNull();
+      expect(icon).toHaveAttribute('aria-hidden', 'true');
+    }
+  });
+
   it('hides the header sign-in, since the page is the sign-in', () => {
     renderWithQuery(<Root />, { route: '/login', auth: signedOut() });
 

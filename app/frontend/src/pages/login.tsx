@@ -2,6 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import { Navigate } from 'react-router';
 import { color, radius, space } from '../design/tokens.stylex';
 import { useAuth } from '../lib/auth';
+import { GitHubIcon, GoogleIcon } from '../ui/brand-icons';
 import { Button } from '../ui/button';
 import { Section, Stack } from '../ui/layout';
 import { Logo } from '../ui/logo';
@@ -36,6 +37,7 @@ export function LoginPage() {
                 disabled={loading}
                 xstyle={styles.full}
               >
+                <GitHubIcon />
                 Continue with GitHub
               </Button>
               <Button
@@ -45,6 +47,7 @@ export function LoginPage() {
                 disabled={loading}
                 xstyle={styles.full}
               >
+                <GoogleIcon />
                 Continue with Google
               </Button>
             </Stack>
