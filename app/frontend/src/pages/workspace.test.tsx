@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Root } from '../root';
 import { LocationProbe, mockApi, renderWithQuery, signedIn } from '../test/render';
 
-const me = { username: 'octocat', avatarUrl: '' };
+const me = { displayName: 'octocat', avatarUrl: '' };
 const shortener = {
   slug: 'url-shortener-k3xa9q2m7p',
   name: 'URL Shortener',

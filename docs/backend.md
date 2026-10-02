@@ -8,7 +8,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | --- | --- |
 | `cmd/server` | The only place real dependencies are built and hooks are wired (`OnCreate`, `AfterSave`). |
 | `internal/config` | `.env` → `Config`, through an injected `getenv`. |
-| `internal/auth` | JWKS token check (`verifier.go`), GitHub identity from `auth.identities` (`identities.go`; `provider_id` is the numeric GitHub id), the beta `Allowlist` (zero value admits nobody). |
+| `internal/auth` | JWKS token check (`verifier.go`), the User's identities from `auth.identities` (`identities.go`), the beta `Allowlist` (zero value admits nobody). See Auth below. |
 | `internal/httpapi` | Routes (`router.go`), handlers, the store interfaces they need (declared next to each handler), error mapping. |
 | `internal/projects` | Projects and Project Slugs. |
 | `internal/architecture` | The canvas document, the Component Type catalog (`document.go`) and versioned saves. |
@@ -17,7 +17,13 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | `internal/usage` | The daily AI cap: `Meter.Record` logs each model call in `ai_usage` and refuses past `AI_DAILY_REPLY_LIMIT` (check + insert under a per-User advisory lock). |
 | `internal/proposal` | Proposal ops, `Normalize`, `Validate`, the `propose_changes` tool schema. |
 | `internal/assistant`, `internal/llm` | The AI turn and the model clients (see `docs/ai.md`). |
-| `internal/testdb` | Integration helpers: `Pool(t)`, `User(t, pool, githubUsername)`. |
+| `internal/testdb` | Integration helpers: `Pool(t)`, `User(t, pool, githubUsername, opts...)` (`""` = no GitHub identity; `WithGoogle(fullName)` links a Google one, so it makes GitHub-only, Google-only, linked and identity-less users). |
+
+## Auth
+
+- **Identities:** a User signs in with GitHub or Google. When a second provider arrives with the same verified email, Supabase links it to the same `auth.users` row (automatic linking), so one User can have both. `auth.Identities.List` reads the `github` and `google` rows of `auth.identities`, GitHub first, never `user_metadata` (users can edit it). `provider_id` is the immutable account id: the numeric GitHub id, or the Google `sub`. A GitHub row needs a `user_name`; other providers' rows are ignored. No usable identity → `auth.ErrNoIdentity` (→ 403 `identity_required`).
+- **Allowlist:** `ALLOWED_GITHUB_IDS` (numeric GitHub ids) and `ALLOWED_GOOGLE_IDS` (Google subs, never emails). A User is admitted if **any** of their identities is listed under its provider. Both empty admit nobody unless `ALLOW_ALL_USERS=1`. The removed `ALLOW_ALL_GITHUB_USERS` and `ALLOWED_GITHUB_USERS` fail startup naming their replacement. Refused → 403 `not_allowed` with `identities: [{provider, id, name}]`, so the page can show the User what to ask with.
+- **Display:** `User.DisplayName()` is the GitHub username if one is linked, otherwise the Google full name, otherwise the Google email. `User.AvatarURL()` comes from the same identity.
 
 ## Rules every store follows
 
@@ -43,7 +49,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | Status | Codes |
 | --- | --- |
 | 400 | `invalid_json`, `invalid_name`, `invalid_message`, `invalid_architecture` (+detail), `invalid` (+detail, knowledge) |
-| 401 / 403 | `unauthenticated` / `github_required`, `not_allowed` (allowlist) |
+| 401 / 403 | `unauthenticated` / `identity_required` (no GitHub or Google identity), `not_allowed` (allowlist; +`identities`) |
 | 404 | `not_found` (also other Users' Projects, bad slugs, bad `seq`/ids) |
 | 409 | `conflict` (stale version), `not_pending` (Proposal already resolved), `busy` (reply in flight), `nothing_to_reply`, `limit_reached` (+detail for knowledge; see Limits) |
 | 429 | `daily_limit` from `/reply` (`AI_DAILY_REPLY_LIMIT` model calls per User per UTC day; 0 disables). Sending a message is never capped. |
@@ -59,7 +65,7 @@ All under `/api`, all need a User.
 
 | Route | Notes |
 | --- | --- |
-| `GET /me` | `{username, avatarUrl}` |
+| `GET /me` | `{displayName, avatarUrl}` (see Auth › Display) |
 | `GET, PUT /settings` | `{experienceLevel}`; `""` clears the default |
 | `GET, POST /projects` · `GET, PATCH, DELETE /projects/{slug}` | `{slug, name, updatedAt}`; list is newest first |
 | `GET, PUT /projects/{slug}/architecture` | `{version, document}`; PUT returns the new `version` |

@@ -27,7 +27,7 @@ RUN test -n "$VITE_API_URL" && test -n "$VITE_SUPABASE_URL" && \
       '[[advanced.headers]]' \
       'source = "**"' \
       '[advanced.headers.headers]' \
-      "Content-Security-Policy = \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://avatars.githubusercontent.com; font-src 'self'; connect-src 'self' ${VITE_API_URL} ${VITE_SUPABASE_URL}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'\"" \
+      "Content-Security-Policy = \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://avatars.githubusercontent.com https://lh3.googleusercontent.com; font-src 'self'; connect-src 'self' ${VITE_API_URL} ${VITE_SUPABASE_URL}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'\"" \
       'X-Frame-Options = "DENY"' \
       'X-Content-Type-Options = "nosniff"' \
       'Referrer-Policy = "strict-origin-when-cross-origin"' \

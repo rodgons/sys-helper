@@ -25,7 +25,7 @@ type Deps struct {
 	Knowledge      KnowledgeStore
 	Settings       SettingsStore
 	AllowedOrigins []string
-	// Allowlist admits GitHub accounts to the beta. Its zero value admits nobody.
+	// Allowlist admits Users to the beta. Its zero value admits nobody.
 	Allowlist auth.Allowlist
 }
 

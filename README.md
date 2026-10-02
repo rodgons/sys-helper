@@ -46,12 +46,15 @@ Everything comes from the root `.env` (copied from `.env.example` by `make setup
 
 | Variable | What it does |
 | --- | --- |
-| `ALLOWED_GITHUB_IDS` | Beta allowlist of immutable numeric GitHub ids. Empty admits nobody; `ALLOW_ALL_GITHUB_USERS=1` admits every GitHub account. Get an id from `https://api.github.com/users/<name>`. |
+| `ALLOWED_GITHUB_IDS` | Beta allowlist of immutable numeric GitHub ids. Get an id from `https://api.github.com/users/<name>`. |
+| `ALLOWED_GOOGLE_IDS` | Beta allowlist of Google account ids (the `sub`, never an email: emails can be reassigned). Nobody knows theirs offhand, so the not-allowed page shows a signed-in person their Google id with a copy button; they send it to you. |
+| `ALLOW_ALL_USERS=1` | Admits everyone on any provider. A User is admitted if any of their identities is listed; with both lists empty and this unset, nobody can sign in. `ALLOW_ALL_GITHUB_USERS` was removed: the API refuses to start while it is set. |
 | `AI_PROVIDER`, `AI_MODEL`, `AI_FALLBACK_MODEL` | OpenAI-compatible provider (`nvidia` or `gemini`), the model to stream, and the fallback used when the primary sends nothing within `AI_FIRST_TOKEN_TIMEOUT`. No key → the API runs, AI replies answer "not set up". |
 | `NVIDIA_API_KEY` / `GEMINI_API_KEY` | The key for the chosen provider. |
 | `AI_DAILY_REPLY_LIMIT` | Model calls per User per UTC day (retries included); `0` disables. Sending a message is never capped. |
 | `AI_FAKE=1` | Canned model, no network. E2E sets it. |
 | `SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID` / `_SECRET` | The GitHub OAuth app used by local Supabase sign-in. Callback: `http://127.0.0.1:54321/auth/v1/callback`. |
+| `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` / `_SECRET` | The Google OAuth client used by local Supabase sign-in (optional: without it only the Google button fails). Authorised redirect URI: `http://127.0.0.1:54321/auth/v1/callback`. Local Google sign-in needs `skip_nonce_check = true`, already set in `supabase/config.toml`. |
 | `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Frontend endpoints; read by Vite in dev, baked into the bundle at build. |
 
 ## Database
@@ -108,13 +111,20 @@ make build   # → sys-helper/backend:latest, sys-helper/frontend:latest
 ```
 
 - **backend:** a static Go binary on `scratch`, running as a non-root user (~12 MB). It needs `DATABASE_URL` and `CORS_ALLOWED_ORIGINS`, and `PORT` (default 8080) can be overridden.
-- **frontend:** the Vite build served by `static-web-server` with SPA fallback, compression and `/health`, running as a non-root user on port 8080 (~11 MB). It sends security headers on every response, including a Content-Security-Policy built from `VITE_API_URL` and `VITE_SUPABASE_URL`: the page may only connect to itself, the API and Supabase, and load images only from itself and GitHub avatars. Pass the production `VITE_*` values at build time:
+- **frontend:** the Vite build served by `static-web-server` with SPA fallback, compression and `/health`, running as a non-root user on port 8080 (~11 MB). It sends security headers on every response, including a Content-Security-Policy built from `VITE_API_URL` and `VITE_SUPABASE_URL`: the page may only connect to itself, the API and Supabase, and load images only from itself and GitHub and Google avatars. Pass the production `VITE_*` values at build time:
 
   ```sh
   make build-frontend VITE_API_URL=https://api.example.com VITE_SUPABASE_URL=… VITE_SUPABASE_PUBLISHABLE_KEY=…
   ```
 
-**Hosted Supabase:** `supabase/config.toml` only configures the local stack. In the hosted project's Auth settings, keep GitHub as the only provider and turn the **Email** provider off. Otherwise an email/password account could end up linked to someone's GitHub identity.
+**Hosted Supabase:** `supabase/config.toml` only configures the local stack. In the hosted project's Auth settings, enable only GitHub and Google, and turn the **Email** provider off. Otherwise an email/password account could end up linked to someone's GitHub or Google identity. Keep automatic linking on (the default): it is what gives a person who signs in with both providers under the same verified email one User and one set of Projects (`docs/adr/0002-multi-provider-sign-in.md`).
+
+**Google sign-in in production:**
+
+1. In the Google Cloud console, configure the OAuth consent screen (External; app name, support email; scopes `email`, `profile`, `openid`) and publish it.
+2. Create an OAuth client ID of type **Web application**. Add the hosted Supabase callback, `https://<project-ref>.supabase.co/auth/v1/callback`, as an authorised redirect URI.
+3. In the hosted Supabase project, under Authentication › Providers › Google, enable Google and paste the client ID and secret. Add the frontend's `/projects` URL to the allowed redirect URLs (Authentication › URL Configuration) if it isn't there already.
+4. Add Google Users to `ALLOWED_GOOGLE_IDS` as they send you the id from the not-allowed page.
 
 To run the images locally against local Supabase:
 

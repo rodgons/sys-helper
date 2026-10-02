@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { apiPort, apiUrl, webPort, webUrl } from './e2e/servers';
+import { apiPort, apiUrl, closedApiPort, closedApiUrl, webPort, webUrl } from './e2e/servers';
 
 const isCI = !!process.env.CI;
 
@@ -21,15 +21,31 @@ export default defineConfig({
       // it orphaned). Dedicated ports (e2e/servers.ts) mean only an earlier E2E server is reused.
       command: 'go build -o tmp/e2e-server ./cmd/server && exec ./tmp/e2e-server',
       cwd: '../backend',
-      // The fake model: E2E never calls a real model. Test users get random GitHub ids, so the
+      // The fake model: E2E never calls a real model. Test users get random provider ids, so the
       // allowlist admits everyone.
       env: {
         PORT: String(apiPort),
         CORS_ALLOWED_ORIGINS: webUrl,
         AI_FAKE: '1',
-        ALLOW_ALL_GITHUB_USERS: '1',
+        ALLOW_ALL_USERS: '1',
       },
       url: `${apiUrl}/health`,
+      timeout: 120_000,
+      reuseExistingServer: !isCI,
+    },
+    {
+      // The same API with an allowlist that admits nobody (overriding any ids in .env).
+      command: 'go build -o tmp/e2e-server-closed ./cmd/server && exec ./tmp/e2e-server-closed',
+      cwd: '../backend',
+      env: {
+        PORT: String(closedApiPort),
+        CORS_ALLOWED_ORIGINS: webUrl,
+        AI_FAKE: '1',
+        ALLOW_ALL_USERS: '',
+        ALLOWED_GITHUB_IDS: '',
+        ALLOWED_GOOGLE_IDS: '',
+      },
+      url: `${closedApiUrl}/health`,
       timeout: 120_000,
       reuseExistingServer: !isCI,
     },

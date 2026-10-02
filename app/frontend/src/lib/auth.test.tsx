@@ -25,8 +25,11 @@ function Probe() {
   return (
     <>
       <p>{auth.status === 'signedIn' ? `signed in with ${auth.token}` : auth.status}</p>
-      <button type="button" onClick={auth.signIn}>
-        sign in
+      <button type="button" onClick={() => auth.signIn('github')}>
+        sign in with github
+      </button>
+      <button type="button" onClick={() => auth.signIn('google')}>
+        sign in with google
       </button>
       <button type="button" onClick={auth.signOut}>
         sign out
@@ -52,7 +55,7 @@ describe('AuthProvider', () => {
     expect(screen.getByText('signedOut')).toBeInTheDocument();
   });
 
-  it('signs in with GitHub and returns to /projects', () => {
+  it.each(['github', 'google'])('signs in with %s and returns to /projects', (provider) => {
     const { client, raw } = fakeClient();
     render(
       <AuthProvider client={client}>
@@ -60,10 +63,10 @@ describe('AuthProvider', () => {
       </AuthProvider>,
     );
 
-    act(() => screen.getByRole('button', { name: 'sign in' }).click());
+    act(() => screen.getByRole('button', { name: `sign in with ${provider}` }).click());
 
     expect(raw.signInWithOAuth).toHaveBeenCalledWith({
-      provider: 'github',
+      provider,
       options: { redirectTo: `${window.location.origin}/projects` },
     });
   });

@@ -40,7 +40,7 @@ test("another user's project is not found", async ({ browser, page, signIn }) =>
 
   const otherContext = await browser.newContext();
   const intruder = await otherContext.newPage();
-  await signIn(intruder);
+  await signIn({ page: intruder });
   await intruder.goto(path);
 
   await expect(intruder.getByRole('heading', { name: 'Project not found' })).toBeVisible();

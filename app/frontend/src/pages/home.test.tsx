@@ -1,19 +1,25 @@
 import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Root } from '../root';
-import { mockApi, renderWithQuery, signedIn, signedOut } from '../test/render';
+import { LocationProbe, mockApi, renderWithQuery, signedIn, signedOut } from '../test/render';
 
 describe('Home page', () => {
-  it('explains the product and offers GitHub sign-in', () => {
-    const auth = signedOut();
-    renderWithQuery(<Root />, { route: '/', auth });
+  it('explains the product and leads to the login page', () => {
+    renderWithQuery(
+      <>
+        <Root />
+        <LocationProbe />
+      </>,
+      { route: '/', auth: signedOut() },
+    );
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/architecture/i);
     expect(screen.getByRole('heading', { name: /how it works/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /github|google/i })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /sign in with github/i, hidden: false }));
+    fireEvent.click(screen.getByRole('main').querySelector('a[href="/login"]') as HTMLElement);
 
-    expect(auth.signIn).toHaveBeenCalled();
+    expect(screen.getByTestId('location')).toHaveTextContent('/login');
   });
 
   it('shows what the workspace looks like when signed in', () => {
@@ -27,7 +33,10 @@ describe('Home page', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
-        mockApi({ 'GET /api/me': { username: 'octocat', avatarUrl: '' }, 'GET /api/projects': [] }),
+        mockApi({
+          'GET /api/me': { displayName: 'octocat', avatarUrl: '' },
+          'GET /api/projects': [],
+        }),
       ),
     );
 

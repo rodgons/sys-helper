@@ -1,5 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import type { ComponentProps, ReactNode } from 'react';
+import { Link, type LinkProps } from 'react-router';
 import { color, motion, radius, space, text } from '../design/tokens.stylex';
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'ghost';
@@ -42,6 +43,21 @@ export function ButtonLink({
     <a {...rest} {...buttonProps(variant, size, xstyle)}>
       {children}
     </a>
+  );
+}
+
+/** A Button-styled link to another route of the app (client-side navigation). */
+export function ButtonRouteLink({
+  variant = 'primary',
+  size = 'md',
+  children,
+  xstyle,
+  ...rest
+}: StyleProps & Omit<LinkProps, 'className' | 'style'>) {
+  return (
+    <Link {...rest} {...buttonProps(variant, size, xstyle)}>
+      {children}
+    </Link>
   );
 }
 

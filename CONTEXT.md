@@ -7,8 +7,8 @@ A workspace where a user designs a software system's architecture on a canvas wh
 ### Workspace
 
 **User**:
-A person who signs in with their GitHub account. GitHub is used only to establish identity.
-_Avoid_: Account, member
+A person who signs in with GitHub or Google. These providers are used only to establish identity. One User can have both a GitHub and a Google identity: signing in with a second provider under the same verified email reaches the same User and the same Projects. A User is admitted to the beta if any of their identities is on the allowlist.
+_Avoid_: Account, member, Gmail user
 
 **Project**:
 A system the User intends to build. It owns exactly one Architecture, one Conversation, and its Requirements.

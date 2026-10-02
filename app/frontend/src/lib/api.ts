@@ -6,6 +6,8 @@ export class ApiError extends Error {
     /** The API's machine-readable error code (`{"error": "…"}`), if it sent one. */
     readonly code: string | undefined,
     message: string,
+    /** The whole error body, for codes that carry details (e.g. `not_allowed` lists identities). */
+    readonly body?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -27,11 +29,14 @@ export async function apiFetch<T>(
     },
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => undefined)) as { error?: string } | undefined;
+    const body = (await res.json().catch(() => undefined)) as
+      | ({ error?: string } & Record<string, unknown>)
+      | undefined;
     throw new ApiError(
       res.status,
       body?.error,
       `${init.method ?? 'GET'} ${path} failed with ${res.status}`,
+      body,
     );
   }
   if (res.status === 204) return undefined as T;

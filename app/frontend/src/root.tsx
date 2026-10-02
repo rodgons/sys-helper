@@ -5,11 +5,12 @@ import { SettingsDialog } from './account/settings-dialog';
 import { useAuth } from './lib/auth';
 import { useMe } from './lib/me';
 import { HomePage } from './pages/home';
+import { LoginPage } from './pages/login';
 import { ProjectsPage } from './pages/projects';
 import { UiKitPage } from './pages/ui-kit';
 import { WorkspacePage } from './pages/workspace';
 import { Avatar } from './ui/avatar';
-import { Button } from './ui/button';
+import { ButtonRouteLink } from './ui/button';
 import { Menu, MenuHeader, MenuItem, MenuSeparator } from './ui/menu';
 import { SiteHeader } from './ui/site-header';
 import { Toaster } from './ui/toaster';
@@ -28,9 +29,14 @@ export function Root() {
 
   return (
     <>
-      <SiteHeader links={links} currentPath={normalized} actions={<AuthAction />} />
+      <SiteHeader
+        links={links}
+        currentPath={normalized}
+        actions={normalized === '/login' ? null : <AuthAction />}
+      />
       <Routes>
         <Route path="/ui-kit" element={<UiKitPage />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/p/:slug" element={<WorkspacePage />} />
         <Route path="*" element={<HomePage />} />
@@ -46,13 +52,13 @@ function AuthAction() {
   return auth.status === 'signedIn' ? (
     <AccountMenu onSignOut={auth.signOut} />
   ) : (
-    <Button size="sm" variant="secondary" onClick={auth.signIn}>
+    <ButtonRouteLink to="/login" size="sm" variant="secondary">
       Sign in
-    </Button>
+    </ButtonRouteLink>
   );
 }
 
-/** The User's GitHub avatar, opening a menu of account actions. */
+/** The User's avatar, opening a menu of account actions. */
 function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
   const me = useMe();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -60,7 +66,7 @@ function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
     <>
       <Menu
         label="Account"
-        trigger={<Avatar name={me.data?.username ?? ''} src={me.data?.avatarUrl} />}
+        trigger={<Avatar name={me.data?.displayName ?? ''} src={me.data?.avatarUrl} />}
       >
         {me.data && (
           <>
@@ -68,7 +74,7 @@ function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
               <Text size="sm" tone="muted">
                 Signed in as
               </Text>
-              {me.data.username}
+              {me.data.displayName}
             </MenuHeader>
             <MenuSeparator />
           </>

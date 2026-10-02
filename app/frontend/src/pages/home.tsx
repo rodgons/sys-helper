@@ -4,7 +4,7 @@ import workspaceDark from '../assets/workspace-dark.webp';
 import workspaceLight from '../assets/workspace-light.webp';
 import { color, font, radius, space, text } from '../design/tokens.stylex';
 import { useAuth } from '../lib/auth';
-import { Button } from '../ui/button';
+import { ButtonRouteLink } from '../ui/button';
 import { Card } from '../ui/card';
 import { Grid, Section, Stack } from '../ui/layout';
 import { Logo } from '../ui/logo';
@@ -45,9 +45,9 @@ export function HomePage() {
             behind each one.
           </Text>
           <div>
-            <Button size="lg" onClick={auth.signIn} disabled={auth.status === 'loading'}>
-              Sign in with GitHub
-            </Button>
+            <ButtonRouteLink to="/login" size="lg">
+              Get started
+            </ButtonRouteLink>
           </div>
         </Stack>
       </Section>
