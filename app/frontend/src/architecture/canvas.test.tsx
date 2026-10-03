@@ -139,9 +139,40 @@ describe('ArchitectureCanvas', () => {
 
     fireEvent.click(within(editor).getByRole('button', { name: 'Close' }));
 
+    // Closing keeps the component selected, and the rest of the canvas dimmed around it.
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    expect(document.querySelector('.react-flow__node.selected')).toHaveTextContent('Cache');
+    expect(document.querySelectorAll('[data-dimmed]')).toHaveLength(2);
+    expect(screen.getByRole('region', { name: 'Inspector' })).toHaveTextContent(/Click it again/);
+  });
+
+  it('opens the window of a component clicked again once selected', () => {
+    stubSave();
+    renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
+      auth: signedIn(),
+    });
+
+    fireEvent.click(screen.getByText('Orders API'));
+    expect(document.querySelector('.react-flow__node.selected')).toHaveTextContent('Orders API');
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Orders API'));
+    expect(screen.getByLabelText('Name')).toHaveValue('Orders API');
+
+    // Esc closes the window first, then clears the selection.
+    fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Escape' });
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    expect(document.querySelector('.react-flow__node.selected')).not.toBeNull();
+    fireEvent.keyDown(screen.getByTestId('rf__wrapper'), { key: 'Escape' });
     expect(document.querySelector('.react-flow__node.selected')).toBeNull();
-    expect(screen.getByRole('region', { name: 'Inspector' })).toHaveTextContent(/Select something/);
+
+    // Clicking another component only selects it, even after a window was open.
+    fireEvent.click(screen.getByText('Orders API'));
+    fireEvent.click(screen.getByText('Orders API'));
+    fireEvent.click(screen.getByText('Orders DB'));
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Orders API'));
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
   });
 
   it('dims everything but the clicked component and what it connects to, until deselected', () => {

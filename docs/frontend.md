@@ -42,7 +42,8 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 ### Canvas (`architecture/canvas.tsx`)
 
 - `Editor` holds `{nodes, edges}` in state plus a `latest` ref. Every user edit goes through `update(nodes, edges, changed)`, which schedules autosave when `changed`. Display-only data (`diff`, `decisions`, `needsReview`, `dimmed`) is added at render and never saved. `fromFlow` drops it.
-- Spotlight (`model.ts` `spotlight`): while anything is selected, everything it doesn't touch is `dimmed`. That means the selection, a selected Component's Connections and their other ends, and a selected Connection's two ends. It runs on what is shown, so a Proposal preview's new and removed Connections count. Dimmed items stay fully interactive. Esc clears the selection.
+- Spotlight (`model.ts` `spotlight`): while anything is selected, everything it doesn't touch is `dimmed`. That means the selection, a selected Component's Connections and their other ends, and a selected Connection's two ends. It runs on what is shown, so a Proposal preview's new and removed Connections count. Dimmed items stay fully interactive.
+- Component window: a click selects a Component, and clicking it again while it is the only selection opens its Inspector beside it (`opened`). A Component added from the dock opens straight away. Closing the window, or the first Esc, keeps the selection and the spotlight. The next Esc clears both.
 - Component Types: `model.ts` `COMPONENT_TYPES` (labels, property fields) and `shapes.tsx` `LOOKS` (icon + outline). Both must match the Go catalog.
 
 ### Autosave (`architecture/autosave.ts`)

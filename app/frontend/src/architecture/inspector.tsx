@@ -21,7 +21,7 @@ import {
 
 /**
  * Edits the one selected Component or Connection; otherwise explains how to use the canvas. The
- * canvas floats it next to a selected Component (see ArchitectureCanvas).
+ * canvas floats it next to an opened Component (see ArchitectureCanvas).
  */
 export function Inspector({
   slug,
@@ -32,6 +32,7 @@ export function Inspector({
   onEditConnection,
   onRemove,
   onClose,
+  hint = 'Select something to edit it.',
 }: {
   slug: string;
   /** Whether the canvas is saved: Decisions can only be attached to saved items. */
@@ -41,8 +42,9 @@ export function Inspector({
   onEditComponent: (id: string, patch: Partial<ComponentData>) => void;
   onEditConnection: (id: string, patch: Partial<ConnectionData>) => void;
   onRemove: (id: string) => void;
-  /** Closes the inspector by clearing the selection. */
   onClose: () => void;
+  /** What to say when there is nothing to edit. */
+  hint?: string;
 }) {
   const [node] = nodes;
   const [edge] = edges;
@@ -101,7 +103,7 @@ export function Inspector({
         </>
       ) : (
         <Text size="sm" tone="muted">
-          Select something to edit it. Drag between components to connect them.
+          {hint} Drag between components to connect them.
         </Text>
       )}
     </section>
