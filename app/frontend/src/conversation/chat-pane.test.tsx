@@ -392,6 +392,34 @@ describe('ChatPane', () => {
       },
     );
 
+    it('scrolls to the AI thinking about its follow-up', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          mockApi({
+            [`GET ${API}/messages`]: [welcome, proposed('pending')],
+            [`POST ${API}/reply`]: () => new Promise<never>(() => {}),
+          }),
+        ),
+      );
+      renderWithQuery(
+        <>
+          <ChatPane slug={SLUG} />
+          <Resolve status="accepted" />
+        </>,
+        { auth: signedIn() },
+      );
+      await screen.findByText('Here is a cache.');
+      // happy-dom doesn't lay out, so give the list a height and scroll it back to the top.
+      Object.defineProperty(messages(), 'scrollHeight', { configurable: true, value: 900 });
+      messages().scrollTop = 0;
+
+      fireEvent.click(screen.getByRole('button', { name: 'resolve' }));
+
+      expect(await within(messages()).findByText('Thinking…')).toBeInTheDocument();
+      await waitFor(() => expect(messages().scrollTop).toBe(900));
+    });
+
     it('offers the reply instead of fetching it when the review happened earlier', async () => {
       const { reply } = setup({}, [welcome, proposed('accepted')]);
 

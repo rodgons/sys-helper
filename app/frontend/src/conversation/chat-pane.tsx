@@ -58,11 +58,12 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
     }
   }, [pendingSeq, reviewedSeq, start]);
 
-  // Keep the newest message (or the reply being written) in view.
+  // Keep the newest message in view, including the AI's "Thinking…" before its first words (as when
+  // it follows up on a reviewed Proposal, which adds no message), the reply being written and Retry.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll whenever either changes
   useEffect(() => {
     if (list.current) list.current.scrollTop = list.current.scrollHeight;
-  }, [count, streamed]);
+  }, [messages.data, reply.state]);
 
   const canSend = draft.trim() !== '' && !send.isPending && !replying;
   const submit = () => {
