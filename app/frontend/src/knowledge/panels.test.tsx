@@ -149,6 +149,33 @@ describe('DecisionsPanel', () => {
     expect(postgres).toHaveTextContent('R1 (Scale) 10k orders per minute');
   });
 
+  it('deletes a decision only once the user confirms', async () => {
+    const remove = vi.fn(() => ({ status: 204 }));
+    stub({ [`DELETE ${API}/decisions/D1`]: remove });
+    renderWithQuery(<DecisionsPanel slug={SLUG} names={{}} />, { auth: signedIn() });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete D1' }));
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('button', { name: 'Yes, delete D1' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete D1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, delete D1' }));
+
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+  });
+
+  it('says when a decision action fails', async () => {
+    stub({ [`DELETE ${API}/decisions/D1`]: { status: 500, body: { error: 'internal' } } });
+    renderWithQuery(<DecisionsPanel slug={SLUG} names={{}} />, { auth: signedIn() });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete D1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, delete D1' }));
+
+    const card = screen.getByRole('article', { name: 'D1 Postgres for orders' });
+    expect(await within(card).findByText(/couldn't delete/i)).toBeInTheDocument();
+  });
+
   it('confirms a flagged decision still holds', async () => {
     const patch = vi.fn(() => ({}));
     stub({ [`PATCH ${API}/decisions/D2`]: patch });
