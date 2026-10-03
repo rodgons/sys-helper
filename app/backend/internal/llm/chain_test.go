@@ -60,14 +60,19 @@ type list struct {
 	models  []string
 	mu      sync.Mutex
 	demoted []string
+	periods map[string]time.Duration // how long each model was demoted for
 }
 
 func (l *list) Models() []string { return slices.Clone(l.models) }
 
-func (l *list) Demote(model string) {
+func (l *list) Demote(model string, period time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.demoted = append(l.demoted, model)
+	if l.periods == nil {
+		l.periods = map[string]time.Duration{}
+	}
+	l.periods[model] = period
 }
 
 // chain builds a Chain over the scripted models, in order, and records which ones it called.
@@ -150,6 +155,22 @@ func TestChain(t *testing.T) {
 		}
 		if !slices.Equal(*called, []string{"a", "b", "c", "d"}) || !slices.Equal(l.demoted, []string{"a", "b", "c"}) {
 			t.Errorf("called %v, demoted %v", *called, l.demoted)
+		}
+	})
+
+	t.Run("demotes a model OpenRouter won't serve to this app until the next refresh", func(t *testing.T) {
+		c, l, _ := chain(map[string]scripted{
+			"gated": {err: &llm.HTTPError{Model: "gated", Status: http.StatusForbidden,
+				Body: `{"error":{"message":"gated is only available on agentic harnesses.","code":403}}`}},
+			"down": {err: errors.New("stream error 503")},
+			"ok":   {events: []string{"third"}},
+		}, "gated", "down", "ok")
+
+		if got, _, err := run(c, llm.Request{}); err != nil || got != "third" {
+			t.Fatalf("got %q, %v", got, err)
+		}
+		if l.periods["gated"] != llm.GatedDemotionPeriod || l.periods["down"] != llm.DemotionPeriod {
+			t.Errorf("demotion periods = %v", l.periods)
 		}
 	})
 

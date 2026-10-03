@@ -22,7 +22,7 @@ var ErrExhausted = errors.New("every free model is busy or failing")
 type Chain struct {
 	Models interface {
 		Models() []string // best first
-		Demote(model string)
+		Demote(model string, period time.Duration)
 	}
 	// Client builds the ChatModel for a model id.
 	Client            func(model string) ChatModel
@@ -72,7 +72,11 @@ func (c *Chain) Stream(ctx context.Context, req Request) iter.Seq2[Event, error]
 				return
 			}
 			slog.WarnContext(ctx, "model failed before answering, trying the next", "model", model, "error", err)
-			c.Models.Demote(model)
+			period := DemotionPeriod
+			if httpErr := (*HTTPError)(nil); errors.As(err, &httpErr) && httpErr.Gated() {
+				period = GatedDemotionPeriod
+			}
+			c.Models.Demote(model, period)
 			last = err
 		}
 		if last == nil {

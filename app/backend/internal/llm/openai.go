@@ -211,6 +211,13 @@ type HTTPError struct {
 	Body           string
 }
 
+// Gated says whether OpenRouter refused because the free model is reserved for other apps (as of
+// 2026-10, some are "only available on agentic harnesses"). Such a model won't answer this app
+// until OpenRouter changes that, unlike a moderation 403, which depends on the prompt.
+func (e *HTTPError) Gated() bool {
+	return e.Status == http.StatusForbidden && strings.Contains(strings.ToLower(e.Body), "agentic harness")
+}
+
 func (e *HTTPError) Error() string {
 	return fmt.Sprintf("%s: HTTP %d: %s", e.Model, e.Status, e.Body)
 }

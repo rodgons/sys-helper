@@ -183,7 +183,7 @@ func TestCatalog(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		c.Demote("a:free")
+		c.Demote("a:free", llm.DemotionPeriod)
 		if got := c.Models(); !slices.Equal(got, []string{"b:free", "c:free", "a:free"}) {
 			t.Errorf("after demotion: %v", got)
 		}

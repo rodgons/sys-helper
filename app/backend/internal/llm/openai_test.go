@@ -166,6 +166,14 @@ func TestOpenAIClient(t *testing.T) {
 		}
 	})
 
+	t.Run("recognises a model gated to other apps", func(t *testing.T) {
+		gated := &llm.HTTPError{Status: http.StatusForbidden, Body: `{"error":{"message":"x:free is only available on agentic harnesses. Try plugging it into a coding agent","code":403,"metadata":{"failed_routing_step":"Gate Free Endpoints by Agentic Harness"}}}`}
+		moderated := &llm.HTTPError{Status: http.StatusForbidden, Body: `{"error":{"message":"Input was flagged by moderation","code":403}}`}
+		if !gated.Gated() || moderated.Gated() {
+			t.Errorf("Gated() = %v for the harness gate, %v for moderation", gated.Gated(), moderated.Gated())
+		}
+	})
+
 	t.Run("fails on an error chunk in the stream", func(t *testing.T) {
 		// After a 200, OpenRouter reports errors as a chunk with a top-level error, sometimes as the
 		// only event.

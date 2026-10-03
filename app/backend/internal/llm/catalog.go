@@ -22,13 +22,16 @@ const (
 	MinCompletionTokens = 4096
 	// DemotionPeriod is how long a model that just failed waits at the back of the list.
 	DemotionPeriod = 10 * time.Minute
+	// GatedDemotionPeriod is how long a model OpenRouter won't serve to this app (HTTPError.Gated)
+	// waits there: about until the next refresh, since the gate isn't in the model metadata.
+	GatedDemotionPeriod = time.Hour
 	// refreshTimeout bounds one GET /models, so a hung request can't stop the refreshes.
 	refreshTimeout = 30 * time.Second
 )
 
 // Catalog is the list of free OpenRouter models the assistant may use, best first. It discovers
 // them from GET /models (Refresh, Run), unless Pinned names them. Models that fail are demoted
-// to the back of the list for DemotionPeriod. Safe for concurrent use.
+// to the back of the list for a while (Demote). Safe for concurrent use.
 type Catalog struct {
 	BaseURL string
 	APIKey  string
@@ -67,14 +70,14 @@ func (c *Catalog) Models() []string {
 	return append(healthy, demoted...)
 }
 
-// Demote moves model to the back of the list for DemotionPeriod.
-func (c *Catalog) Demote(model string) {
+// Demote moves model to the back of the list for period.
+func (c *Catalog) Demote(model string, period time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.demoted == nil {
 		c.demoted = map[string]time.Time{}
 	}
-	c.demoted[model] = c.now().Add(DemotionPeriod)
+	c.demoted[model] = c.now().Add(period)
 }
 
 // Run refreshes the list now and then every interval until ctx ends. While it has no list it
