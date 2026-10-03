@@ -88,6 +88,39 @@ describe('applyProposal', () => {
   });
 });
 
+describe('applyProposal on items the same proposal adds', () => {
+  const p = proposal([
+    { op: 'add_component', ref: 'cache', type: 'cache', name: 'Cache' },
+    { op: 'add_component', ref: 'queue', type: 'queue', name: 'Queue' },
+    { op: 'add_connection', ref: 'reads', source: 'api', target: 'cache', kind: 'sync' },
+    { op: 'add_connection', ref: 'jobs', source: 'api', target: 'queue', kind: 'async' },
+    { op: 'update_component', id: 'cache', name: 'Session Cache', properties: { engine: 'Redis' } },
+    { op: 'update_connection', id: 'reads', label: 'sessions' },
+    { op: 'remove_connection', id: 'jobs' },
+    { op: 'remove_component', id: 'queue' },
+  ]);
+
+  it('applies updates and removals addressed by ref, as the server allows', () => {
+    const { nodes, edges } = toFlow(doc);
+
+    const result = fromFlow(...applyProposal(nodes, edges, p));
+
+    expect(result.components.find((c) => c.id === 'p1-cache')).toMatchObject({
+      name: 'Session Cache',
+      properties: { engine: 'Redis' },
+    });
+    expect(result.components.map((c) => c.id)).not.toContain('p1-queue');
+    expect(result.connections.find((c) => c.id === 'p1-reads')?.label).toBe('sessions');
+    expect(result.connections.map((c) => c.id)).not.toContain('p1-jobs');
+  });
+
+  it('is not stale', () => {
+    const { nodes, edges } = toFlow(doc);
+
+    expect(staleReason(nodes, edges, p)).toBeNull();
+  });
+});
+
 describe('staleReason', () => {
   it('is null while everything the proposal refers to still exists', () => {
     const { nodes, edges } = toFlow(doc);

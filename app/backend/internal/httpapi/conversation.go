@@ -55,6 +55,8 @@ func handleSendMessage(store ConversationStore) http.HandlerFunc {
 		switch {
 		case errors.Is(err, projects.ErrNotFound):
 			writeError(w, http.StatusNotFound, "not_found")
+		case errors.Is(err, conversation.ErrLimit):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "limit_reached", "detail": err.Error()})
 		case err != nil:
 			internalError(w, r, err)
 		default:

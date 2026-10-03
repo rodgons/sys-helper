@@ -56,12 +56,13 @@ func run() error {
 	architectures := architecture.NewStore(db)
 	architectures.AfterSave = knowledge.PruneDecisions // Decisions follow the items they explain
 	knowledgeStore := knowledge.NewStore(db)
+	go usage.RunPruner(ctx, db) // the daily caps only need recent rows
 
 	srv := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			DB:            db,
-			Auth:          auth.Authenticator{Tokens: tokens, Identities: auth.Identities{DB: db}},
+			Auth:          auth.Authenticator{Tokens: tokens, Sessions: auth.Sessions{DB: db}, Identities: auth.Identities{DB: db}},
 			Projects:      projectStore,
 			Architectures: architectures,
 			Conversations: conversations,
@@ -77,6 +78,7 @@ func run() error {
 			Reviews:        conversation.Reviews{Conversations: conversations, Architectures: architectures},
 			Knowledge:      knowledgeStore,
 			Settings:       knowledgeStore, // the default Experience Level lives with the per-Project one
+			Accounts:       auth.Accounts{DB: db},
 			AllowedOrigins: cfg.AllowedOrigins,
 			Allowlist:      allowlist(cfg),
 		}),
@@ -101,7 +103,10 @@ func run() error {
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Shutdown waits for in-flight requests, AI replies included, so they finish and save before
+	// the database pool closes. Replies still running when the timeout ends are cut.
+	slog.Info("shutting down", "timeout", cfg.ShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
 }

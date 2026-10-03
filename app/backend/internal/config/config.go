@@ -21,7 +21,11 @@ type Config struct {
 	AllowedGitHubIDs []string
 	AllowedGoogleIDs []string
 	AllowAllUsers    bool
-	AI               AI
+	// ShutdownTimeout (SHUTDOWN_TIMEOUT) is how long a stopping server lets requests finish. AI
+	// replies stream for minutes, so production should allow more than the 10s default (and the
+	// platform's stop grace period must allow it too).
+	ShutdownTimeout time.Duration
+	AI              AI
 }
 
 // AI configures the assistant's models: OpenRouter's free models, discovered at runtime (or
@@ -72,6 +76,14 @@ func Load(getenv func(string) string) (Config, error) {
 		if strings.ContainsAny(id, " \t@") {
 			return Config{}, fmt.Errorf("ALLOWED_GOOGLE_IDS must list comma-separated Google account ids (not emails), got %q", id)
 		}
+	}
+	cfg.ShutdownTimeout = 10 * time.Second
+	if v := getenv("SHUTDOWN_TIMEOUT"); v != "" {
+		parsed, err := time.ParseDuration(v)
+		if err != nil || parsed <= 0 {
+			return Config{}, fmt.Errorf("SHUTDOWN_TIMEOUT must be a positive duration like 10s or 4m, got %q", v)
+		}
+		cfg.ShutdownTimeout = parsed
 	}
 	ai, err := loadAI(getenv)
 	if err != nil {

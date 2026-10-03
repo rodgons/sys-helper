@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"sys-helper/backend/internal/testdb"
 	"sys-helper/backend/internal/usage"
@@ -21,15 +22,31 @@ func TestMeter(t *testing.T) {
 		meter := usage.NewMeter(pool, 2)
 
 		for i := range 2 {
-			if err := meter.Record(ctx, alice); err != nil {
+			if _, err := meter.Record(ctx, alice); err != nil {
 				t.Fatalf("call %d: %v", i+1, err)
 			}
 		}
-		if err := meter.Record(ctx, alice); !errors.Is(err, usage.ErrDailyLimit) {
+		if _, err := meter.Record(ctx, alice); !errors.Is(err, usage.ErrDailyLimit) {
 			t.Fatalf("third call: err = %v, want ErrDailyLimit", err)
 		}
-		if err := meter.Record(ctx, bob); err != nil {
+		if _, err := meter.Record(ctx, bob); err != nil {
 			t.Fatalf("another User: %v", err)
+		}
+	})
+
+	t.Run("a refunded call no longer counts", func(t *testing.T) {
+		user := testdb.User(t, pool, "refunded")
+		meter := usage.NewMeter(pool, 1)
+
+		call, err := meter.Record(ctx, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := meter.Refund(ctx, call); err != nil {
+			t.Fatalf("Refund: %v", err)
+		}
+		if _, err := meter.Record(ctx, user); err != nil {
+			t.Errorf("after a refund: %v, want the call allowed", err)
 		}
 	})
 
@@ -42,7 +59,7 @@ func TestMeter(t *testing.T) {
 		allowed := 0
 		for range 10 {
 			wg.Go(func() {
-				if err := meter.Record(ctx, user); err == nil {
+				if _, err := meter.Record(ctx, user); err == nil {
 					mu.Lock()
 					allowed++
 					mu.Unlock()
@@ -61,7 +78,7 @@ func TestMeter(t *testing.T) {
 		meter := usage.NewMeter(pool, 0)
 
 		for range 3 {
-			if err := meter.Record(ctx, user); err != nil {
+			if _, err := meter.Record(ctx, user); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -145,4 +162,36 @@ func TestBudget(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestPrune(t *testing.T) {
+	pool := testdb.Pool(t)
+	ctx := context.Background()
+	user := testdb.User(t, pool, "pruned")
+	// Two old rows and one from today in each table.
+	for _, age := range []string{"10 days", "8 days", "1 hour"} {
+		if _, err := pool.Exec(ctx, `INSERT INTO ai_usage (id, user_id, created_at) VALUES (gen_random_uuid(), $1, now() - $2::interval)`, user, age); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO ai_requests (id, created_at) VALUES (gen_random_uuid(), now() - $1::interval)`, age); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var requestsBefore int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM ai_requests WHERE created_at > now() - interval '7 days'`).Scan(&requestsBefore); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := usage.Prune(ctx, pool, 7*24*time.Hour); err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	var usageLeft, oldRequests, requestsAfter int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM ai_usage WHERE user_id = $1`, user).Scan(&usageLeft)
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM ai_requests WHERE created_at <= now() - interval '7 days'`).Scan(&oldRequests)
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM ai_requests WHERE created_at > now() - interval '7 days'`).Scan(&requestsAfter)
+	if usageLeft != 1 || oldRequests != 0 || requestsAfter != requestsBefore {
+		t.Errorf("after Prune: %d usage rows (want 1), %d old requests (want 0), %d recent requests (want %d)",
+			usageLeft, oldRequests, requestsAfter, requestsBefore)
+	}
 }

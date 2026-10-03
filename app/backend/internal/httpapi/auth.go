@@ -69,3 +69,20 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 	user := userFrom(r.Context())
 	writeJSON(w, http.StatusOK, map[string]string{"displayName": user.DisplayName(), "avatarUrl": user.AvatarURL()})
 }
+
+// AccountStore deletes a User and everything they own.
+type AccountStore interface {
+	Delete(ctx context.Context, userID string) error
+}
+
+// handleDeleteMe deletes the signed-in User's account and all their data. Their access token stops
+// working with it, since its session is gone.
+func handleDeleteMe(accounts AccountStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := accounts.Delete(r.Context(), userFrom(r.Context()).ID); err != nil {
+			internalError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}

@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -114,8 +113,7 @@ func readName(w http.ResponseWriter, r *http.Request) (string, bool) {
 	var body struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json")
+	if !decodeStrict(w, r, &body) {
 		return "", false
 	}
 	name, err := projects.CleanName(body.Name)
@@ -138,6 +136,10 @@ func writeProject(w http.ResponseWriter, r *http.Request, p projects.Project, er
 }
 
 func internalError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "error", err)
+	// A request the client abandoned (e.g. on navigation) fails with its cancelled queries; that
+	// isn't a server error, and nobody reads the answer.
+	if r.Context().Err() == nil {
+		slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "error", err)
+	}
 	writeError(w, http.StatusInternalServerError, "internal")
 }

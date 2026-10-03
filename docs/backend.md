@@ -8,19 +8,20 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | --- | --- |
 | `cmd/server` | The only place real dependencies are built and hooks are wired (`OnCreate`, `AfterSave`). |
 | `internal/config` | `.env` → `Config`, through an injected `getenv`. |
-| `internal/auth` | JWKS token check (`verifier.go`), the User's identities from `auth.identities` (`identities.go`), the beta `Allowlist` (zero value admits nobody). See Auth below. |
+| `internal/auth` | JWKS token check (`verifier.go`), the live-session check (`sessions.go`), the User's identities from `auth.identities` (`identities.go`), the beta `Allowlist` (zero value admits nobody). See Auth below. |
 | `internal/httpapi` | Routes (`router.go`), handlers, the store interfaces they need (declared next to each handler), error mapping. |
 | `internal/projects` | Projects and Project Slugs. |
 | `internal/architecture` | The canvas document, the Component Type catalog (`document.go`) and versioned saves. |
 | `internal/conversation` | Messages, Proposals stored with them, accept and reject. |
 | `internal/knowledge` | Experience Level, Requirements, Decisions, user settings. |
-| `internal/usage` | The daily AI caps: `Meter.Record` logs each model call in `ai_usage` and refuses past `AI_DAILY_REPLY_LIMIT` (check + insert under a per-User advisory lock). `Budget.Spend` logs every request to OpenRouter, fallbacks included, in `ai_requests` and refuses past `AI_GLOBAL_DAILY_LIMIT` (`ErrGlobalLimit`, which is an `ErrDailyLimit`; one global advisory lock). |
+| `internal/usage` | The daily AI caps: `Meter.Record` logs each model call in `ai_usage` and refuses past `AI_DAILY_REPLY_LIMIT` (check + insert under a per-User advisory lock); `Meter.Refund` uncounts a call no model answered (`llm.ErrExhausted`, or the global budget refused). `Budget.Spend` logs every request to OpenRouter, fallbacks included, in `ai_requests` and refuses past `AI_GLOBAL_DAILY_LIMIT` (`ErrGlobalLimit`, which is an `ErrDailyLimit`; one global advisory lock). |
 | `internal/proposal` | Proposal ops, `Normalize`, `Validate`, the `propose_changes` tool schema. |
 | `internal/assistant`, `internal/llm` | The AI turn and the model clients (see `docs/ai.md`). |
 | `internal/testdb` | Integration helpers: `Pool(t)`, `User(t, pool, githubUsername, opts...)` (`""` = no GitHub identity; `WithGoogle(fullName)` links a Google one, so it makes GitHub-only, Google-only, linked and identity-less users). |
 
 ## Auth
 
+- **Sessions:** a valid signature isn't enough: access tokens live for an hour. `Verifier.Verify` returns the token's `sub` and `session_id`, and `auth.Sessions.Check` requires that session to still exist in `auth.sessions` (not signed out or revoked, `not_after` not passed) and its `auth.users` row to be neither banned nor deleted. Otherwise → 401 `unauthenticated`.
 - **Identities:** a User signs in with GitHub or Google. When a second provider arrives with the same verified email, Supabase links it to the same `auth.users` row (automatic linking), so one User can have both. `auth.Identities.List` reads the `github` and `google` rows of `auth.identities`, GitHub first, never `user_metadata` (users can edit it). `provider_id` is the immutable account id: the numeric GitHub id, or the Google `sub`. A GitHub row needs a `user_name`; other providers' rows are ignored. No usable identity → `auth.ErrNoIdentity` (→ 403 `identity_required`).
 - **Allowlist:** `ALLOWED_GITHUB_IDS` (numeric GitHub ids) and `ALLOWED_GOOGLE_IDS` (Google subs, never emails). A User is admitted if **any** of their identities is listed under its provider. Both empty admit nobody unless `ALLOW_ALL_USERS=1`. The removed `ALLOW_ALL_GITHUB_USERS` and `ALLOWED_GITHUB_USERS` fail startup naming their replacement. Refused → 403 `not_allowed` with `identities: [{provider, id, name}]`, so the page can show the User what to ask with.
 - **Display:** `User.DisplayName()` is the GitHub username if one is linked, otherwise the Google full name, otherwise the Google email. `User.AvatarURL()` comes from the same identity.
@@ -57,7 +58,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 
 ## Limits
 
-Every Requirement and Decision goes into each AI prompt, so storage is capped: `projects.MaxProjects` (50 per User, counted under a per-User advisory lock), `knowledge.MaxRequirements` and `MaxDecisions` (200 per Project, counted under the Project row lock), and `knowledge.MaxReferences` (50 targets and 50 cited Requirements per Decision, also a SQL `check`). Over a limit → 409 `limit_reached`. `proposal.Validate` applies the same caps so the model is told before the User accepts.
+Every Requirement and Decision goes into each AI prompt, so storage is capped: `projects.MaxProjects` (50 per User, counted under a per-User advisory lock), `knowledge.MaxRequirements` and `MaxDecisions` (200 per Project, counted under the Project row lock), and `knowledge.MaxReferences` (50 targets and 50 cited Requirements per Decision, also a SQL `check`). `conversation.MaxMessages` (500 per Project, counted under the Project row lock) bounds a Conversation, which the page loads whole; only a User's message is refused at the cap. Over a limit → 409 `limit_reached`. `proposal.Validate` applies the same caps so the model is told before the User accepts.
 
 ## Endpoints
 
@@ -66,10 +67,11 @@ All under `/api`, all need a User.
 | Route | Notes |
 | --- | --- |
 | `GET /me` | `{displayName, avatarUrl}` (see Auth › Display) |
+| `DELETE /me` | Deletes the User's `auth.users` row (`auth.Accounts`), which cascades to their identities, sessions, Projects, settings and `ai_usage`; 204. Their token stops working at once (its session is gone). `ai_requests` belongs to nobody, so the global budget isn't refilled. |
 | `GET, PUT /settings` | `{experienceLevel}`; `""` clears the default |
 | `GET, POST /projects` · `GET, PATCH, DELETE /projects/{slug}` | `{slug, name, updatedAt}`; list is newest first |
 | `GET, PUT /projects/{slug}/architecture` | `{version, document}`; PUT returns the new `version` |
-| `GET, POST /projects/{slug}/messages` | POST takes `{body}`; role is always `user` |
+| `GET, POST /projects/{slug}/messages` | POST takes `{body}`; role is always `user`; 409 `limit_reached` once the Conversation has 500 Messages |
 | `POST /projects/{slug}/reply` | SSE `delta` / `done` / `error`; see `docs/ai.md` |
 | `POST /projects/{slug}/proposals/{seq}/accept` | body `{version, document}` = the canvas with the Proposal applied |
 | `POST /projects/{slug}/proposals/{seq}/reject` | |
@@ -80,7 +82,7 @@ All under `/api`, all need a User.
 
 ## Database
 
-Migrations live in `supabase/migrations` (`make db-migration name=x`, `make db-reset`). Tables: `projects` (+`experience_level`), `architectures` (one jsonb document per Project), `messages`, `proposals` (`seq`, `status`, `base_version`, partial unique index = one pending per Project), `requirements`, `decisions` (`requirement_nums int[]`, `targets text[]` of canvas ids), `user_settings`, `ai_usage` (one row per model call; hangs off `auth.users`, so deleting a Project doesn't reset the count), `ai_requests` (one row per request to OpenRouter, for the global budget). `messages.model` records which model wrote an AI Message (debugging only; not sent to the client).
+Migrations live in `supabase/migrations` (`make db-migration name=x`, `make db-reset`). Tables: `projects` (+`experience_level`), `architectures` (one jsonb document per Project), `messages`, `proposals` (`seq`, `status`, `base_version`, partial unique index = one pending per Project), `requirements`, `decisions` (`requirement_nums int[]`, `targets text[]` of canvas ids), `user_settings`, `ai_usage` (one row per model call; hangs off `auth.users`, so deleting a Project doesn't reset the count), `ai_requests` (one row per request to OpenRouter, for the global budget). Both keep a week (`usage.Retention`): `usage.RunPruner`, started in `main`, deletes older rows every hour. `messages.model` records which model wrote an AI Message (debugging only; not sent to the client).
 
 Every new table:
 - `enable row level security` with **no policies**. Only the Go API (table owner) touches data; this keeps it out of Supabase's Data API.

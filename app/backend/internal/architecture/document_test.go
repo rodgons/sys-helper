@@ -54,6 +54,10 @@ func TestValidate(t *testing.T) {
 		{"dangling connection", `{"components": [{"id": "a", "type": "service", "name": "A", "position": {"x":0,"y":0}}], "connections": [{"id": "c", "source": "a", "target": "zzz", "kind": "sync"}]}`},
 		{"unknown connection kind", `{"components": [{"id": "a", "type": "service", "name": "A", "position": {"x":0,"y":0}}, {"id": "b", "type": "cache", "name": "B", "position": {"x":0,"y":0}}], "connections": [{"id": "c", "source": "a", "target": "b", "kind": "telepathy"}]}`},
 		{"duplicate connection id", `{"components": [{"id": "a", "type": "service", "name": "A", "position": {"x":0,"y":0}}, {"id": "b", "type": "cache", "name": "B", "position": {"x":0,"y":0}}], "connections": [{"id": "c", "source": "a", "target": "b", "kind": "sync"}, {"id": "c", "source": "b", "target": "a", "kind": "async"}]}`},
+		{"component and connection sharing an id", `{"components": [{"id": "a", "type": "service", "name": "A", "position": {"x":0,"y":0}}, {"id": "b", "type": "cache", "name": "B", "position": {"x":0,"y":0}}], "connections": [{"id": "a", "source": "a", "target": "b", "kind": "sync"}]}`},
+		{"NUL character in a name", `{"components": [{"id": "a", "type": "service", "name": "A\u0000", "position": {"x":0,"y":0}}], "connections": []}`},
+		{"NUL character in a property", `{"components": [{"id": "a", "type": "service", "name": "A", "position": {"x":0,"y":0}, "properties": {"runtime": "\u0000"}}], "connections": []}`},
+		{"NUL character in a connection label", `{"components": [{"id": "a", "type": "service", "name": "A", "position": {"x":0,"y":0}}, {"id": "b", "type": "cache", "name": "B", "position": {"x":0,"y":0}}], "connections": [{"id": "c", "source": "a", "target": "b", "kind": "sync", "label": "x\u0000"}]}`},
 		{"long connection label", `{"components": [{"id": "a", "type": "service", "name": "A", "position": {"x":0,"y":0}}, {"id": "b", "type": "cache", "name": "B", "position": {"x":0,"y":0}}], "connections": [{"id": "c", "source": "a", "target": "b", "kind": "sync", "label": "` + long + `"}]}`},
 	}
 	for _, tt := range tests {

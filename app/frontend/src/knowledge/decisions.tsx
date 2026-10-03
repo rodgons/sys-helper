@@ -58,6 +58,7 @@ export function DecisionCard({
 }) {
   const actions = useKnowledgeActions(slug);
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   if (editing) {
     return (
       <DecisionForm
@@ -65,6 +66,7 @@ export function DecisionCard({
         requirements={requirements}
         submitLabel="Save decision"
         busy={actions.updateDecision.isPending}
+        error={actions.updateDecision.isError ? "Couldn't save this decision. Try again." : null}
         onCancel={() => setEditing(false)}
         onSubmit={(input) =>
           actions.updateDecision.mutate(
@@ -111,19 +113,46 @@ export function DecisionCard({
           {cited.length > 0 && <Fact term="Serves">{cited.map(requirementText).join('; ')}</Fact>}
         </dl>
       )}
-      <div {...stylex.props(styles.actions)}>
-        <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-          Edit
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label={`Delete ${d.id}`}
-          onClick={() => actions.removeDecision.mutate(d.id)}
-        >
-          Delete
-        </Button>
-      </div>
+      {(actions.removeDecision.isError || actions.updateDecision.isError) && (
+        <Text size="sm" tone="accent">
+          {actions.removeDecision.isError
+            ? "Couldn't delete this decision. Try again."
+            : "Couldn't update this decision. Try again."}
+        </Text>
+      )}
+      {deleting ? (
+        <div {...stylex.props(styles.actions)}>
+          <Text size="sm">Delete {d.id}? This can't be undone.</Text>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label={`Yes, delete ${d.id}`}
+            disabled={actions.removeDecision.isPending}
+            onClick={() =>
+              actions.removeDecision.mutate(d.id, { onSettled: () => setDeleting(false) })
+            }
+          >
+            Delete
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setDeleting(false)}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <div {...stylex.props(styles.actions)}>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`Delete ${d.id}`}
+            onClick={() => setDeleting(true)}
+          >
+            Delete
+          </Button>
+        </div>
+      )}
     </article>
   );
 }

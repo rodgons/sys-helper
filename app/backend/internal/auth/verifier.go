@@ -26,9 +26,19 @@ func NewVerifier(ctx context.Context, supabaseURL string) (*Verifier, error) {
 	return &Verifier{keyfunc: k.Keyfunc, issuer: issuer}, nil
 }
 
-// UserID returns the Supabase user ID (the subject) of a valid access token.
-func (v *Verifier) UserID(token string) (string, error) {
-	var claims jwt.RegisteredClaims
+// Token is what a valid access token says: whose it is, and which sign-in session issued it.
+type Token struct {
+	UserID    string
+	SessionID string
+}
+
+// Verify checks an access token's signature, issuer, audience and expiry, and returns its Supabase
+// user ID (the subject) and session. It can't tell whether the session has since ended: see Sessions.
+func (v *Verifier) Verify(token string) (Token, error) {
+	var claims struct {
+		jwt.RegisteredClaims
+		SessionID string `json:"session_id"`
+	}
 	_, err := jwt.ParseWithClaims(token, &claims, v.keyfunc,
 		jwt.WithValidMethods([]string{"ES256"}),
 		jwt.WithIssuer(v.issuer),
@@ -36,10 +46,10 @@ func (v *Verifier) UserID(token string) (string, error) {
 		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrInvalidToken, err)
+		return Token{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
 	}
-	if claims.Subject == "" {
-		return "", fmt.Errorf("%w: no subject", ErrInvalidToken)
+	if claims.Subject == "" || claims.SessionID == "" {
+		return Token{}, fmt.Errorf("%w: no subject or session", ErrInvalidToken)
 	}
-	return claims.Subject, nil
+	return Token{UserID: claims.Subject, SessionID: claims.SessionID}, nil
 }

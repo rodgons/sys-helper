@@ -26,15 +26,17 @@ type fakeConversations struct {
 	mu     sync.Mutex
 	msgs   []conversation.Message
 	models []string // the model AppendReply was given for each reply
+	asked  []int    // how many recent Messages each Recent call asked for
 }
 
-func (f *fakeConversations) List(_ context.Context, _, suffix string) ([]conversation.Message, error) {
+func (f *fakeConversations) Recent(_ context.Context, _, suffix string, n int) ([]conversation.Message, error) {
 	if suffix != "s" {
 		return nil, projects.ErrNotFound
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]conversation.Message(nil), f.msgs...), nil
+	f.asked = append(f.asked, n)
+	return append([]conversation.Message(nil), f.msgs[max(0, len(f.msgs)-n):]...), nil
 }
 
 func (f *fakeConversations) Append(_ context.Context, _, _ string, role conversation.Role, body string) (conversation.Message, error) {
@@ -58,6 +60,13 @@ func (f *fakeConversations) AppendReply(_ context.Context, _, _ string, body, mo
 }
 
 type fakeArchitectures struct{}
+
+// staticArchitecture serves one document at version 1.
+type staticArchitecture architecture.Document
+
+func (d staticArchitecture) Get(context.Context, string, string) (architecture.Versioned, error) {
+	return architecture.Versioned{Version: 1, Document: architecture.Document(d)}, nil
+}
 
 func (fakeArchitectures) Get(context.Context, string, string) (architecture.Versioned, error) {
 	doc := architecture.Empty()
@@ -122,18 +131,27 @@ func (fakeKnowledge) Get(context.Context, string, string) (knowledge.Knowledge, 
 
 // meter counts model calls and refuses any beyond limit (0 = no cap).
 type meter struct {
-	mu    sync.Mutex
-	calls int
-	limit int
+	mu       sync.Mutex
+	calls    int
+	limit    int
+	refunded []string
 }
 
-func (m *meter) Record(context.Context, string) error {
+func (m *meter) Record(context.Context, string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.limit > 0 && m.calls >= m.limit {
-		return usage.ErrDailyLimit
+		return "", usage.ErrDailyLimit
 	}
 	m.calls++
+	return fmt.Sprintf("call-%d", m.calls), nil
+}
+
+func (m *meter) Refund(_ context.Context, call string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls--
+	m.refunded = append(m.refunded, call)
 	return nil
 }
 
@@ -188,6 +206,10 @@ func TestReply(t *testing.T) {
 		if len(history) != 4 || history[0].Content != "two" || history[3].Content != "five" || history[3].Role != llm.RoleUser {
 			t.Errorf("history = %+v", history)
 		}
+		// Only the history the model sees is read, however long the Conversation is.
+		if len(c.asked) != 1 || c.asked[0] != 4 {
+			t.Errorf("Recent asked for %v Messages, want [4]", c.asked)
+		}
 	})
 
 	t.Run("trims a large project's knowledge to a budget, saying what it left out", func(t *testing.T) {
@@ -211,6 +233,54 @@ func TestReply(t *testing.T) {
 			t.Errorf("system message is %d characters", n)
 		}
 		for _, want := range []string{"R1 [scale]", "D1 ", "more requirements not shown", "more decisions not shown"} {
+			if !strings.Contains(system, want) {
+				t.Errorf("system message lacks %q", want)
+			}
+		}
+	})
+
+	t.Run("describes the canvas without positions, which the model never needs", func(t *testing.T) {
+		var req llm.Request
+		a := newAssistant(model{words: []string{"ok"}, got: &req}, conv("Welcome", "Hi"))
+		a.Architectures = staticArchitecture{
+			Components:  []architecture.Component{{ID: "api", Type: "service", Name: "API", Position: architecture.Position{X: 120, Y: 80}}},
+			Connections: []architecture.Connection{},
+		}
+
+		if _, err := a.Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+
+		system := req.Messages[0].Content
+		if !strings.Contains(system, `"id":"api"`) || strings.Contains(system, "position") {
+			t.Errorf("system message canvas:\n%s", system[strings.Index(system, "JSON"):])
+		}
+	})
+
+	t.Run("trims a large canvas to a budget, saying what it left out", func(t *testing.T) {
+		var doc architecture.Document
+		long := strings.Repeat("v", 500)
+		for i := range 500 {
+			id := fmt.Sprintf("c%d", i)
+			doc.Components = append(doc.Components, architecture.Component{ID: id, Type: "database", Name: strings.Repeat("n", 100),
+				Properties: map[string]string{"engine": long, "replicas": long, "sharding": long}})
+			if i > 0 {
+				doc.Connections = append(doc.Connections, architecture.Connection{ID: "k" + id, Source: "c0", Target: id, Kind: "sync"})
+			}
+		}
+		var req llm.Request
+		a := newAssistant(model{words: []string{"ok"}, got: &req}, conv("Welcome", "Hi"))
+		a.Architectures = staticArchitecture(doc)
+
+		if _, err := a.Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+
+		system := req.Messages[0].Content
+		if n := utf8.RuneCountInString(system); n > 80000 {
+			t.Errorf("system message is %d characters", n)
+		}
+		for _, want := range []string{`"id":"c0"`, "more components", "not shown"} {
 			if !strings.Contains(system, want) {
 				t.Errorf("system message lacks %q", want)
 			}
@@ -311,6 +381,36 @@ func TestReply(t *testing.T) {
 		_, err := newAssistant(model{err: busy}, conv("Welcome", "Hi")).Reply(context.Background(), "u", "s", func(string) {})
 		if !errors.Is(err, assistant.ErrUnavailable) {
 			t.Fatalf("err = %v, want ErrUnavailable", err)
+		}
+	})
+
+	for name, err := range map[string]error{
+		"every free model is busy":     fmt.Errorf("%w (last: HTTP 429)", llm.ErrExhausted),
+		"the global budget is used up": usage.ErrGlobalLimit,
+	} {
+		t.Run("gives the User their call back when "+name, func(t *testing.T) {
+			a := newAssistant(model{err: err}, conv("Welcome", "Hi"))
+			meter := &meter{}
+			a.Usage = meter
+
+			if _, replyErr := a.Reply(context.Background(), "u", "s", func(string) {}); replyErr == nil {
+				t.Fatal("expected an error")
+			}
+			if meter.calls != 0 || len(meter.refunded) != 1 || meter.refunded[0] != "call-1" {
+				t.Errorf("calls = %d, refunded = %v; want the call refunded", meter.calls, meter.refunded)
+			}
+		})
+	}
+
+	t.Run("keeps the call when the model answered, even if it then failed", func(t *testing.T) {
+		a := newAssistant(model{words: []string{"partial"}, err: errors.New("reset")}, conv("Welcome", "Hi"))
+		meter := &meter{}
+		a.Usage = meter
+
+		_, _ = a.Reply(context.Background(), "u", "s", func(string) {})
+
+		if meter.calls != 1 || len(meter.refunded) != 0 {
+			t.Errorf("calls = %d, refunded = %v", meter.calls, meter.refunded)
 		}
 	})
 

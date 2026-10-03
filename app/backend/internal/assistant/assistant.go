@@ -34,7 +34,7 @@ var (
 type Assistant struct {
 	Model         llm.ChatModel
 	Conversations interface {
-		List(ctx context.Context, userID, suffix string) ([]conversation.Message, error)
+		Recent(ctx context.Context, userID, suffix string, n int) ([]conversation.Message, error)
 		AppendReply(ctx context.Context, userID, suffix, body, model string, changes *proposal.Changes, baseVersion int) (conversation.Message, error)
 	}
 	Architectures interface {
@@ -44,9 +44,10 @@ type Assistant struct {
 		Get(ctx context.Context, userID, suffix string) (knowledge.Knowledge, error)
 	}
 	// Usage records each model call against the User's daily cap (usage.Meter). It returns
-	// usage.ErrDailyLimit once the cap is reached.
+	// usage.ErrDailyLimit once the cap is reached. A call no model answered is refunded.
 	Usage interface {
-		Record(ctx context.Context, userID string) error
+		Record(ctx context.Context, userID string) (call string, err error)
+		Refund(ctx context.Context, call string) error
 	}
 	// HistoryLimit is how many recent Messages the model sees. The Architecture, Requirements and
 	// Decisions carry the long-term memory, so older chat matters less.
@@ -80,7 +81,8 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	}
 	defer a.inFlight.Delete(key)
 
-	msgs, err := a.Conversations.List(ctx, userID, suffix)
+	// The model sees only the recent history, so only that is read.
+	msgs, err := a.Conversations.Recent(ctx, userID, suffix, a.HistoryLimit)
 	if err != nil {
 		return conversation.Message{}, err
 	}
@@ -110,7 +112,8 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	model := ""            // the model that answered the last call
 	for attempt := 1; ; attempt++ {
 		// Every model call costs money, retries included, so each one counts against the cap.
-		if err := a.Usage.Record(ctx, userID); err != nil {
+		metered, err := a.Usage.Record(ctx, userID)
+		if err != nil {
 			if attempt > 1 && errors.Is(err, usage.ErrDailyLimit) {
 				note = "(I've reached today's AI limit, so I couldn't finish this proposal. It resets at midnight UTC.)"
 				break
@@ -118,6 +121,13 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 			return conversation.Message{}, err
 		}
 		text, call, answered, err := a.stream(ctx, req, onText)
+		if errors.Is(err, llm.ErrExhausted) || errors.Is(err, usage.ErrDailyLimit) {
+			// The Chain gives these only before any model started: nothing answered, so the User
+			// isn't charged.
+			if refundErr := a.Usage.Refund(context.WithoutCancel(ctx), metered); refundErr != nil {
+				slog.Warn("could not refund an unanswered model call", "error", refundErr)
+			}
+		}
 		if err != nil {
 			// A retry no model could take, or that the global budget refused, failed before sending
 			// anything: keep the reply so far.
@@ -210,7 +220,7 @@ func parseChanges(call llm.ToolCall, doc architecture.Document, known knowledge.
 }
 
 func (a *Assistant) request(msgs []conversation.Message, doc architecture.Document, known knowledge.Knowledge) (llm.Request, error) {
-	canvas, err := json.Marshal(doc)
+	canvas, err := describeCanvas(doc)
 	if err != nil {
 		return llm.Request{}, err
 	}
@@ -221,7 +231,7 @@ func (a *Assistant) request(msgs []conversation.Message, doc architecture.Docume
 		MaxTokens: 4096,
 		// One system message: some chat templates (e.g. Gemma's) accept only one.
 		Messages: []llm.Message{
-			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + describeKnowledge(known) + "\n\n" + architectureNote + string(canvas)},
+			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + describeKnowledge(known) + "\n\n" + architectureNote + canvas},
 		},
 	}
 	why := mustNotPropose(msgs)
@@ -290,6 +300,56 @@ func describeStatus(s conversation.ProposalStatus) string {
 	default:
 		return string(s)
 	}
+}
+
+// canvasBudget caps the characters of the canvas JSON in each prompt. An Architecture can hold up to
+// 500 Components, far more than a free model's context takes; past the budget it is trimmed.
+const canvasBudget = 40000
+
+// describeCanvas writes the Architecture as JSON for the system prompt, without positions (the
+// model never needs them). Components go in order until the budget is spent, then the Connections
+// between those shown, with a note of what was left out.
+func describeCanvas(doc architecture.Document) (string, error) {
+	type component struct {
+		ID         string            `json:"id"`
+		Type       string            `json:"type"`
+		Name       string            `json:"name"`
+		Properties map[string]string `json:"properties,omitempty"`
+	}
+	var components, connections []string
+	shown := map[string]bool{}
+	used := 0
+	for _, c := range doc.Components {
+		b, err := json.Marshal(component{c.ID, c.Type, c.Name, c.Properties})
+		if err != nil {
+			return "", err
+		}
+		if used+len(b) > canvasBudget {
+			break
+		}
+		used += len(b) + 1
+		components = append(components, string(b))
+		shown[c.ID] = true
+	}
+	hiddenConnections := 0
+	for _, c := range doc.Connections {
+		b, err := json.Marshal(c)
+		if err != nil {
+			return "", err
+		}
+		if !shown[c.Source] || !shown[c.Target] || used+len(b) > canvasBudget {
+			hiddenConnections++
+			continue
+		}
+		used += len(b) + 1
+		connections = append(connections, string(b))
+	}
+	out := `{"components":[` + strings.Join(components, ",") + `],"connections":[` + strings.Join(connections, ",") + `]}`
+	if hidden := len(doc.Components) - len(components); hidden > 0 || hiddenConnections > 0 {
+		out += fmt.Sprintf("\n(%d more components and %d more connections not shown, to keep this prompt short. "+
+			"Don't refer to items you can't see; ask the user about that part of the design instead.)", hidden, hiddenConnections)
+	}
+	return out, nil
 }
 
 // knowledgeBudget caps the characters of Requirements and Decisions in each prompt. A Project can

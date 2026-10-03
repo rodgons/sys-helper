@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { ApiError, apiFetch } from './api';
 import { useToken } from './auth';
 
@@ -25,5 +25,16 @@ export function useMe() {
     queryFn: () => apiFetch<Me>('/api/me', { token }),
     enabled: token !== undefined,
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Deletes the signed-in User's account and everything they own. The server ends their session with
+ * it, so the caller signs out afterwards.
+ */
+export function useDeleteAccount() {
+  const token = useToken();
+  return useMutation({
+    mutationFn: () => apiFetch<void>('/api/me', { token, method: 'DELETE' }),
   });
 }

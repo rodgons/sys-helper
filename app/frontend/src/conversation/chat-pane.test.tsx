@@ -76,6 +76,12 @@ describe('ChatPane', () => {
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
   });
 
+  it('reminds the user not to share secrets with the third-party models', async () => {
+    setup();
+
+    expect(await screen.findByText(/third-party AI models/i)).toBeInTheDocument();
+  });
+
   it('sends on Enter and adds a line on Shift+Enter', async () => {
     const { post } = setup();
     await screen.findByText(/who is it for/);
@@ -144,6 +150,17 @@ describe('ChatPane', () => {
     expect(box()).toHaveValue('Important context');
   });
 
+  it('says when the conversation is full', async () => {
+    setup({
+      [`POST ${API}/messages`]: { status: 409, body: { error: 'limit_reached', detail: 'full' } },
+    });
+
+    await send('One too many');
+
+    expect(await screen.findByText(/conversation is full/i)).toBeInTheDocument();
+    expect(box()).toHaveValue('One too many');
+  });
+
   it('explains the daily AI limit and keeps the message for a later reply', async () => {
     setup({ [`POST ${API}/reply`]: { status: 429, body: { error: 'daily_limit' } } });
 
@@ -171,6 +188,44 @@ describe('ChatPane', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(await within(messages()).findByText('A full answer.')).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't reply/i)).not.toBeInTheDocument();
+  });
+
+  it('reloads the conversation when the stream drops, since the server may have saved the reply', async () => {
+    const user = { role: 'user', body: 'A URL shortener', createdAt: at };
+    const saved = { role: 'assistant', body: 'The saved answer.', createdAt: at };
+    let history: unknown[] = [welcome];
+    setup({
+      [`GET ${API}/messages`]: () => history,
+      [`POST ${API}/reply`]: () => {
+        history = [welcome, user, saved];
+        // The connection ends mid-reply: no `done`, no `error`.
+        return sseResponse(['delta', { text: 'The saved' }]);
+      },
+    });
+
+    await send('A URL shortener');
+
+    expect(await within(messages()).findByText('The saved answer.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('reloads the conversation when there turns out to be nothing to reply to', async () => {
+    const user = { role: 'user', body: 'Hello', createdAt: at };
+    const saved = { role: 'assistant', body: 'Already answered.', createdAt: at };
+    let history: unknown[] = [welcome, user];
+    setup({
+      [`GET ${API}/messages`]: () => history,
+      [`POST ${API}/reply`]: () => {
+        history = [welcome, user, saved];
+        return { status: 409, body: { error: 'nothing_to_reply' } };
+      },
+    });
+
+    await screen.findByText('This message has no reply yet.');
+    fireEvent.click(screen.getByRole('button', { name: 'Get a reply' }));
+
+    expect(await within(messages()).findByText('Already answered.')).toBeInTheDocument();
     expect(screen.queryByText(/couldn't reply/i)).not.toBeInTheDocument();
   });
 

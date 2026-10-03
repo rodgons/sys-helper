@@ -54,6 +54,7 @@ Everything comes from the root `.env` (copied from `.env.example` by `make setup
 | `AI_DAILY_REPLY_LIMIT` | Model calls per User per UTC day (retries included); `0` disables. Sending a message is never capped. |
 | `AI_GLOBAL_DAILY_LIMIT` | Requests to OpenRouter per UTC day for all Users together, fallbacks included (default 50, the free quota; 1000 after buying $10 of credit). `0` disables. |
 | `AI_FAKE=1` | Canned model, no network. E2E sets it. |
+| `SHUTDOWN_TIMEOUT` | How long a stopping API lets requests finish (default `10s`). AI replies stream for up to 3 minutes and are saved only when complete, so in production set it to about `200s` and give the container a stop grace period longer than that, or replies in flight during a deploy are lost. |
 | `SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID` / `_SECRET` | The GitHub OAuth app used by local Supabase sign-in. Callback: `http://127.0.0.1:54321/auth/v1/callback`. |
 | `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` / `_SECRET` | The Google OAuth client used by local Supabase sign-in (optional: without it only the Google button fails). Authorised redirect URI: `http://127.0.0.1:54321/auth/v1/callback`. Local Google sign-in needs `skip_nonce_check = true`, already set in `supabase/config.toml`. |
 | `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Frontend endpoints; read by Vite in dev, baked into the bundle at build. |
@@ -72,7 +73,7 @@ make db-reset                            # re-apply all migrations + supabase/se
 | `make setup` / `make dev` | Install deps; Supabase + API (Air) + Vite |
 | `make test` | Unit tests, both apps (no Supabase needed) |
 | `make test-integration` / `make test-e2e` | Need Supabase running (`make supabase-start`) |
-| `make test-all` | lint + unit + integration + E2E — what CI should run |
+| `make test-all` | lint + unit + integration + E2E — what CI (`.github/workflows/ci.yml`) runs, plus `govulncheck` and `pnpm audit` |
 | `make lint` / `make format` | tsc + Biome + gofmt + go vet / auto-fix |
 | `make test-ai-live` | Check the configured models stream and call tools (costs credits) |
 | `make build` | Both production Docker images |
@@ -95,7 +96,7 @@ make test-watch-frontend   # vitest watch
 | Integration            | `*_integration_test.go` with `//go:build integration`, real Postgres | (covered by E2E)                                                   | yes            | `make test-integration` |
 | End-to-end             | n/a                                                           | `app/frontend/e2e/*.spec.ts`: Playwright boots the API and Vite     | yes            | `make test-e2e`         |
 
-`make test-all` runs lint, unit, integration and E2E. That's what CI should run.
+`make test-all` runs lint, unit, integration and E2E. CI (`.github/workflows/ci.yml`) runs the same on every push and PR, plus `govulncheck` and `pnpm audit`.
 
 ### Conventions
 

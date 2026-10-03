@@ -13,10 +13,13 @@ import './global.css';
 const root = document.getElementById('app');
 if (!root) throw new Error('#app root element not found');
 
+const queryClient = createQueryClient();
+
 createRoot(root).render(
   <StrictMode>
-    <QueryClientProvider client={createQueryClient()}>
-      <AuthProvider client={supabase.auth}>
+    <QueryClientProvider client={queryClient}>
+      {/* Cached projects and conversations belong to the User who signed out. */}
+      <AuthProvider client={supabase.auth} onSignedOut={() => queryClient.clear()}>
         <BrowserRouter>
           <Root />
         </BrowserRouter>

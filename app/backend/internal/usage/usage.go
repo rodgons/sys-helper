@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -26,15 +28,15 @@ func NewMeter(db *pgxpool.Pool, dailyLimit int) *Meter {
 	return &Meter{db: db, DailyLimit: dailyLimit}
 }
 
-// Record counts one model call for the User, or returns ErrDailyLimit and records nothing if they
-// have reached the cap. The check and the insert run under a per-User lock, so concurrent replies
-// can't both take the last call.
-func (m *Meter) Record(ctx context.Context, userID string) error {
+// Record counts one model call for the User and returns its id (for Refund), or returns
+// ErrDailyLimit and records nothing if they have reached the cap. The check and the insert run
+// under a per-User lock, so concurrent replies can't both take the last call.
+func (m *Meter) Record(ctx context.Context, userID string) (string, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
-		return err
+		return "", err
 	}
-	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('ai_usage:' || $1::text, 0))`, userID); err != nil {
 			return fmt.Errorf("lock usage: %w", err)
 		}
@@ -57,6 +59,19 @@ func (m *Meter) Record(ctx context.Context, userID string) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
+}
+
+// Refund uncounts a call Record counted that no model answered (every model was busy, or the global
+// budget was spent), so the User isn't charged for it.
+func (m *Meter) Refund(ctx context.Context, call string) error {
+	if _, err := m.db.Exec(ctx, `DELETE FROM ai_usage WHERE id = $1`, call); err != nil {
+		return fmt.Errorf("refund usage: %w", err)
+	}
+	return nil
 }
 
 // ErrGlobalLimit means today's requests for every User together are used up. It is a daily limit,
@@ -103,4 +118,32 @@ func (b *Budget) Spend(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+// Retention is how long ai_usage and ai_requests rows are kept. The caps only count today's, so a
+// week leaves room to look back while debugging.
+const Retention = 7 * 24 * time.Hour
+
+// Prune deletes ai_usage and ai_requests rows older than keep.
+func Prune(ctx context.Context, db *pgxpool.Pool, keep time.Duration) error {
+	for _, table := range []string{"ai_usage", "ai_requests"} {
+		if _, err := db.Exec(ctx, `DELETE FROM `+table+` WHERE created_at < now() - $1::interval`, keep); err != nil {
+			return fmt.Errorf("prune %s: %w", table, err)
+		}
+	}
+	return nil
+}
+
+// RunPruner prunes rows older than Retention now and then every hour, until ctx ends.
+func RunPruner(ctx context.Context, db *pgxpool.Pool) {
+	for {
+		if err := Prune(ctx, db, Retention); err != nil && ctx.Err() == nil {
+			slog.WarnContext(ctx, "could not prune AI usage", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Hour):
+		}
+	}
 }

@@ -78,7 +78,8 @@ func NewSuffix() string {
 // CleanName trims a Project name and checks it is 1 to 100 characters long.
 func CleanName(name string) (string, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || utf8.RuneCountInString(name) > nameMax {
+	// Postgres can't store NUL.
+	if name == "" || utf8.RuneCountInString(name) > nameMax || strings.ContainsRune(name, 0) {
 		return "", ErrInvalidName
 	}
 	return name, nil

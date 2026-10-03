@@ -54,6 +54,15 @@ func TestChecks(t *testing.T) {
 	if knowledge.CheckDecisionText("", "x", "", "") == nil || knowledge.CheckDecisionText("x", "", "", "") == nil {
 		t.Error("invalid decision accepted")
 	}
+	// Postgres can't store NUL, so it is refused like any other invalid text.
+	if knowledge.CheckRequirement(nil, ptr("10k\x00 rps")) == nil {
+		t.Error("requirement with NUL accepted")
+	}
+	for _, d := range [][4]string{{"Ca\x00che", "r", "", ""}, {"t", "r\x00", "", ""}, {"t", "r", "\x00", ""}, {"t", "r", "", "\x00"}} {
+		if knowledge.CheckDecisionText(d[0], d[1], d[2], d[3]) == nil {
+			t.Errorf("decision with NUL accepted: %q", d)
+		}
+	}
 	if knowledge.CheckLevel("expert") != nil || knowledge.CheckLevel("guru") == nil {
 		t.Error("CheckLevel wrong")
 	}

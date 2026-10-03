@@ -3,7 +3,9 @@
 # (The Supabase publishable key is public by design: it ships in the JS bundle.)
 # Build context: repository root (needs the pnpm workspace lockfile).
 
-FROM node:24-alpine AS build
+# Base images are pinned by digest so a rebuild can't silently pick up a different image; bump the
+# tag and digest together.
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build
 RUN npm install -g pnpm@12.6.0
 WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -34,7 +36,7 @@ RUN test -n "$VITE_API_URL" && test -n "$VITE_SUPABASE_URL" && \
       > /repo/sws.toml
 
 # static-web-server: tiny static (scratch-based) Rust file server.
-FROM joseluisq/static-web-server:2
+FROM joseluisq/static-web-server:2@sha256:2c1a7c3e0feaea5859307403b74e1c575f3ec1499094fc077344173d11abaae2
 COPY --from=build /repo/app/frontend/dist /public
 COPY --from=build /repo/sws.toml /sws.toml
 ENV SERVER_ROOT=/public \

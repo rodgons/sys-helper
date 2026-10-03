@@ -6,6 +6,8 @@ import type { ArchitectureDocument } from './model';
 export type SaveStatus = 'saved' | 'pending' | 'saving' | 'conflict' | 'error';
 
 const DELAY_MS = 1000;
+/** The most a keepalive request may send (the Fetch standard's limit, shared by in-flight ones). */
+const KEEPALIVE_LIMIT = 64 * 1024;
 
 /**
  * Saves the Architecture 1s after the last change. Each save sends the version it is based on; a
@@ -41,12 +43,15 @@ export function useAutosave(slug: string, initialVersion: number, onSaved?: () =
     const settled = track(st);
     setStatus('saving');
     try {
+      const body = JSON.stringify({ version: st.version, document });
       const res = await apiFetch<{ version: number }>(`/api/projects/${st.slug}/architecture`, {
         token: st.token,
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: st.version, document }),
-        keepalive,
+        body,
+        // Browsers reject keepalive requests whose body is over 64 KiB, so a big document goes as
+        // a normal request (which may still finish after the page is gone).
+        keepalive: keepalive && new Blob([body]).size <= KEEPALIVE_LIMIT,
       });
       st.version = res.version;
       st.saving = false;

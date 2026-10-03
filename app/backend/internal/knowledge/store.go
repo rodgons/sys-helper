@@ -39,9 +39,19 @@ type Store struct{ db *pgxpool.Pool }
 
 func NewStore(db *pgxpool.Pool) *Store { return &Store{db: db} }
 
+// Get reads the Project's knowledge from one snapshot, without the row lock writes take, so reads
+// never wait for them.
 func (s *Store) Get(ctx context.Context, userID, suffix string) (Knowledge, error) {
 	var k Knowledge
-	err := s.inProject(ctx, userID, suffix, func(tx pgx.Tx, projectID string) (err error) {
+	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		var projectID string
+		err := tx.QueryRow(ctx, `SELECT id FROM projects WHERE user_id = $1 AND slug_suffix = $2`, userID, suffix).Scan(&projectID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return projects.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
 		k, err = Load(ctx, tx, projectID)
 		return err
 	})
@@ -122,10 +132,15 @@ func (s *Store) SetExperienceLevel(ctx context.Context, userID, suffix, level st
 func (s *Store) DefaultExperienceLevel(ctx context.Context, userID string) (string, error) {
 	var level *string
 	err := s.db.QueryRow(ctx, `SELECT experience_level FROM user_settings WHERE user_id = $1`, userID).Scan(&level)
-	if errors.Is(err, pgx.ErrNoRows) || level == nil {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("read settings: %w", err)
+	case level == nil:
 		return "", nil
 	}
-	return *level, err
+	return *level, nil
 }
 
 // SetDefaultExperienceLevel sets the level every Project without its own uses; "" clears it.

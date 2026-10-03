@@ -11,19 +11,19 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 | `architecture/` | Canvas (React Flow): `canvas.tsx` (Editor + Proposal review), `model.ts` (catalog, doc ↔ flow), `proposal.ts`, `autosave.ts`, `layout.ts` (dagre), `nodes.tsx`, `shapes.tsx`, `dock.tsx`, `inspector.tsx` |
 | `conversation/` | Chat pane, markdown, Proposal card |
 | `knowledge/` | Right-pane tabs (`side-panel.tsx`), Requirements, Decisions |
-| `projects/`, `account/` | Sidebar, title, new-project form; Settings dialog |
+| `projects/`, `account/` | Sidebar, title, new-project form; Settings dialog (default Experience Level, and Delete account behind a second confirmation, which signs out on success) |
 | `ui/`, `design/` | Base components and StyleX tokens (the "design system") |
 
 ## Sign-in
 
-- `AuthProvider` (`lib/auth.tsx`) tracks the Supabase session. `signIn('github' | 'google')` starts that provider's OAuth and returns to `/projects`.
+- `AuthProvider` (`lib/auth.tsx`) tracks the Supabase session. `signIn('github' | 'google')` starts that provider's OAuth and returns to `/projects`. The client uses the PKCE flow (`lib/supabase.ts`): the redirect carries a one-time `?code=`, never tokens in the URL.
 - Sign-in lives on its own page, `/login` (`pages/login.tsx`): **Continue with GitHub** and **Continue with Google** as two equal outline buttons (neither is primary). The home page's **Get started** and the header's **Sign in** (hidden on `/login`) link to it with `ButtonRouteLink` (`ui/button.tsx`, a Button-styled router `Link`). Signed-in Users visiting `/login` go to `/projects`. Say "Google", never "Gmail".
 - `RequireUser` (`pages/require-user.tsx`) explains the API's refusals. `identity_required`: "Sign in with GitHub or Google to continue". `not_allowed`: reads the identities from the error body (`refusedIdentities` in `lib/me.ts`, via `ApiError.body`) and tells a GitHub User to ask with their username and a Google User to send their Google id, which it shows in a `CopyValue` (`ui/copy-value.tsx`). A linked User sees both.
 - `useMe()` returns `{displayName, avatarUrl}`. Avatars may come from GitHub or Google, so the production CSP (`Dockerfile`) admits `avatars.githubusercontent.com` and `lh3.googleusercontent.com`.
 
 ## Server state (TanStack Query)
 
-Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` only when signed in. Project-scoped keys use `slugSuffix(slug)`, so they survive renames.
+Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` only when signed in. Project-scoped keys use `slugSuffix(slug)`, so they survive renames. Keys aren't scoped to the User, so `main.tsx` clears the whole cache when a session ends (`AuthProvider`'s `onSignedOut`).
 
 | Key | Hook | Notes |
 | --- | --- | --- |
@@ -47,7 +47,7 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 ### Autosave (`architecture/autosave.ts`)
 
 - Debounced 1s PUT with the base version. On 409 it enters `conflict` and stops for good; the User must reload. Other errors keep the edits pending.
-- Unmount flushes with `keepalive`; `beforeunload` warns while a save is pending.
+- Unmount flushes with `keepalive` when the body fits the browser's 64 KiB keepalive limit, and with a plain fetch otherwise; `beforeunload` warns while a save is pending.
 - `commit(document, send)` waits for the in-flight save, then sends through a different endpoint and adopts the version it returns. Accepting a Proposal uses it, so canvas saves and accepts never race.
 
 ### Proposal review (`useProposalReview` + `architecture/proposal.ts`)
@@ -61,6 +61,7 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 
 - Send = `POST messages`, then `useReply().start()`, which streams `POST reply` through `readEvents` (fetch + manual SSE parsing, because the request needs an `Authorization` header).
 - On `done`, the reply is appended to the cache and any pending Proposal is marked `superseded`, mirroring the server.
+- The server saves a completed reply even if the client went away. So when a stream ends without `done` or `error` (the connection dropped), or `POST reply` answers `nothing_to_reply`, the chat reloads `['messages', suffix]` instead of only offering a retry.
 - When the User reviews the pending Proposal that ends the Conversation, the chat starts a reply automatically. Reviews from before page load only get a "Get a reply" button.
 
 ## Styling

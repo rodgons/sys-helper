@@ -97,7 +97,12 @@ func (a Allowlist) Admits(u User) bool {
 // Authenticator turns an access token into a User.
 type Authenticator struct {
 	Tokens interface {
-		UserID(token string) (string, error)
+		Verify(token string) (Token, error)
+	}
+	// Sessions refuses tokens whose session has ended (sign-out, revocation) or whose User is
+	// banned. Access tokens stay valid until they expire (an hour), so the signature alone can't.
+	Sessions interface {
+		Check(ctx context.Context, userID, sessionID string) error
 	}
 	Identities interface {
 		List(ctx context.Context, userID string) ([]Identity, error)
@@ -105,13 +110,16 @@ type Authenticator struct {
 }
 
 func (a Authenticator) Authenticate(ctx context.Context, token string) (User, error) {
-	id, err := a.Tokens.UserID(token)
+	t, err := a.Tokens.Verify(token)
 	if err != nil {
 		return User{}, err
 	}
-	identities, err := a.Identities.List(ctx, id)
+	if err := a.Sessions.Check(ctx, t.UserID, t.SessionID); err != nil {
+		return User{}, err
+	}
+	identities, err := a.Identities.List(ctx, t.UserID)
 	if err != nil {
 		return User{}, err
 	}
-	return User{ID: id, Identities: identities}, nil
+	return User{ID: t.UserID, Identities: identities}, nil
 }

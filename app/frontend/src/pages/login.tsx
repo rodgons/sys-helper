@@ -55,6 +55,11 @@ export function LoginPage() {
               Signing in with both under the same verified email keeps one account and the same
               projects.
             </Text>
+            <Text size="sm" tone="muted">
+              The AI architect runs on free third-party AI models through OpenRouter. Your messages,
+              canvas and requirements are sent to them, and their providers may log them or train on
+              them, so leave out secrets and personal data.
+            </Text>
           </Stack>
         </div>
       </Section>

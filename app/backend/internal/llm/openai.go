@@ -105,6 +105,12 @@ func (c OpenAIClient) Stream(ctx context.Context, req Request) iter.Seq2[Event, 
 			}
 			for _, choice := range ch.Choices {
 				d := choice.Delta
+				if len(d.ToolCalls) > 0 && len(calls) == 0 {
+					// Say the model has started, so a long call isn't taken for a model that hasn't.
+					if !yield(Event{Calling: true}, nil) {
+						return
+					}
+				}
 				for _, tc := range d.ToolCalls {
 					// A new id at a known index is a new call: some providers send whole calls without an index.
 					call := streaming[tc.Index]

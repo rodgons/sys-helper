@@ -96,7 +96,11 @@ const changesDocument = (c: NodeChange | EdgeChange) =>
   c.type === 'replace' ||
   (c.type === 'position' && !c.dragging);
 
-function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
+function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasProps) {
+  // The Proposal this canvas just accepted. The cached Conversation marks it accepted a render
+  // later; until then it still arrives as pending and must not be previewed on top of its result.
+  const [acceptedSeq, setAcceptedSeq] = useState<number | null>(null);
+  const proposal = pending?.seq === acceptedSeq ? undefined : pending;
   const [flow, setFlow] = useState(() => toFlow(initial.document));
   // Fit a saved architecture into view on load. An empty canvas must not fit: React Flow would wait
   // for the first component added and then re-centre the view on it, under the inspector.
@@ -130,6 +134,7 @@ function Editor({ slug, initial, proposal, onReview, onNames }: CanvasProps) {
     locked,
     autosave,
     update,
+    onAccepted: setAcceptedSeq,
   });
   useEffect(() => onNames?.(review.names), [onNames, review.names]);
 
@@ -393,6 +398,7 @@ function useProposalReview({
   locked,
   autosave,
   update,
+  onAccepted,
 }: {
   slug: string;
   proposal?: Proposal;
@@ -403,6 +409,8 @@ function useProposalReview({
   locked: { current: boolean };
   autosave: ReturnType<typeof useAutosave>;
   update: (nodes: ComponentNode[], edges: ConnectionEdge[], changed: boolean) => void;
+  /** Called with the Proposal's seq in the same render that puts its result on the canvas. */
+  onAccepted: (seq: number) => void;
 }) {
   const token = useToken();
   const setStatus = useSetProposalStatus(slug);
@@ -484,6 +492,7 @@ function useProposalReview({
         return res.version;
       });
       update(n, e, false);
+      onAccepted(proposal.seq);
       setStatus(proposal.seq, 'accepted');
       void refreshKnowledge();
       setProgress({ busy: false, error: null });

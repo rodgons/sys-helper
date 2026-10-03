@@ -2,6 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import { useEffect, useRef, useState } from 'react';
 import type { Review } from '../architecture/review';
 import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
+import { isLimit } from '../lib/api';
 import { useMessages, useReply, useSendMessage } from '../lib/conversation';
 import { Button } from '../ui/button';
 import { Text } from '../ui/typography';
@@ -173,10 +174,15 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
           }}
           {...stylex.props(styles.input)}
         />
+        <Text size="sm" tone="faint">
+          Replies come from third-party AI models that may log what you send. Leave out secrets.
+        </Text>
         <div {...stylex.props(styles.actions)}>
           <Text size="sm" tone={send.isError ? 'accent' : 'faint'}>
             {send.isError
-              ? "Couldn't send your message. Try again."
+              ? isLimit(send.error)
+                ? 'This conversation is full. Start a new project to continue.'
+                : "Couldn't send your message. Try again."
               : 'Enter to send · Shift+Enter for a new line'}
           </Text>
           <Button type="submit" size="sm" disabled={!canSend}>
