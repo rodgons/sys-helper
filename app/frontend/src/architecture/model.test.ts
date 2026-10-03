@@ -6,6 +6,7 @@ import {
   fromFlow,
   newComponentNode,
   newConnectionEdge,
+  spotlight,
   toFlow,
 } from './model';
 
@@ -114,5 +115,83 @@ describe('architecture model', () => {
     expect(
       COMPONENT_TYPES.find((t) => t.type === 'database')?.properties.map((p) => p.key),
     ).toEqual(['engine', 'replicas', 'sharding']);
+  });
+});
+
+describe('spotlight', () => {
+  // client → lb → api → db, plus a cache the api reads from and nothing else touches.
+  const chain = toFlow({
+    components: ['client', 'lb', 'api', 'db', 'cache', 'lonely'].map((id) => ({
+      id,
+      type: 'service',
+      name: id,
+      position: { x: 0, y: 0 },
+    })),
+    connections: [
+      { id: 'k1', source: 'client', target: 'lb', kind: 'sync' },
+      { id: 'k2', source: 'lb', target: 'api', kind: 'sync' },
+      { id: 'k3', source: 'api', target: 'db', kind: 'sync' },
+      { id: 'k4', source: 'api', target: 'cache', kind: 'sync' },
+    ],
+  });
+  const select = (...ids: string[]) => ({
+    nodes: chain.nodes.map((n) => ({ ...n, selected: ids.includes(n.id) })),
+    edges: chain.edges.map((e) => ({ ...e, selected: ids.includes(e.id) })),
+  });
+  const dimmed = ({ nodes, edges }: ReturnType<typeof spotlight>) =>
+    [...nodes, ...edges].filter((i) => i.data?.dimmed).map((i) => i.id);
+
+  it('leaves everything undimmed while nothing is selected', () => {
+    const flow = select();
+
+    expect(spotlight(flow.nodes, flow.edges)).toEqual(flow);
+  });
+
+  it('dims all but a selected component, its connections and their other ends', () => {
+    const flow = select('lb');
+
+    expect(dimmed(spotlight(flow.nodes, flow.edges))).toEqual([
+      'db',
+      'cache',
+      'lonely',
+      'k3',
+      'k4',
+    ]);
+  });
+
+  it('lights up around every selected component together', () => {
+    const flow = select('client', 'db');
+
+    expect(dimmed(spotlight(flow.nodes, flow.edges))).toEqual(['cache', 'lonely', 'k2', 'k4']);
+  });
+
+  it('dims all but a selected connection and its two ends', () => {
+    const flow = select('k2');
+
+    expect(dimmed(spotlight(flow.nodes, flow.edges))).toEqual([
+      'client',
+      'db',
+      'cache',
+      'lonely',
+      'k1',
+      'k3',
+      'k4',
+    ]);
+  });
+
+  it('dims everything else around a component with no connections', () => {
+    const flow = select('lonely');
+
+    expect(dimmed(spotlight(flow.nodes, flow.edges))).toEqual([
+      'client',
+      'lb',
+      'api',
+      'db',
+      'cache',
+      'k1',
+      'k2',
+      'k3',
+      'k4',
+    ]);
   });
 });

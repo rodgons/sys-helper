@@ -144,6 +144,35 @@ describe('ArchitectureCanvas', () => {
     expect(screen.getByRole('region', { name: 'Inspector' })).toHaveTextContent(/Select something/);
   });
 
+  it('dims everything but the clicked component and what it connects to, until deselected', () => {
+    stubSave();
+    const withCache = {
+      ...initial,
+      document: {
+        ...initial.document,
+        components: [
+          ...initial.document.components,
+          { id: 'cache', type: 'cache', name: 'Sessions', position: { x: 0, y: 200 } },
+        ],
+      },
+    };
+    renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={withCache} />, {
+      auth: signedIn(),
+    });
+    const dimmed = () =>
+      [...document.querySelectorAll('[data-dimmed]')].map((n) => n.textContent ?? '');
+
+    expect(dimmed()).toEqual([]);
+    fireEvent.click(screen.getByText('Orders API'));
+    expect(dimmed()).toEqual([expect.stringContaining('Sessions')]);
+
+    fireEvent.click(screen.getByText('Sessions'));
+    expect(dimmed()).toHaveLength(2);
+
+    fireEvent.keyDown(screen.getByTestId('rf__wrapper'), { key: 'Escape' });
+    expect(dimmed()).toEqual([]);
+  });
+
   it('edits and deletes the selected component through the inspector', async () => {
     const save = stubSave();
     renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
@@ -335,6 +364,16 @@ describe('ArchitectureCanvas', () => {
         const doc = (call[0].json as { document: ArchitectureDocument }).document;
         expect(doc.components.map((c) => c.id)).toContain('p2-cache');
       }
+    });
+
+    it('counts the previewed connections when dimming around the clicked component', () => {
+      setup();
+
+      fireEvent.click(screen.getByText('Orders DB'));
+
+      // The removed connection still joins it to the API; the new cache only touches the API.
+      const dimmed = [...document.querySelectorAll('[data-dimmed]')];
+      expect(dimmed.map((n) => n.textContent)).toEqual([expect.stringContaining('Order Cache')]);
     });
 
     it("can't be tidied up while it is previewed, which would move its new components", () => {

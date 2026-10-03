@@ -43,6 +43,7 @@ import {
   fromFlow,
   newComponentNode,
   newConnectionEdge,
+  spotlight,
   toFlow,
 } from './model';
 import { edgeTypes, nodeTypes } from './nodes';
@@ -151,8 +152,9 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
           data: { ...n.data, decisions: ds.length, needsReview: ds.some((d) => d.needsReview) },
         };
   };
+  // Dim everything the selection doesn't touch, counting the preview's connections.
   const base = review.preview ?? flow;
-  const shown = { nodes: base.nodes.map(decorate), edges: base.edges };
+  const shown = spotlight(base.nodes.map(decorate), base.edges);
 
   // Bring a new Proposal into view once its components have been measured.
   const fitted = useRef(0);
@@ -288,6 +290,10 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
           );
         }}
         onConnect={onConnect}
+        // Esc clears the selection, and with it the spotlight.
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') deselect();
+        }}
         onEdgeClick={(e, edge) =>
           setClicked({
             id: edge.id,
