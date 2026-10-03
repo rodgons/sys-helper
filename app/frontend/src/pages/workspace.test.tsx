@@ -1,5 +1,5 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Root } from '../root';
 import { LocationProbe, mockApi, renderWithQuery, signedIn } from '../test/render';
 
@@ -219,5 +219,186 @@ describe('Workspace', () => {
     renderAt('/p/url-shortener-k3xa9q2m7p');
 
     expect(await screen.findByText(/best on a screen at least 1024px wide/i)).toBeInTheDocument();
+  });
+});
+
+// Widths in px with a 16px rem: min 20rem, default 24rem, and the canvas keeps at least 32rem
+// beside the left pane (16rem open, 3rem collapsed).
+describe('Workspace side panel width', () => {
+  const MIN = 320;
+  const DEFAULT = 384;
+  const STORAGE_KEY = 'side-panel-width';
+
+  function setViewportWidth(width: number) {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    setViewportWidth(1600); // max 832 with the sidebar open, 1040 with it collapsed
+  });
+  afterEach(() => {
+    localStorage.clear();
+    setViewportWidth(1024);
+  });
+
+  async function handle() {
+    return screen.findByRole('separator', { name: 'Resize panel' });
+  }
+  const width = (separator: HTMLElement) => Number(separator.getAttribute('aria-valuenow'));
+
+  function drag(separator: HTMLElement, from: number, to: number) {
+    fireEvent.pointerDown(separator, { pointerId: 1, button: 0, clientX: from });
+    fireEvent.pointerMove(separator, { pointerId: 1, clientX: to });
+    fireEvent.pointerUp(separator, { pointerId: 1, clientX: to });
+  }
+
+  it('is a focusable vertical separator at the default width', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    const separator = await handle();
+
+    expect(separator).toHaveAttribute('aria-orientation', 'vertical');
+    expect(separator).toHaveAttribute('tabindex', '0');
+    expect(width(separator)).toBe(DEFAULT);
+    expect(separator).toHaveAttribute('aria-valuemin', String(MIN));
+    expect(separator).toHaveAttribute('aria-valuemax', '832');
+  });
+
+  it('widens and narrows the panel by dragging its border, for every tab', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const separator = await handle();
+
+    drag(separator, 1000, 900);
+    expect(width(separator)).toBe(DEFAULT + 100);
+
+    fireEvent.click(screen.getByRole('tab', { name: /Requirements/ }));
+    drag(separator, 900, 950);
+    expect(width(separator)).toBe(DEFAULT + 50);
+    fireEvent.click(screen.getByRole('tab', { name: /Decisions/ }));
+    expect(width(separator)).toBe(DEFAULT + 50);
+  });
+
+  it('stops dragging at the minimum width and where the canvas would get too narrow', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const separator = await handle();
+
+    drag(separator, 1000, 0);
+    expect(width(separator)).toBe(832);
+
+    drag(separator, 500, 1500);
+    expect(width(separator)).toBe(MIN);
+  });
+
+  it('steps with the arrow keys and jumps to the bounds with Home and End', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const separator = await handle();
+
+    fireEvent.keyDown(separator, { key: 'ArrowLeft' });
+    expect(width(separator)).toBe(DEFAULT + 16);
+    fireEvent.keyDown(separator, { key: 'ArrowRight' });
+    fireEvent.keyDown(separator, { key: 'ArrowRight' });
+    expect(width(separator)).toBe(DEFAULT - 16);
+
+    fireEvent.keyDown(separator, { key: 'End' });
+    expect(width(separator)).toBe(832);
+    fireEvent.keyDown(separator, { key: 'Home' });
+    expect(width(separator)).toBe(MIN);
+  });
+
+  it('allows a wider panel while the project list is collapsed, and re-clamps when it opens', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const separator = await handle();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide projects' }));
+    expect(separator).toHaveAttribute('aria-valuemax', '1040');
+    fireEvent.keyDown(separator, { key: 'End' });
+    expect(width(separator)).toBe(1040);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show projects' }));
+    expect(separator).toHaveAttribute('aria-valuemax', '832');
+    expect(width(separator)).toBe(832);
+  });
+
+  it('re-clamps when the window gets narrower', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const separator = await handle();
+    fireEvent.keyDown(separator, { key: 'End' });
+
+    act(() => setViewportWidth(1400));
+
+    expect(separator).toHaveAttribute('aria-valuemax', '632');
+    expect(width(separator)).toBe(632);
+  });
+
+  it('resets to the default width on a double-click', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const separator = await handle();
+    drag(separator, 1000, 800);
+
+    fireEvent.doubleClick(separator);
+
+    expect(width(separator)).toBe(DEFAULT);
+  });
+
+  it('keeps the chosen width while the panel is collapsed to the rail', async () => {
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    drag(await handle(), 1000, 900);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide chat' }));
+    expect(screen.queryByRole('separator', { name: 'Resize panel' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show chat' }));
+
+    expect(width(await handle())).toBe(DEFAULT + 100);
+  });
+
+  it('remembers the width in this browser', async () => {
+    stubApi();
+    const first = renderAt('/p/url-shortener-k3xa9q2m7p');
+    drag(await handle(), 1000, 900);
+    first.unmount();
+
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    expect(width(await handle())).toBe(DEFAULT + 100);
+  });
+
+  it.each([
+    ['missing', null],
+    ['invalid', 'wide'],
+    ['below the minimum', '100'],
+    ['beyond the maximum', '5000'],
+  ])('falls back to the default width when the stored one is %s', async (_, stored) => {
+    if (stored !== null) localStorage.setItem(STORAGE_KEY, stored);
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    expect(width(await handle())).toBe(DEFAULT);
+  });
+
+  it('still resizes at the default width when storage is blocked', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const separator = await handle();
+    expect(width(separator)).toBe(DEFAULT);
+
+    drag(separator, 1000, 900);
+
+    expect(width(separator)).toBe(DEFAULT + 100);
   });
 });

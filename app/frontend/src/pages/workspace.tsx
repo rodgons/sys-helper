@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
-import { useState } from 'react';
+import { type KeyboardEvent, type PointerEvent, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router';
 import { ArchitectureCanvas } from '../architecture/canvas';
 import type { Review } from '../architecture/review';
@@ -9,6 +9,7 @@ import { SidePanel } from '../knowledge/side-panel';
 import { ApiError } from '../lib/api';
 import { useArchitecture } from '../lib/architecture';
 import { usePendingProposal } from '../lib/conversation';
+import { usePanelWidth } from '../lib/panel-width';
 import { slugSuffix, useProject } from '../lib/projects';
 import { ProjectSidebar } from '../projects/project-sidebar';
 import { ProjectTitle } from '../projects/project-title';
@@ -16,6 +17,10 @@ import { Section, Stack } from '../ui/layout';
 import { ArrowLink } from '../ui/link';
 import { Display, Text } from '../ui/typography';
 import { RequireUser } from './require-user';
+
+// The left pane's widths in rem, open and collapsed to a rail. The side panel's bounds depend on it.
+const LEFT_OPEN_REM = 16;
+const LEFT_RAIL_REM = 3;
 
 /** `/p/:slug`: Projects on the left, the Architecture canvas in the middle, the Conversation on the right. */
 export function WorkspacePage() {
@@ -27,6 +32,8 @@ function Workspace({ slug }: { slug: string }) {
   const project = useProject(slug);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
+  const panel = usePanelWidth(sidebarOpen ? LEFT_OPEN_REM : LEFT_RAIL_REM);
+  const [resizing, setResizing] = useState(false);
   // The pending Proposal's review, published by the canvas so the chat can offer Accept too.
   const [review, setReview] = useState<Review | null>(null);
   // Current names of canvas items, for showing what Decisions explain.
@@ -57,7 +64,7 @@ function Workspace({ slug }: { slug: string }) {
   if (project.data.slug !== slug) return <Navigate to={`/p/${project.data.slug}`} replace />;
 
   return (
-    <main {...stylex.props(styles.workspace)}>
+    <main {...stylex.props(styles.workspace, resizing && styles.resizing)}>
       <p {...stylex.props(styles.notice)}>
         The workspace works best on a screen at least 1024px wide.
       </p>
@@ -65,7 +72,7 @@ function Workspace({ slug }: { slug: string }) {
         {...stylex.props(
           styles.panes,
           sidebarOpen ? styles.withSidebar : styles.withLeftRail,
-          panelOpen ? styles.withPanel : styles.withRightRail,
+          panelOpen ? styles.withPanel(`${panel.width}px`) : styles.withRightRail,
         )}
       >
         <div {...stylex.props(styles.pane, styles.left)}>
@@ -81,7 +88,12 @@ function Workspace({ slug }: { slug: string }) {
           </div>
           <CanvasPane slug={project.data.slug} onReview={setReview} onNames={setNames} />
         </section>
-        <aside aria-label="Project panel" {...stylex.props(styles.pane, styles.right)}>
+        <aside
+          id="project-panel"
+          aria-label="Project panel"
+          {...stylex.props(styles.pane, styles.right)}
+        >
+          {panelOpen && <PanelResizer panel={panel} onResizing={setResizing} />}
           <SidePanel
             key={slugSuffix(slug)}
             slug={project.data.slug}
@@ -93,6 +105,82 @@ function Workspace({ slug }: { slug: string }) {
         </aside>
       </div>
     </main>
+  );
+}
+
+/**
+ * The border between the canvas and the side panel: drag it, or focus it and use the arrow keys
+ * (Home/End jump to the bounds), to resize the panel. A double-click restores the default width.
+ */
+function PanelResizer({
+  panel,
+  onResizing,
+}: {
+  panel: ReturnType<typeof usePanelWidth>;
+  onResizing: (resizing: boolean) => void;
+}) {
+  const drag = useRef<{ x: number; width: number } | null>(null);
+  // Moving the border left widens the panel, which sits on the right.
+  const widthAt = (x: number) => (drag.current ? drag.current.width + drag.current.x - x : 0);
+
+  function onPointerDown(e: PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    e.preventDefault(); // no text selection, no focus jump
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Not capturable (e.g. a synthetic pointer): moves over the handle still resize.
+    }
+    drag.current = { x: e.clientX, width: panel.width };
+    onResizing(true);
+  }
+  function onPointerMove(e: PointerEvent<HTMLDivElement>) {
+    if (drag.current) panel.set(widthAt(e.clientX));
+  }
+  function onPointerUp(e: PointerEvent<HTMLDivElement>) {
+    if (!drag.current) return;
+    panel.commit(widthAt(e.clientX));
+    drag.current = null;
+    onResizing(false);
+  }
+  function onPointerCancel() {
+    if (!drag.current) return;
+    panel.commit(panel.width);
+    drag.current = null;
+    onResizing(false);
+  }
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const next = {
+      ArrowLeft: panel.width + panel.step,
+      ArrowRight: panel.width - panel.step,
+      Home: panel.min,
+      End: panel.max,
+    }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    panel.commit(next);
+  }
+
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: an <hr> can't be focused or dragged; this is the ARIA window splitter pattern.
+    <div
+      role="separator"
+      aria-label="Resize panel"
+      aria-orientation="vertical"
+      aria-controls="project-panel"
+      aria-valuenow={panel.width}
+      aria-valuemin={panel.min}
+      aria-valuemax={panel.max}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onPointerCancel}
+      onDoubleClick={panel.reset}
+      onKeyDown={onKeyDown}
+      {...stylex.props(styles.resizer)}
+    />
   );
 }
 
@@ -129,6 +217,33 @@ function CanvasPane({
 }
 
 const styles = stylex.create({
+  // While dragging the panel's border: the resize cursor everywhere, and no text selection.
+  resizing: { cursor: 'col-resize', userSelect: 'none' },
+  // A hit area straddling the panel's left border, which lights up as a thicker rule.
+  resizer: {
+    position: 'absolute',
+    zIndex: 1,
+    top: 0,
+    bottom: 0,
+    left: `calc(${space['--space-1']} * -1)`,
+    width: space['--space-2'],
+    cursor: 'col-resize',
+    touchAction: 'none',
+    outline: 'none',
+    '::after': {
+      content: '""',
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      left: '50%',
+      width: 2,
+      transform: 'translateX(-50%)',
+      backgroundColor: 'transparent',
+    },
+    ':hover::after': { backgroundColor: color['--color-accent'] },
+    ':focus-visible::after': { backgroundColor: color['--color-accent'] },
+    ':active::after': { backgroundColor: color['--color-accent'] },
+  },
   workspace: {
     display: 'flex',
     flexDirection: 'column',
@@ -150,9 +265,10 @@ const styles = stylex.create({
     minWidth: '64rem',
   },
   // The left and right pane widths are set independently, through the CSS variables the grid reads.
-  withSidebar: { '--left-w': '16rem' },
-  withLeftRail: { '--left-w': '3rem' },
-  withPanel: { '--right-w': '24rem' },
+  withSidebar: { '--left-w': `${LEFT_OPEN_REM}rem` },
+  withLeftRail: { '--left-w': `${LEFT_RAIL_REM}rem` },
+  // The User's chosen width (`usePanelWidth`), already clamped.
+  withPanel: (width: string) => ({ '--right-w': width }),
   withRightRail: { '--right-w': '3rem' },
   pane: { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 },
   left: {
@@ -177,6 +293,7 @@ const styles = stylex.create({
   },
   placeholder: { display: 'grid', placeItems: 'center', flexGrow: 1 },
   right: {
+    position: 'relative',
     borderLeftWidth: 1,
     borderLeftStyle: 'solid',
     borderLeftColor: color['--color-line'],

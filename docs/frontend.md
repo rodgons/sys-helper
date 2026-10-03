@@ -39,6 +39,12 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 - `Review`: the pending Proposal's accept/reject actions, staleness and progress.
 - `names`: canvas id → display name.
 
+### Side panel width (`lib/panel-width.ts`)
+
+- The User resizes the side panel by dragging the border between it and the canvas (pointer events with pointer capture; `resizing` on `<main>` sets the resize cursor and blocks text selection), or from the keyboard: the border is a focusable vertical `separator` ("Resize panel", `aria-valuenow`/`min`/`max` in px). Arrow keys step 1rem, Home/End jump to the bounds and a double-click resets to the default 24rem. The width applies to all three tabs, because it is the grid's `--right-w`.
+- Bounds: min 20rem; max keeps the canvas at least 32rem wide beside the left pane's current width (16rem open, 3rem rail, the `LEFT_*_REM` constants in `workspace.tsx`), within the panes' 64rem minimum. `usePanelWidth` keeps the chosen width and clamps only what it shows, so it re-clamps when the window resizes or the sidebar toggles, and a window that grows back restores the choice.
+- Stored per browser in `localStorage` (`side-panel-width`, px), never on the server. Like the theme, reads and writes are guarded: a missing, non-numeric, out-of-bounds or blocked value falls back to 24rem. Collapsing the panel to its rail keeps the width; reopening restores it.
+
 ### Canvas (`architecture/canvas.tsx`)
 
 - `Editor` holds `{nodes, edges}` in state plus a `latest` ref. Every user edit goes through `update(nodes, edges, changed)`, which schedules autosave when `changed`. Display-only data (`diff`, `decisions`, `needsReview`, `dimmed`) is added at render and never saved. `fromFlow` drops it.
