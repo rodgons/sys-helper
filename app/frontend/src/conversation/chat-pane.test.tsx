@@ -150,6 +150,17 @@ describe('ChatPane', () => {
     expect(box()).toHaveValue('Important context');
   });
 
+  it('says when the conversation is full', async () => {
+    setup({
+      [`POST ${API}/messages`]: { status: 409, body: { error: 'limit_reached', detail: 'full' } },
+    });
+
+    await send('One too many');
+
+    expect(await screen.findByText(/conversation is full/i)).toBeInTheDocument();
+    expect(box()).toHaveValue('One too many');
+  });
+
   it('explains the daily AI limit and keeps the message for a later reply', async () => {
     setup({ [`POST ${API}/reply`]: { status: 429, body: { error: 'daily_limit' } } });
 

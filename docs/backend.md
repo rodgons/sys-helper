@@ -58,7 +58,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 
 ## Limits
 
-Every Requirement and Decision goes into each AI prompt, so storage is capped: `projects.MaxProjects` (50 per User, counted under a per-User advisory lock), `knowledge.MaxRequirements` and `MaxDecisions` (200 per Project, counted under the Project row lock), and `knowledge.MaxReferences` (50 targets and 50 cited Requirements per Decision, also a SQL `check`). Over a limit → 409 `limit_reached`. `proposal.Validate` applies the same caps so the model is told before the User accepts.
+Every Requirement and Decision goes into each AI prompt, so storage is capped: `projects.MaxProjects` (50 per User, counted under a per-User advisory lock), `knowledge.MaxRequirements` and `MaxDecisions` (200 per Project, counted under the Project row lock), and `knowledge.MaxReferences` (50 targets and 50 cited Requirements per Decision, also a SQL `check`). `conversation.MaxMessages` (500 per Project, counted under the Project row lock) bounds a Conversation, which the page loads whole; only a User's message is refused at the cap. Over a limit → 409 `limit_reached`. `proposal.Validate` applies the same caps so the model is told before the User accepts.
 
 ## Endpoints
 
@@ -70,7 +70,7 @@ All under `/api`, all need a User.
 | `GET, PUT /settings` | `{experienceLevel}`; `""` clears the default |
 | `GET, POST /projects` · `GET, PATCH, DELETE /projects/{slug}` | `{slug, name, updatedAt}`; list is newest first |
 | `GET, PUT /projects/{slug}/architecture` | `{version, document}`; PUT returns the new `version` |
-| `GET, POST /projects/{slug}/messages` | POST takes `{body}`; role is always `user` |
+| `GET, POST /projects/{slug}/messages` | POST takes `{body}`; role is always `user`; 409 `limit_reached` once the Conversation has 500 Messages |
 | `POST /projects/{slug}/reply` | SSE `delta` / `done` / `error`; see `docs/ai.md` |
 | `POST /projects/{slug}/proposals/{seq}/accept` | body `{version, document}` = the canvas with the Proposal applied |
 | `POST /projects/{slug}/proposals/{seq}/reject` | |

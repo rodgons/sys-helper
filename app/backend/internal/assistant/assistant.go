@@ -34,7 +34,7 @@ var (
 type Assistant struct {
 	Model         llm.ChatModel
 	Conversations interface {
-		List(ctx context.Context, userID, suffix string) ([]conversation.Message, error)
+		Recent(ctx context.Context, userID, suffix string, n int) ([]conversation.Message, error)
 		AppendReply(ctx context.Context, userID, suffix, body, model string, changes *proposal.Changes, baseVersion int) (conversation.Message, error)
 	}
 	Architectures interface {
@@ -80,7 +80,8 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	}
 	defer a.inFlight.Delete(key)
 
-	msgs, err := a.Conversations.List(ctx, userID, suffix)
+	// The model sees only the recent history, so only that is read.
+	msgs, err := a.Conversations.Recent(ctx, userID, suffix, a.HistoryLimit)
 	if err != nil {
 		return conversation.Message{}, err
 	}

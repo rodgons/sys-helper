@@ -26,15 +26,17 @@ type fakeConversations struct {
 	mu     sync.Mutex
 	msgs   []conversation.Message
 	models []string // the model AppendReply was given for each reply
+	asked  []int    // how many recent Messages each Recent call asked for
 }
 
-func (f *fakeConversations) List(_ context.Context, _, suffix string) ([]conversation.Message, error) {
+func (f *fakeConversations) Recent(_ context.Context, _, suffix string, n int) ([]conversation.Message, error) {
 	if suffix != "s" {
 		return nil, projects.ErrNotFound
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]conversation.Message(nil), f.msgs...), nil
+	f.asked = append(f.asked, n)
+	return append([]conversation.Message(nil), f.msgs[max(0, len(f.msgs)-n):]...), nil
 }
 
 func (f *fakeConversations) Append(_ context.Context, _, _ string, role conversation.Role, body string) (conversation.Message, error) {
@@ -187,6 +189,10 @@ func TestReply(t *testing.T) {
 		history := req.Messages[1:]
 		if len(history) != 4 || history[0].Content != "two" || history[3].Content != "five" || history[3].Role != llm.RoleUser {
 			t.Errorf("history = %+v", history)
+		}
+		// Only the history the model sees is read, however long the Conversation is.
+		if len(c.asked) != 1 || c.asked[0] != 4 {
+			t.Errorf("Recent asked for %v Messages, want [4]", c.asked)
 		}
 	})
 

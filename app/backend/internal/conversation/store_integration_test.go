@@ -58,6 +58,35 @@ func TestStore(t *testing.T) {
 		}
 	})
 
+	t.Run("reads the most recent messages, oldest first", func(t *testing.T) {
+		user, suffix := newProject(t)
+		for _, body := range []string{"one", "two", "three"} {
+			if _, err := store.Append(ctx, user, suffix, conversation.RoleUser, body); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		msgs, err := store.Recent(ctx, user, suffix, 2)
+		if err != nil || len(msgs) != 2 || msgs[0].Body != "two" || msgs[1].Body != "three" {
+			t.Errorf("Recent = %+v, %v", msgs, err)
+		}
+	})
+
+	t.Run("refuses a user message once the conversation is full", func(t *testing.T) {
+		user, suffix := newProject(t)
+		// Fill it directly: the Welcome Message plus enough to reach the cap.
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO messages (id, project_id, role, body)
+			SELECT gen_random_uuid(), p.id, 'user', 'filler' FROM projects p, generate_series(2, $2)
+			WHERE p.slug_suffix = $1`, suffix, conversation.MaxMessages); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := store.Append(ctx, user, suffix, conversation.RoleUser, "one more"); !errors.Is(err, conversation.ErrLimit) {
+			t.Errorf("Append to a full conversation: err = %v, want ErrLimit", err)
+		}
+	})
+
 	t.Run("hides other users' conversations", func(t *testing.T) {
 		_, suffix := newProject(t)
 		intruder := testdb.User(t, pool, "hubot")
@@ -67,6 +96,9 @@ func TestStore(t *testing.T) {
 		}
 		if _, err := store.Append(ctx, intruder, suffix, conversation.RoleUser, "hi"); !errors.Is(err, projects.ErrNotFound) {
 			t.Errorf("Append: err = %v, want ErrNotFound", err)
+		}
+		if _, err := store.Recent(ctx, intruder, suffix, 5); !errors.Is(err, projects.ErrNotFound) {
+			t.Errorf("Recent: err = %v, want ErrNotFound", err)
 		}
 	})
 }

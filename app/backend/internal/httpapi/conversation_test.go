@@ -13,7 +13,10 @@ import (
 )
 
 // fakeConversations holds octocat's conversation for the suffix k3xa9q2m7p.
-type fakeConversations struct{ msgs []conversation.Message }
+type fakeConversations struct {
+	msgs []conversation.Message
+	full bool // Append refuses with ErrLimit
+}
 
 func (f *fakeConversations) List(_ context.Context, userID, suffix string) ([]conversation.Message, error) {
 	if userID != octocat.ID || suffix != "k3xa9q2m7p" {
@@ -25,6 +28,9 @@ func (f *fakeConversations) List(_ context.Context, userID, suffix string) ([]co
 func (f *fakeConversations) Append(_ context.Context, userID, suffix string, role conversation.Role, body string) (conversation.Message, error) {
 	if userID != octocat.ID || suffix != "k3xa9q2m7p" {
 		return conversation.Message{}, projects.ErrNotFound
+	}
+	if f.full {
+		return conversation.Message{}, conversation.ErrLimit
 	}
 	m := conversation.Message{Role: role, Body: body, CreatedAt: time.Unix(60, 0).UTC()}
 	f.msgs = append(f.msgs, m)
@@ -86,6 +92,17 @@ func TestConversation(t *testing.T) {
 		}
 		if len(store.msgs) != 1 {
 			t.Errorf("stored %d messages, want 1", len(store.msgs))
+		}
+	})
+
+	t.Run("refuses a message once the conversation is full", func(t *testing.T) {
+		deps, store := newDeps()
+		store.full = true
+
+		rec := call(t, deps, http.MethodPost, path, `{"body":"one more"}`)
+
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"limit_reached"`) {
+			t.Errorf("status = %d, body = %s; want 409 limit_reached", rec.Code, rec.Body)
 		}
 	})
 
