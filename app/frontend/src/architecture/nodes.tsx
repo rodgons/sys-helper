@@ -8,7 +8,7 @@ import {
   type NodeProps,
   Position,
 } from '@xyflow/react';
-import { color, font, radius, space, text } from '../design/tokens.stylex';
+import { color, font, media, radius, space, text } from '../design/tokens.stylex';
 import { type ComponentNode, type ConnectionEdge, typeDef } from './model';
 import { lookOf, SHAPES } from './shapes';
 
@@ -38,10 +38,13 @@ export function ComponentNodeView({ data, selected, width, height }: NodeProps<C
     <div
       data-shape={look.shape}
       data-diff={data.diff}
+      data-dimmed={data.dimmed || undefined}
       {...stylex.props(
         styles.node,
         styles.pad(...shape.pad),
+        styles.fade,
         data.diff === 'removed' && styles.faded,
+        data.dimmed && (data.diff === 'removed' ? styles.dimmedFaded : styles.dimmed),
       )}
     >
       <svg aria-hidden="true" {...stylex.props(styles.outline)}>
@@ -100,13 +103,15 @@ export function ConnectionEdgeView({
   const [path, labelX, labelY] = getBezierPath(geometry);
   const kind = data?.kind ?? 'sync';
   const label = [kind === 'sync' ? '' : kind, data?.label].filter(Boolean).join(' · ');
-  const labelProps = stylex.props(styles.edgeLabel, styles.at(labelX, labelY));
+  const dimmed = data?.dimmed && (data.diff === 'removed' ? styles.dimmedFaded : styles.dimmed);
+  const labelProps = stylex.props(styles.edgeLabel, styles.fade, dimmed, styles.at(labelX, labelY));
   return (
     <>
       <BaseEdge
         id={id}
         path={path}
         markerEnd={markerEnd}
+        {...stylex.props(styles.fade, data?.diff === 'removed' && styles.faded, dimmed)}
         style={{
           strokeDasharray: DASH[kind],
           stroke: data?.diff
@@ -115,7 +120,6 @@ export function ConnectionEdgeView({
               ? color['--color-accent']
               : color['--color-line-strong'],
           strokeWidth: selected || data?.diff ? 2 : 1.5,
-          opacity: data?.diff === 'removed' ? 0.5 : 1,
         }}
       />
       {label && (
@@ -150,6 +154,14 @@ const styles = stylex.create({
     paddingLeft: left,
   }),
   faded: { opacity: 0.5 },
+  // The spotlight on a selection: what it doesn't touch recedes, and a removed item further still,
+  // so it never reads as merely dimmed.
+  dimmed: { opacity: 0.25 },
+  dimmedFaded: { opacity: 0.12 },
+  fade: {
+    transitionProperty: 'opacity',
+    transitionDuration: { default: '150ms', [media.reducedMotion]: '0s' },
+  },
   outline: {
     position: 'absolute',
     inset: 0,

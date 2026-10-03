@@ -39,9 +39,17 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 - `Review`: the pending Proposal's accept/reject actions, staleness and progress.
 - `names`: canvas id → display name.
 
+### Side panel width (`lib/panel-width.ts`)
+
+- The User resizes the side panel by dragging the border between it and the canvas (pointer events with pointer capture; `resizing` on `<main>` sets the resize cursor and blocks text selection), or from the keyboard: the border is a focusable vertical `separator` ("Resize panel", `aria-valuenow`/`min`/`max` in px). Arrow keys step 1rem, Home/End jump to the bounds and a double-click resets to the default 24rem. The width applies to all three tabs, because it is the grid's `--right-w`.
+- Bounds: min 20rem; max keeps the canvas at least 32rem wide beside the left pane's current width (16rem open, 3rem rail, the `LEFT_*_REM` constants in `workspace.tsx`), within the panes' 64rem minimum. `usePanelWidth` keeps the chosen width and clamps only what it shows, so it re-clamps when the window resizes or the sidebar toggles, and a window that grows back restores the choice.
+- Stored per browser in `localStorage` (`side-panel-width`, px), never on the server. Like the theme, reads and writes are guarded: a missing, non-numeric, out-of-bounds or blocked value falls back to 24rem. Collapsing the panel to its rail keeps the width; reopening restores it.
+
 ### Canvas (`architecture/canvas.tsx`)
 
-- `Editor` holds `{nodes, edges}` in state plus a `latest` ref. Every user edit goes through `update(nodes, edges, changed)`, which schedules autosave when `changed`. Display-only data (`diff`, `decisions`, `needsReview`) is added at render and never saved. `fromFlow` drops it.
+- `Editor` holds `{nodes, edges}` in state plus a `latest` ref. Every user edit goes through `update(nodes, edges, changed)`, which schedules autosave when `changed`. Display-only data (`diff`, `decisions`, `needsReview`, `dimmed`) is added at render and never saved. `fromFlow` drops it.
+- Spotlight (`model.ts` `spotlight`): while anything is selected, everything it doesn't touch is `dimmed`. That means the selection, a selected Component's Connections and their other ends, and a selected Connection's two ends. It runs on what is shown, so a Proposal preview's new and removed Connections count. Dimmed items stay fully interactive.
+- Component window: a click selects a Component, and clicking it again while it is the only selection opens its Inspector beside it (`opened`). A Component added from the dock opens straight away. Closing the window, or the first Esc, keeps the selection and the spotlight. The next Esc clears both.
 - Component Types: `model.ts` `COMPONENT_TYPES` (labels, property fields) and `shapes.tsx` `LOOKS` (icon + outline). Both must match the Go catalog.
 
 ### Autosave (`architecture/autosave.ts`)
