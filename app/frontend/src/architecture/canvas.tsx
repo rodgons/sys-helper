@@ -43,6 +43,7 @@ import {
   fromFlow,
   newComponentNode,
   newConnectionEdge,
+  spotlight,
   toFlow,
 } from './model';
 import { edgeTypes, nodeTypes } from './nodes';
@@ -115,6 +116,10 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
   const wrapper = useRef<HTMLDivElement>(null);
   // Where the last connection was clicked, on the canvas, so its window opens there.
   const [clicked, setClicked] = useState<({ id: string } & XY) | null>(null);
+  // The component whose window is open. A click selects a component; clicking it again opens it.
+  const [opened, setOpened] = useState<string | null>(null);
+  // The one component selected as of the last render, i.e. before the click being handled.
+  const selectedBefore = useRef<string | null>(null);
 
   // Set while a Proposal is being accepted. The accept sends the canvas as it was when the User
   // clicked, so an edit made meanwhile would either be lost or, saved afterwards, undo the Proposal.
@@ -151,8 +156,9 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
           data: { ...n.data, decisions: ds.length, needsReview: ds.some((d) => d.needsReview) },
         };
   };
+  // Dim everything the selection doesn't touch, counting the preview's connections.
   const base = review.preview ?? flow;
-  const shown = { nodes: base.nodes.map(decorate), edges: base.edges };
+  const shown = spotlight(base.nodes.map(decorate), base.edges);
 
   // Bring a new Proposal into view once its components have been measured.
   const fitted = useRef(0);
@@ -193,6 +199,8 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
     const wanted = { x: center.x - 90, y: center.y - 32 };
     const position = at ? wanted : freeSpot(wanted, latest.current.nodes);
     const node = newComponentNode(type, position, latest.current.nodes);
+    // A new component opens straight away, to be named.
+    setOpened(node.id);
     update(
       [
         ...latest.current.nodes.map((n) => ({ ...n, selected: false })),
@@ -241,9 +249,12 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
 
   const selectedNodes = nodes.filter((n) => n.selected);
   const selectedEdges = edges.filter((e) => e.selected);
-  // One selected component is edited in a window beside it, which follows it as it is dragged, and
-  // one clicked connection in a window where it was clicked; anything else in the corner panel.
-  const [floating] = selectedNodes.length === 1 && selectedEdges.length === 0 ? selectedNodes : [];
+  // One selected component is edited in a window beside it once opened, which follows it as it is
+  // dragged, and one clicked connection in a window where it was clicked; anything else in the
+  // corner panel.
+  const [only] = selectedNodes.length === 1 && selectedEdges.length === 0 ? selectedNodes : [];
+  selectedBefore.current = only?.id ?? null;
+  const floating = only && only.id === opened ? only : undefined;
   const [floatingEdge] =
     selectedNodes.length === 0 && selectedEdges.length === 1 ? selectedEdges : [];
   const edgeAnchor = floatingEdge && clicked?.id === floatingEdge.id ? clicked : null;
@@ -251,12 +262,14 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
     <Inspector
       slug={slug}
       saved={autosave.status === 'saved'}
-      nodes={selectedNodes}
+      nodes={only && !floating ? [] : selectedNodes}
       edges={selectedEdges}
+      hint={only && !floating ? 'Click it again to edit it.' : undefined}
       onEditComponent={editComponent}
       onEditConnection={editConnection}
       onRemove={remove}
-      onClose={deselect}
+      // Closing a component's window keeps it selected, and the spotlight on it.
+      onClose={floating ? () => setOpened(null) : deselect}
     />
   );
 
@@ -288,6 +301,14 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
           );
         }}
         onConnect={onConnect}
+        onNodeClick={(_, node) => setOpened(selectedBefore.current === node.id ? node.id : null)}
+        onPaneClick={() => setOpened(null)}
+        // Esc closes the component's window, then clears the selection and with it the spotlight.
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape') return;
+          if (floating) setOpened(null);
+          else deselect();
+        }}
         onEdgeClick={(e, edge) =>
           setClicked({
             id: edge.id,

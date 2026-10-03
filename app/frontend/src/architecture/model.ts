@@ -112,12 +112,13 @@ export type ComponentData = {
   type: string;
   name: string;
   properties: Record<string, string>;
-  // Display only, never saved: the Proposal preview marker and the Decision badge.
+  // Display only, never saved: the Proposal preview marker, the Decision badge and the spotlight.
   diff?: Diff;
   decisions?: number;
   needsReview?: boolean;
+  dimmed?: boolean;
 };
-export type ConnectionData = { kind: ConnectionKind; label: string; diff?: Diff };
+export type ConnectionData = { kind: ConnectionKind; label: string; diff?: Diff; dimmed?: boolean };
 export type ComponentNode = Node<ComponentData, 'component'>;
 export type ConnectionEdge = Edge<ConnectionData, 'connection'>;
 
@@ -164,6 +165,29 @@ export function fromFlow(nodes: ComponentNode[], edges: ConnectionEdge[]): Archi
       kind: e.data?.kind ?? 'sync',
       ...(e.data?.label && { label: e.data.label }),
     })),
+  };
+}
+
+/**
+ * Dims everything but the selection and what it touches: a selected Component's Connections and
+ * the Components at their other ends, and a selected Connection's two ends. Nothing is dimmed while
+ * nothing is selected.
+ */
+export function spotlight(
+  nodes: ComponentNode[],
+  edges: ConnectionEdge[],
+): { nodes: ComponentNode[]; edges: ConnectionEdge[] } {
+  const selected = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
+  const litEdges = edges.filter(
+    (e) => e.selected || selected.has(e.source) || selected.has(e.target),
+  );
+  if (selected.size === 0 && litEdges.length === 0) return { nodes, edges };
+  const lit = new Set([...selected, ...litEdges.flatMap((e) => [e.id, e.source, e.target])]);
+  return {
+    nodes: nodes.map((n) => (lit.has(n.id) ? n : { ...n, data: { ...n.data, dimmed: true } })),
+    edges: edges.map((e) =>
+      lit.has(e.id) ? e : { ...e, data: { ...(e.data as ConnectionData), dimmed: true } },
+    ),
   };
 }
 
