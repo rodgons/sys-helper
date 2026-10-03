@@ -136,7 +136,7 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 		if call == nil {
 			break
 		}
-		changes, problem := parseChanges(call.Arguments, arch.Document, known)
+		changes, problem := parseChanges(*call, arch.Document, known)
 		if problem == nil {
 			accepted = &changes
 			break
@@ -176,8 +176,8 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	return a.Conversations.AppendReply(context.WithoutCancel(ctx), userID, suffix, body, model, accepted, arch.Version)
 }
 
-// stream runs one model call, forwarding text to onText. It returns the text, the first
-// propose_changes call, if any, and the model that answered ("" if unknown).
+// stream runs one model call, forwarding text to onText. It returns the text, the first tool
+// call, if any, and the model that answered ("" if unknown).
 func (a *Assistant) stream(ctx context.Context, req llm.Request, onText func(string)) (text string, call *llm.ToolCall, model string, err error) {
 	var b strings.Builder
 	for ev, err := range a.Model.Stream(ctx, req) {
@@ -191,17 +191,19 @@ func (a *Assistant) stream(ctx context.Context, req llm.Request, onText func(str
 			b.WriteString(ev.Text)
 			onText(ev.Text)
 		}
-		if ev.ToolCall != nil && ev.ToolCall.Name == proposal.Tool.Name && call == nil {
+		if ev.ToolCall != nil && call == nil {
 			call = ev.ToolCall
 		}
 	}
 	return b.String(), call, model, nil
 }
 
-func parseChanges(arguments string, doc architecture.Document, known knowledge.Knowledge) (proposal.Changes, error) {
-	var changes proposal.Changes
-	if err := json.Unmarshal([]byte(arguments), &changes); err != nil {
-		return proposal.Changes{}, fmt.Errorf("arguments are not valid JSON for this tool: %w", err)
+// parseChanges reads a tool call as a Proposal and checks it. Calls to other tools are invalid
+// too, so the model hears about them instead of the reply ending empty.
+func parseChanges(call llm.ToolCall, doc architecture.Document, known knowledge.Knowledge) (proposal.Changes, error) {
+	changes, err := proposal.FromCall(call.Name, call.Arguments)
+	if err != nil {
+		return proposal.Changes{}, err
 	}
 	changes.Normalize()
 	return changes, changes.Validate(doc, known)
@@ -299,7 +301,7 @@ func describeKnowledge(k knowledge.Knowledge) string {
 	var b strings.Builder
 	level := k.ExperienceLevel
 	if level == "" {
-		level = "unknown (ask early, then record it with set_experience_level)"
+		level = "unknown (ask early, then record it with a set_experience_level change in propose_changes)"
 	}
 	fmt.Fprintf(&b, "The user's experience level: %s.\n\nRequirements:\n", level)
 

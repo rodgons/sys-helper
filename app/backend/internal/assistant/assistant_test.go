@@ -1,6 +1,7 @@
 package assistant_test
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -339,6 +340,7 @@ type turns struct {
 type turn struct {
 	text  string
 	args  string // propose_changes arguments; empty for none
+	tool  string // the tool called with args, if not propose_changes
 	model string // the model id on each event
 	err   error  // fails the call before anything is sent
 }
@@ -358,7 +360,8 @@ func (s *turns) Stream(_ context.Context, req llm.Request) iter.Seq2[llm.Event, 
 			return
 		}
 		if t.args != "" {
-			yield(llm.Event{ToolCall: &llm.ToolCall{ID: "call_1", Name: "propose_changes", Arguments: t.args}, Model: t.model}, nil)
+			name := cmp.Or(t.tool, "propose_changes")
+			yield(llm.Event{ToolCall: &llm.ToolCall{ID: "call_1", Name: name, Arguments: t.args}, Model: t.model}, nil)
 		}
 	}
 }
@@ -457,6 +460,32 @@ func TestProposals(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("takes a call named after an op as a proposal of that change", func(t *testing.T) {
+		// Nemotron 3 Super called set_experience_level as a tool and sent no text, which used to
+		// fail the reply as empty.
+		m := &turns{turns: []turn{{tool: "set_experience_level", args: `{"level": "expert"}`}}}
+
+		msg, err := newAssistant(m, conv("Welcome", "Design a URL shortener")).Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal == nil || msg.Proposal.Changes[0].Level != "expert" || msg.Body != "Set experience level" {
+			t.Fatalf("message = %+v, err = %v", msg, err)
+		}
+	})
+
+	t.Run("sends a call to an unknown tool back to the model", func(t *testing.T) {
+		m := &turns{turns: []turn{{text: "Let me draw it.", tool: "draw_diagram", args: `{}`}, {text: " Here it is.", args: validArgs}}}
+
+		msg, err := newAssistant(m, conv("Welcome", "Add a cache")).Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal == nil {
+			t.Fatalf("message = %+v, err = %v", msg, err)
+		}
+		retry := m.reqs[1].Messages
+		if result := retry[len(retry)-1]; result.Role != llm.RoleTool || !strings.Contains(result.Content, "no draw_diagram tool") {
+			t.Errorf("tool result = %+v", result)
+		}
+	})
 
 	t.Run("meters every model call, including the retry", func(t *testing.T) {
 		bad := `{"summary": "Add a cache", "changes": [{"op": "add_connection", "source": "ghost", "target": "db", "kind": "sync"}]}`
