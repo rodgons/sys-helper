@@ -61,6 +61,13 @@ func (f *fakeConversations) AppendReply(_ context.Context, _, _ string, body, mo
 
 type fakeArchitectures struct{}
 
+// staticArchitecture serves one document at version 1.
+type staticArchitecture architecture.Document
+
+func (d staticArchitecture) Get(context.Context, string, string) (architecture.Versioned, error) {
+	return architecture.Versioned{Version: 1, Document: architecture.Document(d)}, nil
+}
+
 func (fakeArchitectures) Get(context.Context, string, string) (architecture.Versioned, error) {
 	doc := architecture.Empty()
 	doc.Components = append(doc.Components, architecture.Component{ID: "db", Type: "database", Name: "Orders DB"})
@@ -217,6 +224,54 @@ func TestReply(t *testing.T) {
 			t.Errorf("system message is %d characters", n)
 		}
 		for _, want := range []string{"R1 [scale]", "D1 ", "more requirements not shown", "more decisions not shown"} {
+			if !strings.Contains(system, want) {
+				t.Errorf("system message lacks %q", want)
+			}
+		}
+	})
+
+	t.Run("describes the canvas without positions, which the model never needs", func(t *testing.T) {
+		var req llm.Request
+		a := newAssistant(model{words: []string{"ok"}, got: &req}, conv("Welcome", "Hi"))
+		a.Architectures = staticArchitecture{
+			Components:  []architecture.Component{{ID: "api", Type: "service", Name: "API", Position: architecture.Position{X: 120, Y: 80}}},
+			Connections: []architecture.Connection{},
+		}
+
+		if _, err := a.Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+
+		system := req.Messages[0].Content
+		if !strings.Contains(system, `"id":"api"`) || strings.Contains(system, "position") {
+			t.Errorf("system message canvas:\n%s", system[strings.Index(system, "JSON"):])
+		}
+	})
+
+	t.Run("trims a large canvas to a budget, saying what it left out", func(t *testing.T) {
+		var doc architecture.Document
+		long := strings.Repeat("v", 500)
+		for i := range 500 {
+			id := fmt.Sprintf("c%d", i)
+			doc.Components = append(doc.Components, architecture.Component{ID: id, Type: "database", Name: strings.Repeat("n", 100),
+				Properties: map[string]string{"engine": long, "replicas": long, "sharding": long}})
+			if i > 0 {
+				doc.Connections = append(doc.Connections, architecture.Connection{ID: "k" + id, Source: "c0", Target: id, Kind: "sync"})
+			}
+		}
+		var req llm.Request
+		a := newAssistant(model{words: []string{"ok"}, got: &req}, conv("Welcome", "Hi"))
+		a.Architectures = staticArchitecture(doc)
+
+		if _, err := a.Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+
+		system := req.Messages[0].Content
+		if n := utf8.RuneCountInString(system); n > 80000 {
+			t.Errorf("system message is %d characters", n)
+		}
+		for _, want := range []string{`"id":"c0"`, "more components", "not shown"} {
 			if !strings.Contains(system, want) {
 				t.Errorf("system message lacks %q", want)
 			}

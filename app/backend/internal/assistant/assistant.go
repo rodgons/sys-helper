@@ -211,7 +211,7 @@ func parseChanges(call llm.ToolCall, doc architecture.Document, known knowledge.
 }
 
 func (a *Assistant) request(msgs []conversation.Message, doc architecture.Document, known knowledge.Knowledge) (llm.Request, error) {
-	canvas, err := json.Marshal(doc)
+	canvas, err := describeCanvas(doc)
 	if err != nil {
 		return llm.Request{}, err
 	}
@@ -222,7 +222,7 @@ func (a *Assistant) request(msgs []conversation.Message, doc architecture.Docume
 		MaxTokens: 4096,
 		// One system message: some chat templates (e.g. Gemma's) accept only one.
 		Messages: []llm.Message{
-			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + describeKnowledge(known) + "\n\n" + architectureNote + string(canvas)},
+			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + describeKnowledge(known) + "\n\n" + architectureNote + canvas},
 		},
 	}
 	why := mustNotPropose(msgs)
@@ -291,6 +291,56 @@ func describeStatus(s conversation.ProposalStatus) string {
 	default:
 		return string(s)
 	}
+}
+
+// canvasBudget caps the characters of the canvas JSON in each prompt. An Architecture can hold up to
+// 500 Components, far more than a free model's context takes; past the budget it is trimmed.
+const canvasBudget = 40000
+
+// describeCanvas writes the Architecture as JSON for the system prompt, without positions (the
+// model never needs them). Components go in order until the budget is spent, then the Connections
+// between those shown, with a note of what was left out.
+func describeCanvas(doc architecture.Document) (string, error) {
+	type component struct {
+		ID         string            `json:"id"`
+		Type       string            `json:"type"`
+		Name       string            `json:"name"`
+		Properties map[string]string `json:"properties,omitempty"`
+	}
+	var components, connections []string
+	shown := map[string]bool{}
+	used := 0
+	for _, c := range doc.Components {
+		b, err := json.Marshal(component{c.ID, c.Type, c.Name, c.Properties})
+		if err != nil {
+			return "", err
+		}
+		if used+len(b) > canvasBudget {
+			break
+		}
+		used += len(b) + 1
+		components = append(components, string(b))
+		shown[c.ID] = true
+	}
+	hiddenConnections := 0
+	for _, c := range doc.Connections {
+		b, err := json.Marshal(c)
+		if err != nil {
+			return "", err
+		}
+		if !shown[c.Source] || !shown[c.Target] || used+len(b) > canvasBudget {
+			hiddenConnections++
+			continue
+		}
+		used += len(b) + 1
+		connections = append(connections, string(b))
+	}
+	out := `{"components":[` + strings.Join(components, ",") + `],"connections":[` + strings.Join(connections, ",") + `]}`
+	if hidden := len(doc.Components) - len(components); hidden > 0 || hiddenConnections > 0 {
+		out += fmt.Sprintf("\n(%d more components and %d more connections not shown, to keep this prompt short. "+
+			"Don't refer to items you can't see; ask the user about that part of the design instead.)", hidden, hiddenConnections)
+	}
+	return out, nil
 }
 
 // knowledgeBudget caps the characters of Requirements and Decisions in each prompt. A Project can
