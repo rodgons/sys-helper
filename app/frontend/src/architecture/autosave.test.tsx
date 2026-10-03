@@ -101,6 +101,20 @@ describe('useAutosave', () => {
     await act(() => vi.advanceTimersByTimeAsync(0));
 
     expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]?.[0].keepalive).toBe(true);
+  });
+
+  it('saves a document too big for keepalive with a plain request when unmounted', async () => {
+    // Browsers refuse keepalive bodies over 64 KiB, which would drop the save.
+    const save = stubSave((b) => ({ version: b.version + 1 }));
+    const { unmount } = renderWithQuery(<Probe />, { auth: signedIn() });
+
+    act(() => schedule(doc('x'.repeat(70_000))));
+    unmount();
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]?.[0].keepalive).toBe(false);
   });
 
   it('commits through another request after the save in progress, with its version', async () => {

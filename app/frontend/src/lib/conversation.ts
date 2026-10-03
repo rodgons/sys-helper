@@ -59,6 +59,11 @@ export function useReply(slug: string) {
 
   useEffect(() => () => abort.current?.abort(), []);
 
+  const reload = useCallback(
+    () => client.invalidateQueries({ queryKey: key(slug) }).catch(() => {}),
+    [client, slug],
+  );
+
   const start = useCallback(async () => {
     abort.current?.abort();
     const controller = new AbortController();
@@ -72,10 +77,17 @@ export function useReply(slug: string) {
       });
       if (!res.ok || !res.body) {
         const body = (await res.json().catch(() => undefined)) as { error?: string } | undefined;
+        if (body?.error === 'nothing_to_reply') {
+          // The reply already exists (e.g. it was saved after this tab lost the stream).
+          await reload();
+          setState({ status: 'idle' });
+          return;
+        }
         setState({ status: 'failed', code: body?.error ?? 'ai_failed' });
         return;
       }
       let text = '';
+      let failed = false;
       for await (const { event, data } of readEvents(res.body)) {
         if (event === 'delta') {
           text += (data as { text: string }).text;
@@ -92,14 +104,20 @@ export function useReply(slug: string) {
           setState({ status: 'idle' });
           return;
         } else if (event === 'error') {
+          failed = true;
           break;
         }
       }
+      // Without `done` or `error` the connection dropped, and the server saves a reply that
+      // completes even so: reload to show it, if it did.
+      if (!failed) await reload();
       setState({ status: 'failed', code: 'ai_failed' });
     } catch {
-      if (!controller.signal.aborted) setState({ status: 'failed', code: 'ai_failed' });
+      if (controller.signal.aborted) return;
+      await reload();
+      setState({ status: 'failed', code: 'ai_failed' });
     }
-  }, [client, slug, token]);
+  }, [client, reload, slug, token]);
 
   return { state, start };
 }

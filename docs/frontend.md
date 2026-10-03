@@ -47,7 +47,7 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 ### Autosave (`architecture/autosave.ts`)
 
 - Debounced 1s PUT with the base version. On 409 it enters `conflict` and stops for good; the User must reload. Other errors keep the edits pending.
-- Unmount flushes with `keepalive`; `beforeunload` warns while a save is pending.
+- Unmount flushes with `keepalive` when the body fits the browser's 64 KiB keepalive limit, and with a plain fetch otherwise; `beforeunload` warns while a save is pending.
 - `commit(document, send)` waits for the in-flight save, then sends through a different endpoint and adopts the version it returns. Accepting a Proposal uses it, so canvas saves and accepts never race.
 
 ### Proposal review (`useProposalReview` + `architecture/proposal.ts`)
@@ -61,6 +61,7 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 
 - Send = `POST messages`, then `useReply().start()`, which streams `POST reply` through `readEvents` (fetch + manual SSE parsing, because the request needs an `Authorization` header).
 - On `done`, the reply is appended to the cache and any pending Proposal is marked `superseded`, mirroring the server.
+- The server saves a completed reply even if the client went away. So when a stream ends without `done` or `error` (the connection dropped), or `POST reply` answers `nothing_to_reply`, the chat reloads `['messages', suffix]` instead of only offering a retry.
 - When the User reviews the pending Proposal that ends the Conversation, the chat starts a reply automatically. Reviews from before page load only get a "Get a reply" button.
 
 ## Styling

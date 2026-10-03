@@ -174,6 +174,44 @@ describe('ChatPane', () => {
     expect(screen.queryByText(/couldn't reply/i)).not.toBeInTheDocument();
   });
 
+  it('reloads the conversation when the stream drops, since the server may have saved the reply', async () => {
+    const user = { role: 'user', body: 'A URL shortener', createdAt: at };
+    const saved = { role: 'assistant', body: 'The saved answer.', createdAt: at };
+    let history: unknown[] = [welcome];
+    setup({
+      [`GET ${API}/messages`]: () => history,
+      [`POST ${API}/reply`]: () => {
+        history = [welcome, user, saved];
+        // The connection ends mid-reply: no `done`, no `error`.
+        return sseResponse(['delta', { text: 'The saved' }]);
+      },
+    });
+
+    await send('A URL shortener');
+
+    expect(await within(messages()).findByText('The saved answer.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('reloads the conversation when there turns out to be nothing to reply to', async () => {
+    const user = { role: 'user', body: 'Hello', createdAt: at };
+    const saved = { role: 'assistant', body: 'Already answered.', createdAt: at };
+    let history: unknown[] = [welcome, user];
+    setup({
+      [`GET ${API}/messages`]: () => history,
+      [`POST ${API}/reply`]: () => {
+        history = [welcome, user, saved];
+        return { status: 409, body: { error: 'nothing_to_reply' } };
+      },
+    });
+
+    await screen.findByText('This message has no reply yet.');
+    fireEvent.click(screen.getByRole('button', { name: 'Get a reply' }));
+
+    expect(await within(messages()).findByText('Already answered.')).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't reply/i)).not.toBeInTheDocument();
+  });
+
   it('says when the AI is unavailable, and to try again shortly', async () => {
     setup({ [`POST ${API}/reply`]: { status: 503, body: { error: 'ai_unavailable' } } });
 
