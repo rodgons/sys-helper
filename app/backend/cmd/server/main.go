@@ -101,7 +101,10 @@ func run() error {
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Shutdown waits for in-flight requests, AI replies included, so they finish and save before
+	// the database pool closes. Replies still running when the timeout ends are cut.
+	slog.Info("shutting down", "timeout", cfg.ShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
 }

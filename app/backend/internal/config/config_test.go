@@ -40,6 +40,20 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
+	t.Run("gives requests 10s to finish on shutdown unless told otherwise", func(t *testing.T) {
+		cfg, err := config.Load(env(required(nil)))
+		if err != nil || cfg.ShutdownTimeout != 10*time.Second {
+			t.Fatalf("default ShutdownTimeout = %v, %v", cfg.ShutdownTimeout, err)
+		}
+		cfg, err = config.Load(env(required(map[string]string{"SHUTDOWN_TIMEOUT": "4m"})))
+		if err != nil || cfg.ShutdownTimeout != 4*time.Minute {
+			t.Errorf("SHUTDOWN_TIMEOUT=4m: %v, %v", cfg.ShutdownTimeout, err)
+		}
+		if _, err := config.Load(env(required(map[string]string{"SHUTDOWN_TIMEOUT": "soon"}))); err == nil {
+			t.Error("SHUTDOWN_TIMEOUT=soon: expected an error")
+		}
+	})
+
 	t.Run("parses allowed origins", func(t *testing.T) {
 		cfg, err := config.Load(env(required(map[string]string{
 			"CORS_ALLOWED_ORIGINS": "http://a.test, http://b.test,",
