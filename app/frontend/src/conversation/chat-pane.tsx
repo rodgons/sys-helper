@@ -3,7 +3,7 @@ import { MessageSquarePlus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Review } from '../architecture/review';
 import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
-import { ApiError, isLimit } from '../lib/api';
+import { isBusy, isLimit } from '../lib/api';
 import { useMessages, useNewConversation, useReply, useSendMessage } from '../lib/conversation';
 import { Button } from '../ui/button';
 import { Dialog } from '../ui/dialog';
@@ -26,7 +26,7 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
   const messages = useMessages(slug);
   const send = useSendMessage(slug);
   const reply = useReply(slug);
-  const restart = useNewConversation(slug);
+  const newConversation = useNewConversation(slug);
   const [confirming, setConfirming] = useState(false);
   const [draft, setDraft] = useState('');
   // Which of the User's sent messages the draft shows, counting back from the newest (0), like a
@@ -88,11 +88,11 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
 
   // A New Conversation can't race the User's own actions, and isn't offered when there is nothing
   // to clear but the Welcome Message.
-  const canRestart =
-    count > 1 && !replying && !send.isPending && !review?.busy && !restart.isPending;
+  const canStartNew =
+    count > 1 && !replying && !send.isPending && !review?.busy && !newConversation.isPending;
   const hasPending = messages.data?.some((m) => m.proposal?.status === 'pending') ?? false;
   const startNew = () =>
-    restart.mutate(undefined, {
+    newConversation.mutate(undefined, {
       onSuccess: () => {
         setConfirming(false);
         setRecalled(null); // the draft stays; only the old sent messages are gone
@@ -101,7 +101,7 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
       },
       onError: (err) =>
         toast.error(
-          err instanceof ApiError && err.code === 'busy'
+          isBusy(err)
             ? 'The AI is still replying. Try again when it finishes.'
             : "Couldn't start a new conversation. Try again.",
         ),
@@ -115,7 +115,7 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
           variant="ghost"
           aria-label="New conversation"
           title="New conversation"
-          disabled={!canRestart}
+          disabled={!canStartNew}
           onClick={() => setConfirming(true)}
           xstyle={styles.iconButton}
         >
@@ -133,11 +133,11 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
             </Button>
             <Button
               size="sm"
-              disabled={restart.isPending}
-              aria-busy={restart.isPending}
+              disabled={newConversation.isPending}
+              aria-busy={newConversation.isPending}
               onClick={startNew}
             >
-              {restart.isPending ? 'Starting…' : 'Start new conversation'}
+              {newConversation.isPending ? 'Starting…' : 'Start new conversation'}
             </Button>
           </>
         }
