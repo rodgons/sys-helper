@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -21,8 +22,13 @@ const (
 	maxName    = 100
 	maxValue   = 500
 	maxSummary = 500
-	maxRefOrID = 100
+	// maxRef keeps the ids refs become (p{seq}-{ref}) within the Architecture's 100-character ids.
+	maxRef = 60
 )
+
+// connectionIndexRef is the shape of the id suffix a Connection without a ref gets (k0, k1, …), so
+// refs can't take it.
+var connectionIndexRef = regexp.MustCompile(`^k[0-9]+$`)
 
 // Change is one operation. Which fields apply depends on Op:
 //   - add_component: Ref (a temporary id later Changes can use), Type, Name, Properties
@@ -195,8 +201,8 @@ func inferOp(ch *Change) string {
 // Validate checks every Change against doc and k (what the Project has when the Proposal is made).
 // Errors are written for the model, which gets a chance to correct them.
 func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) error {
-	if s := strings.TrimSpace(c.Summary); s == "" || utf8.RuneCountInString(s) > maxSummary {
-		return invalid("summary must be 1 to %d characters", maxSummary)
+	if s := strings.TrimSpace(c.Summary); s == "" || utf8.RuneCountInString(s) > maxSummary || architecture.HasNUL(s) {
+		return invalid("summary must be 1 to %d characters, without NUL", maxSummary)
 	}
 	if len(c.Changes) == 0 || len(c.Changes) > maxChanges {
 		return invalid("propose 1 to %d changes", maxChanges)
@@ -224,6 +230,9 @@ func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) erro
 
 	for i, ch := range c.Changes {
 		at := fmt.Sprintf("change %d (%s)", i+1, ch.Op)
+		if hasNUL(ch) {
+			return invalid("%s: remove the NUL character (\\u0000) from its text", at)
+		}
 		switch ch.Op {
 		case "add_component":
 			if err := newRef(at, ch.Ref, taken); err != nil {
@@ -362,13 +371,32 @@ func (c Changes) Validate(doc architecture.Document, k knowledge.Knowledge) erro
 
 // newRef checks a ref for a new item is present, short, and not already an id or ref.
 func newRef(at, ref string, taken func(string) bool) error {
-	if ref == "" || len(ref) > maxRefOrID {
-		return invalid("%s: needs a ref, a short temporary id that later changes can use", at)
+	if ref == "" || len(ref) > maxRef {
+		return invalid("%s: needs a ref of 1 to %d characters, a short temporary id that later changes can use", at, maxRef)
 	}
 	if taken(ref) {
 		return invalid("%s: ref %q is already used", at, ref)
 	}
+	if connectionIndexRef.MatchString(ref) {
+		return invalid("%s: refs like %q are reserved; pick a descriptive ref such as \"cache\"", at, ref)
+	}
 	return nil
+}
+
+// hasNUL says whether any of a Change's text contains NUL, which can't be stored.
+func hasNUL(ch Change) bool {
+	texts := []string{ch.ID, ch.Ref, ch.Type, ch.Source, ch.Target, ch.Kind, ch.Title, ch.Rationale, ch.Pattern, ch.Alternative, ch.Level}
+	for _, p := range []*string{ch.Name, ch.Label, ch.Category, ch.Statement} {
+		if p != nil {
+			texts = append(texts, *p)
+		}
+	}
+	for k, v := range ch.Properties {
+		texts = append(texts, k, v)
+	}
+	texts = append(texts, ch.Requirements...)
+	texts = append(texts, ch.Targets...)
+	return architecture.HasNUL(texts...)
 }
 
 func existing(at, id string, types map[string]string, removed map[string]bool) (string, error) {
@@ -444,7 +472,7 @@ func toolSchema() string {
         "properties": {
           "op": {"type": "string", "enum": ` + string(opNames) + `, "description": "The operation. Always set it; never put the operation in \"type\"."},
           "id": {"type": "string", "description": "Existing item id (update_*, remove_*): a component or connection id, or a requirement id like R1."},
-          "ref": {"type": "string", "description": "Temporary id for a new component, connection or requirement (add_*), usable by later changes."},
+          "ref": {"type": "string", "description": "Temporary id for a new component, connection or requirement (add_*), usable by later changes. Short and descriptive, like \"cache\" (at most 60 characters)."},
           "type": {"type": "string", "enum": ` + string(types) + `, "description": "Component type (add_component, required). Not the operation: that goes in \"op\"."},
           "name": {"type": "string", "description": "Component name shown on the canvas (add_component, required; update_component)."},
           "properties": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Component properties allowed by its type (e.g. database: engine, replicas, sharding)."},

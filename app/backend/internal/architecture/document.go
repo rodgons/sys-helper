@@ -70,8 +70,9 @@ func Empty() Document {
 
 var ErrInvalid = errors.New("invalid architecture")
 
-// Validate checks the document against the catalog and that every Connection joins two existing
-// Components.
+// Validate checks the document against the catalog, that every Connection joins two existing
+// Components, and that ids are unique across Components and Connections (Decisions target both by
+// id). Text can't contain NUL, which Postgres can't store.
 func (d Document) Validate() error {
 	if len(d.Components) > maxComponents || len(d.Connections) > maxConnections {
 		return fmt.Errorf("%w: too many components or connections", ErrInvalid)
@@ -88,6 +89,8 @@ func (d Document) Validate() error {
 			return fmt.Errorf("%w: unknown component type %q", ErrInvalid, c.Type)
 		case strings.TrimSpace(c.Name) == "" || utf8.RuneCountInString(c.Name) > maxNameLen:
 			return fmt.Errorf("%w: component %q needs a name of 1 to %d characters", ErrInvalid, c.ID, maxNameLen)
+		case HasNUL(c.ID, c.Name):
+			return fmt.Errorf("%w: component %q contains a NUL character", ErrInvalid, c.ID)
 		}
 		for key, value := range c.Properties {
 			if !slices.Contains(allowed, key) {
@@ -96,22 +99,34 @@ func (d Document) Validate() error {
 			if utf8.RuneCountInString(value) > maxValueLen {
 				return fmt.Errorf("%w: property %q is too long", ErrInvalid, key)
 			}
+			if HasNUL(value) {
+				return fmt.Errorf("%w: property %q contains a NUL character", ErrInvalid, key)
+			}
 		}
 		ids[c.ID] = true
 	}
 	edgeIDs := make(map[string]bool, len(d.Connections))
 	for _, e := range d.Connections {
 		switch {
-		case e.ID == "" || len(e.ID) > maxNameLen || edgeIDs[e.ID]:
+		case e.ID == "" || len(e.ID) > maxNameLen || edgeIDs[e.ID] || HasNUL(e.ID):
 			return fmt.Errorf("%w: connection id %q", ErrInvalid, e.ID)
+		case ids[e.ID]:
+			return fmt.Errorf("%w: connection id %q is also a component id", ErrInvalid, e.ID)
 		case !ids[e.Source] || !ids[e.Target]:
 			return fmt.Errorf("%w: connection %q must join two existing components", ErrInvalid, e.ID)
 		case !slices.Contains(ConnectionKinds, e.Kind):
 			return fmt.Errorf("%w: unknown connection kind %q", ErrInvalid, e.Kind)
 		case utf8.RuneCountInString(e.Label) > maxNameLen:
 			return fmt.Errorf("%w: connection label is too long", ErrInvalid)
+		case HasNUL(e.Label):
+			return fmt.Errorf("%w: connection label contains a NUL character", ErrInvalid)
 		}
 		edgeIDs[e.ID] = true
 	}
 	return nil
+}
+
+// HasNUL says whether any of ss contains a NUL character, which Postgres text and jsonb reject.
+func HasNUL(ss ...string) bool {
+	return slices.ContainsFunc(ss, func(s string) bool { return strings.ContainsRune(s, 0) })
 }

@@ -67,9 +67,9 @@ export function staleReason(
 ): string | null {
   const components = new Set(nodes.map((n) => n.id));
   const connections = new Set(edges.map((e) => e.id));
-  const refs = new Set(
-    p.changes.flatMap((c) => (c.op === 'add_component' && c.ref ? [c.ref] : [])),
-  );
+  // Items the Proposal adds itself can't have gone missing.
+  const refs = addedRefs(p, 'add_component');
+  const connectionRefs = addedRefs(p, 'add_connection');
   const missing = (c: ProposalChange): string[] => {
     switch (c.op) {
       case 'add_component':
@@ -82,14 +82,14 @@ export function staleReason(
         return [];
       case 'update_component':
       case 'remove_component':
-        return components.has(c.id ?? '') ? [] : [c.id ?? ''];
+        return components.has(c.id ?? '') || refs.has(c.id ?? '') ? [] : [c.id ?? ''];
       case 'add_connection':
         return [c.source ?? '', c.target ?? ''].filter(
           (id) => !refs.has(id) && !components.has(id),
         );
       case 'update_connection':
       case 'remove_connection':
-        return connections.has(c.id ?? '') ? [] : [c.id ?? ''];
+        return connections.has(c.id ?? '') || connectionRefs.has(c.id ?? '') ? [] : [c.id ?? ''];
     }
   };
   for (const c of p.changes) {
@@ -115,10 +115,16 @@ export function applyProposal(
     data: { ...n.data, properties: { ...n.data.properties } },
   }));
   let nextEdges = edges.map((e) => ({ ...e, data: e.data && { ...e.data } }));
+  // Later changes may address items this Proposal adds by their ref, as the server allows.
+  const componentRefs = addedRefs(p, 'add_component');
   const resolve = (idOrRef = '') =>
-    p.changes.some((c) => c.op === 'add_component' && c.ref === idOrRef)
-      ? componentId(p, idOrRef)
-      : idOrRef;
+    componentRefs.has(idOrRef) ? componentId(p, idOrRef) : idOrRef;
+  const connectionIds = new Map(
+    p.changes.flatMap((c, i) =>
+      c.op === 'add_connection' && c.ref ? [[c.ref, connectionId(p, c, i)] as const] : [],
+    ),
+  );
+  const resolveConnection = (idOrRef = '') => connectionIds.get(idOrRef) ?? idOrRef;
   const added: ComponentNode[] = [];
 
   p.changes.forEach((c, i) => {
@@ -140,15 +146,17 @@ export function applyProposal(
       }
       case 'update_component':
         for (const n of nextNodes) {
-          if (n.id !== c.id) continue;
+          if (n.id !== resolve(c.id)) continue;
           if (c.name !== undefined) n.data.name = c.name;
           Object.assign(n.data.properties, c.properties);
         }
         break;
-      case 'remove_component':
-        nextNodes = nextNodes.filter((n) => n.id !== c.id);
-        nextEdges = nextEdges.filter((e) => e.source !== c.id && e.target !== c.id);
+      case 'remove_component': {
+        const id = resolve(c.id);
+        nextNodes = nextNodes.filter((n) => n.id !== id);
+        nextEdges = nextEdges.filter((e) => e.source !== id && e.target !== id);
         break;
+      }
       case 'add_connection':
         nextEdges.push({
           id: connectionId(p, c, i),
@@ -160,21 +168,23 @@ export function applyProposal(
         break;
       case 'update_connection':
         for (const e of nextEdges) {
-          if (e.id !== c.id || !e.data) continue;
+          if (e.id !== resolveConnection(c.id) || !e.data) continue;
           if (c.kind) e.data.kind = c.kind;
           if (c.label !== undefined) e.data.label = c.label;
         }
         break;
       case 'remove_connection':
-        nextEdges = nextEdges.filter((e) => e.id !== c.id);
+        nextEdges = nextEdges.filter((e) => e.id !== resolveConnection(c.id));
         break;
     }
   });
 
-  const fixed = added.filter((n) => positions[n.id]);
+  // A component the Proposal adds and then removes needs no place.
+  const kept = added.filter((n) => nextNodes.includes(n));
+  const fixed = kept.filter((n) => positions[n.id]);
   for (const n of fixed) n.position = positions[n.id] as XY;
   place(
-    added.filter((n) => !positions[n.id]),
+    kept.filter((n) => !positions[n.id]),
     nextNodes,
     nextEdges,
   );
@@ -269,6 +279,11 @@ export function describeChange(
 }
 
 type XY = { x: number; y: number };
+
+/** The refs of the items `op` adds in the Proposal. */
+function addedRefs(p: Proposal, op: 'add_component' | 'add_connection'): Set<string> {
+  return new Set(p.changes.flatMap((c) => (c.op === op && c.ref ? [c.ref] : [])));
+}
 
 /**
  * Positions `added` (already in `nodes`) with dagre: lay out the whole graph left to right, shift
