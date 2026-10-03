@@ -136,6 +136,10 @@ func writeProject(w http.ResponseWriter, r *http.Request, p projects.Project, er
 }
 
 func internalError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "error", err)
+	// A request the client abandoned (e.g. on navigation) fails with its cancelled queries; that
+	// isn't a server error, and nobody reads the answer.
+	if r.Context().Err() == nil {
+		slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "error", err)
+	}
 	writeError(w, http.StatusInternalServerError, "internal")
 }

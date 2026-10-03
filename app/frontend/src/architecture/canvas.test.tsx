@@ -274,6 +274,24 @@ describe('ArchitectureCanvas', () => {
       expect(screen.getByRole('status')).toHaveTextContent('All changes saved');
     });
 
+    it('stops previewing an accepted proposal before the conversation catches up', async () => {
+      // Until the cached Conversation marks it accepted, the proposal still arrives as pending; the
+      // preview must not apply it a second time on top of the canvas that now includes it.
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      // Only additions: nothing it refers to goes away, so it never turns stale by itself.
+      setup({ ...proposal, changes: proposal.changes.slice(0, 2) });
+
+      fireEvent.click(
+        within(screen.getByRole('region', { name: 'Proposal' })).getByRole('button', {
+          name: 'Accept',
+        }),
+      );
+      await act(() => vi.advanceTimersByTimeAsync(0));
+
+      expect(screen.getAllByText('Order Cache')).toHaveLength(1);
+      expect(error.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+    });
+
     it('keeps the proposal when the canvas is edited during a slow accept', async () => {
       let respond: () => void = () => {};
       const accept = vi.fn(

@@ -1,12 +1,15 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"sys-helper/backend/internal/auth"
@@ -148,5 +151,29 @@ func TestMe(t *testing.T) {
 				t.Errorf("error = %q, want %q", body.Error, tt.wantError)
 			}
 		})
+	}
+}
+
+func TestInternalErrorsOfAbandonedRequests(t *testing.T) {
+	// A browser aborts requests on navigation; their failed queries aren't server errors to log.
+	var logs bytes.Buffer
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	deps := httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/me", nil)
+	req.Header.Set("Authorization", "Bearer error")
+	serve(t, deps, req)
+	if logs.Len() != 0 {
+		t.Errorf("logged an abandoned request: %s", logs.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.Header.Set("Authorization", "Bearer error")
+	serve(t, deps, req)
+	if !strings.Contains(logs.String(), "db down") {
+		t.Errorf("didn't log a live request's failure: %q", logs.String())
 	}
 }
