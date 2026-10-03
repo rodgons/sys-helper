@@ -10,6 +10,7 @@ import { LoginPage } from './pages/login';
 import { ProjectsPage } from './pages/projects';
 import { UiKitPage } from './pages/ui-kit';
 import { WorkspacePage } from './pages/workspace';
+import { useSiteHeaderMode } from './pages/workspace-mobile.prototype';
 import { Avatar } from './ui/avatar';
 import { ButtonRouteLink } from './ui/button';
 import { Menu, MenuHeader, MenuItem, MenuSeparator } from './ui/menu';
@@ -29,15 +30,23 @@ export function Root() {
   const links = auth.status === 'signedIn' ? [] : VISITOR_LINKS;
   const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   const theme = useThemeChoice();
+  const headerMode = useSiteHeaderMode(normalized); // PROTOTYPE (mobile header and drawer)
 
   return (
     <>
-      <SiteHeader
-        links={links}
-        currentPath={normalized}
-        tools={<ThemeMenu choice={theme} onChange={setThemeChoice} />}
-        actions={normalized === '/login' ? null : <AuthAction />}
-      />
+      {headerMode !== 'hidden' && (
+        <SiteHeader
+          links={links}
+          currentPath={normalized}
+          tools={
+            <>
+              <ThemeMenu choice={theme} onChange={setThemeChoice} />
+              {headerMode === 'withAvatar' && <AuthAction />}
+            </>
+          }
+          actions={normalized === '/login' || headerMode === 'withAvatar' ? null : <AuthAction />}
+        />
+      )}
       <Routes>
         <Route path="/ui-kit" element={<UiKitPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -63,7 +72,9 @@ function AuthAction() {
 }
 
 /** The User's avatar, opening a menu of account actions. */
-function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
+export function AccountMenu({ onSignOut }: { onSignOut?: () => void }) {
+  const auth = useAuth(); // PROTOTYPE: the compact workspace bars render it without onSignOut
+  const signOut = onSignOut ?? (auth.status === 'signedIn' ? auth.signOut : () => {});
   const me = useMe();
   const [settingsOpen, setSettingsOpen] = useState(false);
   return (
@@ -87,7 +98,7 @@ function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
           Settings
         </MenuItem>
         <MenuSeparator />
-        <MenuItem icon={LogOut} onSelect={onSignOut}>
+        <MenuItem icon={LogOut} onSelect={signOut}>
           Sign out
         </MenuItem>
       </Menu>

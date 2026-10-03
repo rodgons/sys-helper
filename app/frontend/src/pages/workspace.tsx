@@ -68,16 +68,12 @@ function Workspace({ slug }: { slug: string }) {
   // Old names and bare suffixes still resolve; always show the canonical slug.
   if (project.data.slug !== slug) return <Navigate to={`/p/${project.data.slug}`} replace />;
 
-  // PROTOTYPE (mobile bottom sheet): below 64rem render one of the compact variants.
+  // PROTOTYPE (mobile header and drawer): below 64rem render one of the compact variants.
   if (compact) {
     const p = project.data;
     return (
       <CompactWorkspace
-        title={
-          <div {...stylex.props(styles.bar)}>
-            <ProjectTitle key={p.slug} project={p} />
-          </div>
-        }
+        project={p}
         canvas={<CanvasPane slug={p.slug} onReview={setReview} onNames={setNames} />}
         panel={(tab, onTab) => (
           <SidePanel

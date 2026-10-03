@@ -43,7 +43,7 @@ export function VariantSwitcher({ variants }: { variants: [key: string, name: st
     <div
       style={{
         position: 'fixed',
-        top: 8,
+        bottom: 150,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 9999,
