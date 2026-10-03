@@ -6,7 +6,7 @@ import { PaneToggle } from '../ui/pane-toggle';
 import { DecisionsPanel } from './decisions';
 import { RequirementsPanel } from './requirements-panel';
 
-type Tab = 'conversation' | 'requirements' | 'decisions';
+export type Tab = 'conversation' | 'requirements' | 'decisions';
 
 /**
  * The workspace's right pane: tabs for the Conversation, the Requirements and the Decisions, and a
@@ -19,14 +19,23 @@ export function SidePanel({
   conversation,
   open,
   onToggle,
+  tab: controlledTab,
+  onTab,
+  head = 'full',
 }: {
   slug: string;
   names: Record<string, string>;
   conversation: ReactNode;
   open: boolean;
   onToggle: () => void;
+  // PROTOTYPE (mobile bottom sheet): a controlled tab and a head without the collapse toggle, or none.
+  tab?: Tab;
+  onTab?: (tab: Tab) => void;
+  head?: 'full' | 'tabs' | 'none';
 }) {
-  const [tab, setTab] = useState<Tab>('conversation');
+  const [ownTab, setOwnTab] = useState<Tab>('conversation');
+  const tab = controlledTab ?? ownTab;
+  const setTab = onTab ?? setOwnTab;
   const knowledge = useKnowledge(slug);
   const flagged = knowledge.data?.decisions.filter((d) => d.needsReview).length ?? 0;
   const tabs: [Tab, string, number?][] = [
@@ -41,8 +50,8 @@ export function SidePanel({
     <>
       {!open && <div {...stylex.props(styles.rail)}>{toggle}</div>}
       <div hidden={!open} {...stylex.props(styles.panel)}>
-        <div {...stylex.props(styles.head)}>
-          {toggle}
+        <div hidden={head === 'none'} {...stylex.props(styles.head)}>
+          {head === 'full' && toggle}
           <div role="tablist" aria-label="Project" {...stylex.props(styles.tabs)}>
             {tabs.map(([id, label, count]) => (
               <button
@@ -112,10 +121,10 @@ const styles = stylex.create({
   },
   rail: { display: 'flex', justifyContent: 'center', paddingBlock: space['--space-4'] },
   head: {
+    display: { default: 'flex', ':is([hidden])': 'none' },
     boxSizing: 'border-box',
     height: layout['--pane-head-h'],
     flexShrink: 0,
-    display: 'flex',
     alignItems: 'center',
     gap: space['--space-2'],
     paddingLeft: space['--space-3'],

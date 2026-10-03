@@ -9,6 +9,7 @@ import { SidePanel } from '../knowledge/side-panel';
 import { ApiError } from '../lib/api';
 import { useArchitecture } from '../lib/architecture';
 import { usePendingProposal } from '../lib/conversation';
+import { useKnowledge } from '../lib/knowledge';
 import { usePanelWidth } from '../lib/panel-width';
 import { slugSuffix, useProject } from '../lib/projects';
 import { ProjectSidebar } from '../projects/project-sidebar';
@@ -17,6 +18,7 @@ import { Section, Stack } from '../ui/layout';
 import { ArrowLink } from '../ui/link';
 import { Display, Text } from '../ui/typography';
 import { RequireUser } from './require-user';
+import { CompactWorkspace, useCompact } from './workspace-mobile.prototype';
 
 // The left pane's widths in rem, open and collapsed to a rail. The side panel's bounds depend on it.
 const LEFT_OPEN_REM = 16;
@@ -38,6 +40,9 @@ function Workspace({ slug }: { slug: string }) {
   const [review, setReview] = useState<Review | null>(null);
   // Current names of canvas items, for showing what Decisions explain.
   const [names, setNames] = useState<Record<string, string>>({});
+  const compact = useCompact(); // PROTOTYPE
+  const pending = usePendingProposal(slug);
+  const knowledge = useKnowledge(slug);
 
   if (project.isError) {
     const notFound = project.error instanceof ApiError && project.error.status === 404;
@@ -62,6 +67,41 @@ function Workspace({ slug }: { slug: string }) {
   if (!project.isSuccess) return null;
   // Old names and bare suffixes still resolve; always show the canonical slug.
   if (project.data.slug !== slug) return <Navigate to={`/p/${project.data.slug}`} replace />;
+
+  // PROTOTYPE (mobile bottom sheet): below 64rem render one of the compact variants.
+  if (compact) {
+    const p = project.data;
+    return (
+      <CompactWorkspace
+        title={
+          <div {...stylex.props(styles.bar)}>
+            <ProjectTitle key={p.slug} project={p} />
+          </div>
+        }
+        canvas={<CanvasPane slug={p.slug} onReview={setReview} onNames={setNames} />}
+        panel={(tab, onTab) => (
+          <SidePanel
+            key={slugSuffix(slug)}
+            slug={p.slug}
+            names={names}
+            conversation={<ChatPane slug={p.slug} review={review} />}
+            open
+            onToggle={() => {}}
+            tab={tab}
+            onTab={onTab}
+            head="none"
+          />
+        )}
+        pending={pending !== null && pending !== undefined}
+        review={review}
+        counts={{
+          requirements: knowledge.data?.requirements.length,
+          decisions: knowledge.data?.decisions.length,
+          flagged: knowledge.data?.decisions.filter((d) => d.needsReview).length ?? 0,
+        }}
+      />
+    );
+  }
 
   return (
     <main {...stylex.props(styles.workspace, resizing && styles.resizing)}>
