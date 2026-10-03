@@ -1,5 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 /** The slice of the Supabase Auth client the app uses; tests pass a fake. */
 export type AuthClient = Pick<
@@ -22,13 +30,30 @@ export type AuthContextValue = AuthState & {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Tracks the Supabase session. Users sign in with GitHub or Google and land on /projects. */
-export function AuthProvider({ client, children }: { client: AuthClient; children: ReactNode }) {
+/**
+ * Tracks the Supabase session. Users sign in with GitHub or Google and land on /projects.
+ * `onSignedOut` runs when a session ends (here or in another tab), so the app can drop the User's
+ * cached data before anyone else signs in.
+ */
+export function AuthProvider({
+  client,
+  onSignedOut,
+  children,
+}: {
+  client: AuthClient;
+  onSignedOut?: () => void;
+  children: ReactNode;
+}) {
   const [state, setState] = useState<AuthState>({ status: 'loading' });
+  const signedOut = useRef(onSignedOut);
+  signedOut.current = onSignedOut;
 
   useEffect(() => {
+    let hadSession = false;
     // Fires INITIAL_SESSION right away, then on every sign-in, sign-out and token refresh.
     const { data } = client.onAuthStateChange((_event, session) => {
+      if (!session && hadSession) signedOut.current?.();
+      hadSession = Boolean(session);
       setState(
         session ? { status: 'signedIn', token: session.access_token } : { status: 'signedOut' },
       );

@@ -21,7 +21,7 @@ function Probe({ version = 0 }: { version?: number }) {
 }
 
 function stubSave(reply: (body: { version: number; document: ArchitectureDocument }) => unknown) {
-  const save = vi.fn(({ json }: { json?: unknown }) => reply(json as never));
+  const save = vi.fn(({ json }: { json?: unknown; keepalive?: boolean }) => reply(json as never));
   vi.stubGlobal('fetch', vi.fn(mockApi({ [PATH]: save })));
   return save;
 }

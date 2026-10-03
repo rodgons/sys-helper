@@ -55,6 +55,22 @@ describe('AuthProvider', () => {
     expect(screen.getByText('signedOut')).toBeInTheDocument();
   });
 
+  it("forgets the signed-out User's data when the session ends", async () => {
+    const { client, emit } = fakeClient();
+    const onSignedOut = vi.fn();
+    render(
+      <AuthProvider client={client} onSignedOut={onSignedOut}>
+        <Probe />
+      </AuthProvider>,
+    );
+
+    await emit({ access_token: 'tok-1' });
+    expect(onSignedOut).not.toHaveBeenCalled();
+
+    await emit(null);
+    expect(onSignedOut).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['github', 'google'])('signs in with %s and returns to /projects', (provider) => {
     const { client, raw } = fakeClient();
     render(

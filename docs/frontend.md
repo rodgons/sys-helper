@@ -23,7 +23,7 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 
 ## Server state (TanStack Query)
 
-Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` only when signed in. Project-scoped keys use `slugSuffix(slug)`, so they survive renames.
+Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` only when signed in. Project-scoped keys use `slugSuffix(slug)`, so they survive renames. Keys aren't scoped to the User, so `main.tsx` clears the whole cache when a session ends (`AuthProvider`'s `onSignedOut`).
 
 | Key | Hook | Notes |
 | --- | --- | --- |
