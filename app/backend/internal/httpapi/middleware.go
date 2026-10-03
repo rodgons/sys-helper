@@ -22,6 +22,9 @@ func withCORS(allowedOrigins []string, next http.Handler) http.Handler {
 			h.Set("Access-Control-Allow-Origin", origin)
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			// Two hours, Chromium's cap: every API call carries Authorization, so each would
+			// otherwise need its own preflight.
+			h.Set("Access-Control-Max-Age", "7200")
 			h.Add("Vary", "Origin")
 		}
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {

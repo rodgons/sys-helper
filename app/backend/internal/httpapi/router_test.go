@@ -94,5 +94,9 @@ func TestCORS(t *testing.T) {
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
 		}
+		// Browsers may cache the preflight, instead of sending one before every request.
+		if got := rec.Header().Get("Access-Control-Max-Age"); got != "7200" {
+			t.Errorf("Access-Control-Max-Age = %q, want 7200", got)
+		}
 	})
 }
