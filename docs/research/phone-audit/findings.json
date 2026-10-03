@@ -1,0 +1,578 @@
+{
+  "home@375": {
+    "viewport": 375,
+    "documentWidth": 375,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Menu\" 58×36"
+    ],
+    "smallInputs": [],
+    "tinyText": [
+      "p \"System design, explained\" 11px",
+      "p \"Inside the workspace\" 11px"
+    ]
+  },
+  "home@768": {
+    "viewport": 768,
+    "documentWidth": 768,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "a \"Home\" 63×34",
+      "button \"Theme\" 32×32",
+      "a \"Sign in\" 70×32"
+    ],
+    "smallInputs": [],
+    "tinyText": [
+      "p \"System design, explained\" 11px",
+      "p \"Inside the workspace\" 11px"
+    ]
+  },
+  "home-menu-open@375": {
+    "viewport": 375,
+    "documentWidth": 375,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Close\" 66×36"
+    ],
+    "smallInputs": [],
+    "tinyText": [
+      "p \"System design, explained\" 11px",
+      "p \"Inside the workspace\" 11px"
+    ]
+  },
+  "home-menu-open@768": {
+    "viewport": 768,
+    "documentWidth": 768,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "a \"Home\" 63×34",
+      "button \"Theme\" 32×32",
+      "a \"Sign in\" 70×32"
+    ],
+    "smallInputs": [],
+    "tinyText": [
+      "p \"System design, explained\" 11px",
+      "p \"Inside the workspace\" 11px"
+    ]
+  },
+  "login@375": {
+    "viewport": 375,
+    "documentWidth": 375,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Menu\" 58×36"
+    ],
+    "smallInputs": [],
+    "tinyText": []
+  },
+  "login@768": {
+    "viewport": 768,
+    "documentWidth": 768,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "a \"Home\" 63×34",
+      "button \"Theme\" 32×32"
+    ],
+    "smallInputs": [],
+    "tinyText": []
+  },
+  "ui-kit@375": {
+    "viewport": 375,
+    "documentWidth": 375,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Menu\" 58×36",
+      "button \"Copy command\" 56×36",
+      "button \"Medium\" 94×42",
+      "button \"Small\" 61×32",
+      "button \"Disabled\" 99×42",
+      "button \"Medium\" 94×42",
+      "button \"Small\" 61×32",
+      "button \"Disabled\" 99×42",
+      "button \"Medium\" 94×42",
+      "button \"Small\" 61×32",
+      "button \"Disabled\" 99×42",
+      "button \"Medium\" 94×42",
+      "button \"Small\" 61×32",
+      "button \"Disabled\" 99×42",
+      "a \"accent and underlined\" 294×44",
+      "a \"quiet until hovered\" 317×44",
+      "a \"Read the guide→\" 123×22",
+      "a \"See all components→\" 154×22",
+      "button \"Copy Google id\" 59×32",
+      "input#_r_6_ \"\" 335×40",
+      "input#_r_7_ \"\" 335×40",
+      "select#_r_9_ \"BeginnerIntermediateAdvanced\" 335×40",
+      "input#_r_a_ \"\" 335×40",
+      "select#_r_b_ \"Ask in each project\" 335×40",
+      "button \"Confirm dialog\" 139×42",
+      "button \"Form dialog\" 120×42",
+      "button \"Success\" 81×32",
+      "button \"Error\" 58×32",
+      "button \"Info\" 50×32",
+      "button \"Warning\" 80×32",
+      "button \"Account\" 32×32",
+      "button \"Theme\" 32×32",
+      "button \"Hide projects\" 28×28",
+      "button \"Hide panel\" 28×28"
+    ],
+    "smallInputs": [
+      "input#_r_6_ \"\" 14px",
+      "input#_r_7_ \"\" 14px",
+      "textarea#_r_8_ \"\" 14px",
+      "select#_r_9_ \"BeginnerIntermediateAdvanced\" 14px",
+      "input#_r_a_ \"\" 14px",
+      "select#_r_b_ \"Ask in each project\" 14px"
+    ],
+    "tinyText": [
+      "p \"UI kit · v0\" 11px",
+      "p \"00\" 11px",
+      "p \"01\" 11px",
+      "p \"02\" 11px",
+      "p \"Display lg · condensed 800 · fluid\" 11px",
+      "p \"Display md\" 11px",
+      "p \"Display sm\" 11px",
+      "p \"Heading lg / md / sm · sans 700\" 11px",
+      "p \"Text lg / md / sm · muted & faint tones\" 11px",
+      "p \"Label · mono uppercase · Readout · tabul\" 11px",
+      "p \"Section label\" 11px",
+      "p \"03\" 11px",
+      "p \"Spacing · 4px base\" 11px",
+      "p \"Radius · mostly square\" 11px",
+      "p \"04\" 11px",
+      "p \"primary\" 11px",
+      "p \"secondary\" 11px",
+      "p \"outline\" 11px",
+      "p \"ghost\" 11px",
+      "p \"with a provider icon (login page)\" 11px",
+      "p \"05\" 11px",
+      "p \"06\" 11px",
+      "span \"Neutral\" 11px",
+      "span \"New\" 11px",
+      "span \"Healthy\" 11px",
+      "span \"Degraded\" 11px",
+      "span \"Down\" 11px",
+      "span \"Beta\" 11px",
+      "p \"07\" 11px",
+      "span \"Core\" 11px",
+      "p \"Interactive\" 11px",
+      "p \"Slab\" 11px",
+      "p \"08\" 11px",
+      "p \"Health checks per second · higher is bet\" 11px",
+      "p \"p50 latency\" 11px",
+      "p \"p99 latency\" 11px",
+      "p \"Uptime\" 11px",
+      "p \"Cold start\" 11px",
+      "p \"CopyValue · an id to send, e.g. on the n\" 11px",
+      "span \"Google id\" 11px",
+      "p \"09\" 11px",
+      "p \"10\" 11px",
+      "p \"11\" 11px",
+      "p \"Dialog · confirm / form\" 11px",
+      "p \"Toast · success / error / info / warning\" 11px",
+      "p \"12\" 11px",
+      "p \"13\" 11px"
+    ]
+  },
+  "ui-kit@768": {
+    "viewport": 768,
+    "documentWidth": 768,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "a \"Home\" 63×34",
+      "button \"Theme\" 32×32",
+      "a \"Sign in\" 70×32",
+      "button \"Copy command\" 56×36",
+      "button \"Medium\" 94×42",
+      "button \"Small\" 61×32",
+      "button \"Disabled\" 99×42",
+      "button \"Medium\" 94×42",
+      "button \"Small\" 61×32",
+      "button \"Disabled\" 99×42",
+      "button \"Medium\" 94×42",
+      "button \"Small\" 61×32",
+      "button \"Disabled\" 99×42",
+      "button \"Medium\" 94×42",
+      "button \"Small\" 61×32",
+      "button \"Disabled\" 99×42",
+      "a \"accent and underlined\" 162×18",
+      "a \"quiet until hovered\" 615×44",
+      "a \"Read the guide→\" 123×22",
+      "a \"See all components→\" 154×22",
+      "button \"Copy Google id\" 59×32",
+      "input#_r_6_ \"\" 341×40",
+      "input#_r_7_ \"\" 341×40",
+      "select#_r_9_ \"BeginnerIntermediateAdvanced\" 341×40",
+      "input#_r_a_ \"\" 341×40",
+      "select#_r_b_ \"Ask in each project\" 341×40",
+      "button \"Confirm dialog\" 139×42",
+      "button \"Form dialog\" 120×42",
+      "button \"Success\" 81×32",
+      "button \"Error\" 58×32",
+      "button \"Info\" 50×32",
+      "button \"Warning\" 80×32",
+      "button \"Account\" 32×32",
+      "button \"Theme\" 32×32",
+      "button \"Hide projects\" 28×28",
+      "button \"Hide panel\" 28×28"
+    ],
+    "smallInputs": [
+      "input#_r_6_ \"\" 14px",
+      "input#_r_7_ \"\" 14px",
+      "textarea#_r_8_ \"\" 14px",
+      "select#_r_9_ \"BeginnerIntermediateAdvanced\" 14px",
+      "input#_r_a_ \"\" 14px",
+      "select#_r_b_ \"Ask in each project\" 14px"
+    ],
+    "tinyText": [
+      "p \"UI kit · v0\" 11px",
+      "p \"00\" 11px",
+      "p \"01\" 11px",
+      "p \"02\" 11px",
+      "p \"Display lg · condensed 800 · fluid\" 11px",
+      "p \"Display md\" 11px",
+      "p \"Display sm\" 11px",
+      "p \"Heading lg / md / sm · sans 700\" 11px",
+      "p \"Text lg / md / sm · muted & faint tones\" 11px",
+      "p \"Label · mono uppercase · Readout · tabul\" 11px",
+      "p \"Section label\" 11px",
+      "p \"03\" 11px",
+      "p \"Spacing · 4px base\" 11px",
+      "p \"Radius · mostly square\" 11px",
+      "p \"04\" 11px",
+      "p \"primary\" 11px",
+      "p \"secondary\" 11px",
+      "p \"outline\" 11px",
+      "p \"ghost\" 11px",
+      "p \"with a provider icon (login page)\" 11px",
+      "p \"05\" 11px",
+      "p \"06\" 11px",
+      "span \"Neutral\" 11px",
+      "span \"New\" 11px",
+      "span \"Healthy\" 11px",
+      "span \"Degraded\" 11px",
+      "span \"Down\" 11px",
+      "span \"Beta\" 11px",
+      "p \"07\" 11px",
+      "span \"Core\" 11px",
+      "p \"Interactive\" 11px",
+      "p \"Slab\" 11px",
+      "p \"08\" 11px",
+      "p \"Health checks per second · higher is bet\" 11px",
+      "p \"p50 latency\" 11px",
+      "p \"p99 latency\" 11px",
+      "p \"Uptime\" 11px",
+      "p \"Cold start\" 11px",
+      "p \"CopyValue · an id to send, e.g. on the n\" 11px",
+      "span \"Google id\" 11px",
+      "p \"09\" 11px",
+      "p \"10\" 11px",
+      "p \"11\" 11px",
+      "p \"Dialog · confirm / form\" 11px",
+      "p \"Toast · success / error / info / warning\" 11px",
+      "p \"12\" 11px",
+      "p \"13\" 11px"
+    ]
+  },
+  "home-signed-in@375": {
+    "viewport": 375,
+    "documentWidth": 375,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "input#_r_4_ \"\" 335×40",
+      "button \"Create project\" 121×32"
+    ],
+    "smallInputs": [
+      "input#_r_4_ \"\" 14px"
+    ],
+    "tinyText": [
+      "p \"Signed in as e2e-0798383a\" 11px"
+    ]
+  },
+  "home-signed-in@768": {
+    "viewport": 768,
+    "documentWidth": 768,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Account\" 32×32",
+      "input#_r_4_ \"\" 707×40",
+      "button \"Create project\" 121×32"
+    ],
+    "smallInputs": [
+      "input#_r_4_ \"\" 14px"
+    ],
+    "tinyText": [
+      "p \"Signed in as e2e-0798383a\" 11px"
+    ]
+  },
+  "projects-empty@375": {
+    "viewport": 375,
+    "documentWidth": 375,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "input#_r_3_ \"\" 335×40",
+      "button \"Create project\" 121×32"
+    ],
+    "smallInputs": [
+      "input#_r_3_ \"\" 14px"
+    ],
+    "tinyText": [
+      "p \"Signed in as e2e-0798383a\" 11px"
+    ]
+  },
+  "projects-empty@768": {
+    "viewport": 768,
+    "documentWidth": 768,
+    "pageScrollsSideways": false,
+    "overflow": [],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Account\" 32×32",
+      "input#_r_3_ \"\" 707×40",
+      "button \"Create project\" 121×32"
+    ],
+    "smallInputs": [
+      "input#_r_3_ \"\" 14px"
+    ],
+    "tinyText": [
+      "p \"Signed in as e2e-0798383a\" 11px"
+    ]
+  },
+  "workspace-empty@375": {
+    "viewport": 375,
+    "documentWidth": 1036,
+    "pageScrollsSideways": true,
+    "overflow": [
+      "div \"Projects«Hide projectsPayments API with \" right=1024 width=1024"
+    ],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Hide projects\" 28×28",
+      "a \"Payments API with a rather long project \" 223×38",
+      "button \"New project\" 105×32",
+      "button \"Rename\" 78×32",
+      "button \"Delete\" 68×32",
+      "button \"Zoom In\" 26×26",
+      "button \"Zoom Out\" 26×26",
+      "button \"Fit View\" 26×26",
+      "button \"Tidy up\" 26×26",
+      "button \"Add Client\" 36×36",
+      "button \"Add DNS\" 36×36",
+      "button \"Add CDN\" 36×36",
+      "button \"Add Load Balancer\" 36×36",
+      "button \"Add API Gateway\" 36×36",
+      "button \"Add Service\" 36×36",
+      "button \"Add Database\" 36×36",
+      "button \"Add Cache\" 36×36",
+      "button \"Add Queue / Stream\" 36×36",
+      "button \"Add Object Store\" 36×36",
+      "button \"Add Search Index\" 36×36",
+      "button \"Add External Service\" 36×36",
+      "button \"Add Custom\" 36×36",
+      "div \"Resize panel\" 8×674",
+      "button \"Hide chat\" 28×28",
+      "button \"New conversation\" 32×32",
+      "button \"Send\" 58×32"
+    ],
+    "smallInputs": [
+      "textarea#chat-message \"\" 14px"
+    ],
+    "tinyText": [
+      "p \"Projects\" 11px",
+      "span \"AI architect\" 10px"
+    ]
+  },
+  "workspace-empty@768": {
+    "viewport": 768,
+    "documentWidth": 1036,
+    "pageScrollsSideways": true,
+    "overflow": [
+      "div \"Projects«Hide projectsPayments API with \" right=1024 width=1024"
+    ],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Account\" 32×32",
+      "button \"Hide projects\" 28×28",
+      "a \"Payments API with a rather long project \" 223×38",
+      "button \"New project\" 105×32",
+      "button \"Rename\" 78×32",
+      "button \"Delete\" 68×32",
+      "button \"Zoom In\" 26×26",
+      "button \"Zoom Out\" 26×26",
+      "button \"Fit View\" 26×26",
+      "button \"Tidy up\" 26×26",
+      "button \"Add Client\" 36×36",
+      "button \"Add DNS\" 36×36",
+      "button \"Add CDN\" 36×36",
+      "button \"Add Load Balancer\" 36×36",
+      "button \"Add API Gateway\" 36×36",
+      "button \"Add Service\" 36×36",
+      "button \"Add Database\" 36×36",
+      "button \"Add Cache\" 36×36",
+      "button \"Add Queue / Stream\" 36×36",
+      "button \"Add Object Store\" 36×36",
+      "button \"Add Search Index\" 36×36",
+      "button \"Add External Service\" 36×36",
+      "button \"Add Custom\" 36×36",
+      "div \"Resize panel\" 8×699",
+      "button \"Hide chat\" 28×28",
+      "button \"New conversation\" 32×32",
+      "button \"Send\" 58×32"
+    ],
+    "smallInputs": [
+      "textarea#chat-message \"\" 14px"
+    ],
+    "tinyText": [
+      "p \"Projects\" 11px",
+      "span \"AI architect\" 10px"
+    ]
+  },
+  "workspace-proposal@375": {
+    "viewport": 375,
+    "documentWidth": 1036,
+    "pageScrollsSideways": true,
+    "overflow": [
+      "div \"Projects«Hide projectsPayments API with \" right=1024 width=1024"
+    ],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Hide projects\" 28×28",
+      "a \"Payments API with a rather long project \" 223×38",
+      "button \"New project\" 105×32",
+      "button \"Rename\" 78×32",
+      "button \"Delete\" 68×32",
+      "button \"Zoom In\" 26×26",
+      "button \"Zoom Out\" 26×26",
+      "button \"Fit View\" 26×26",
+      "button \"Tidy up\" 26×26",
+      "button \"Accept\" 72×32",
+      "button \"Reject\" 67×32",
+      "button \"Add Client\" 36×36",
+      "button \"Add DNS\" 36×36",
+      "button \"Add CDN\" 36×36",
+      "button \"Add Load Balancer\" 36×36",
+      "button \"Add API Gateway\" 36×36",
+      "button \"Add Service\" 36×36",
+      "button \"Add Database\" 36×36",
+      "button \"Add Cache\" 36×36",
+      "button \"Add Queue / Stream\" 36×36",
+      "button \"Add Object Store\" 36×36",
+      "button \"Add Search Index\" 36×36",
+      "button \"Add External Service\" 36×36",
+      "button \"Add Custom\" 36×36",
+      "div \"Resize panel\" 8×674",
+      "button \"Hide chat\" 28×28",
+      "button \"New conversation\" 32×32",
+      "button \"Accept\" 72×32",
+      "button \"Reject\" 67×32",
+      "button \"Send\" 58×32"
+    ],
+    "smallInputs": [
+      "textarea#chat-message \"\" 14px"
+    ],
+    "tinyText": [
+      "p \"Projects\" 11px",
+      "span \"Service · new\" 10px",
+      "span \"· new\" 10px",
+      "span \"Cache · new\" 10px",
+      "p \"AI proposal #1\" 11px",
+      "span \"AI architect\" 10px",
+      "span \"You\" 10px",
+      "p \"Proposal #1\" 11px",
+      "span \"Pending\" 11px"
+    ]
+  },
+  "workspace-proposal@768": {
+    "viewport": 768,
+    "documentWidth": 1036,
+    "pageScrollsSideways": true,
+    "overflow": [
+      "div \"Projects«Hide projectsPayments API with \" right=1024 width=1024"
+    ],
+    "smallTargets": [
+      "a \"sys-helper\" 118×33",
+      "button \"Theme\" 32×32",
+      "button \"Account\" 32×32",
+      "button \"Hide projects\" 28×28",
+      "a \"Payments API with a rather long project \" 223×38",
+      "button \"New project\" 105×32",
+      "button \"Rename\" 78×32",
+      "button \"Delete\" 68×32",
+      "button \"Zoom In\" 26×26",
+      "button \"Zoom Out\" 26×26",
+      "button \"Fit View\" 26×26",
+      "button \"Tidy up\" 26×26",
+      "button \"Accept\" 72×32",
+      "button \"Reject\" 67×32",
+      "button \"Add Client\" 36×36",
+      "button \"Add DNS\" 36×36",
+      "button \"Add CDN\" 36×36",
+      "button \"Add Load Balancer\" 36×36",
+      "button \"Add API Gateway\" 36×36",
+      "button \"Add Service\" 36×36",
+      "button \"Add Database\" 36×36",
+      "button \"Add Cache\" 36×36",
+      "button \"Add Queue / Stream\" 36×36",
+      "button \"Add Object Store\" 36×36",
+      "button \"Add Search Index\" 36×36",
+      "button \"Add External Service\" 36×36",
+      "button \"Add Custom\" 36×36",
+      "div \"Resize panel\" 8×699",
+      "button \"Hide chat\" 28×28",
+      "button \"New conversation\" 32×32",
+      "button \"Accept\" 72×32",
+      "button \"Reject\" 67×32",
+      "button \"Send\" 58×32"
+    ],
+    "smallInputs": [
+      "textarea#chat-message \"\" 14px"
+    ],
+    "tinyText": [
+      "p \"Projects\" 11px",
+      "span \"Service · new\" 10px",
+      "span \"· new\" 10px",
+      "span \"Cache · new\" 10px",
+      "p \"AI proposal #1\" 11px",
+      "span \"AI architect\" 10px",
+      "span \"You\" 10px",
+      "p \"Proposal #1\" 11px",
+      "span \"Pending\" 11px"
+    ]
+  },
+  "account-menu@375": {
+    "reachable": true
+  }
+}
