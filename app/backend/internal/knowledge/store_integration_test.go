@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/knowledge"
@@ -206,6 +207,35 @@ func TestStore(t *testing.T) {
 		}
 		if err := store.SetExperienceLevel(ctx, user, suffix, "guru"); !errors.Is(err, knowledge.ErrInvalid) {
 			t.Errorf("invalid level: err = %v", err)
+		}
+	})
+
+	t.Run("reads without waiting for a write in progress", func(t *testing.T) {
+		user, suffix := newProject(t)
+		// Another transaction holds the Project's row lock, as every knowledge write does.
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM projects WHERE slug_suffix = $1 FOR UPDATE`, suffix); err != nil {
+			t.Fatal(err)
+		}
+
+		short, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		if _, err := store.Get(short, user, suffix); err != nil {
+			t.Errorf("Get while the Project is locked: %v", err)
+		}
+	})
+
+	t.Run("reports a failure to read the default experience level", func(t *testing.T) {
+		user := testdb.User(t, pool, "octocat")
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+
+		if level, err := store.DefaultExperienceLevel(cancelled, user); err == nil {
+			t.Errorf("DefaultExperienceLevel = %q, nil; want the query's error", level)
 		}
 	})
 
