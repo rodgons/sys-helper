@@ -67,17 +67,18 @@ func TestVerifier(t *testing.T) {
 			"iss": srv.URL + "/auth/v1",
 			"aud": "authenticated",
 			"sub": "user-1",
+			"session_id": "session-1",
 			"exp": time.Now().Add(time.Hour).Unix(),
 		}
 	}
 
-	t.Run("returns the subject of a valid token", func(t *testing.T) {
-		id, err := verifier.UserID(sign(t, key, jwt.SigningMethodES256, valid()))
+	t.Run("returns the subject and session of a valid token", func(t *testing.T) {
+		got, err := verifier.Verify(sign(t, key, jwt.SigningMethodES256, valid()))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if id != "user-1" {
-			t.Errorf("UserID = %q, want user-1", id)
+		if got != (auth.Token{UserID: "user-1", SessionID: "session-1"}) {
+			t.Errorf("Verify = %+v", got)
 		}
 	})
 
@@ -114,12 +115,17 @@ func TestVerifier(t *testing.T) {
 			delete(c, "sub")
 			return sign(t, key, jwt.SigningMethodES256, c)
 		}},
+		{"without a session", func() string {
+			c := valid()
+			delete(c, "session_id")
+			return sign(t, key, jwt.SigningMethodES256, c)
+		}},
 		{"signed by another key", func() string { return sign(t, otherKey, jwt.SigningMethodES256, valid()) }},
 		{"not a JWT", func() string { return "garbage" }},
 	}
 	for _, tt := range tests {
 		t.Run("rejects a token that is "+tt.name, func(t *testing.T) {
-			_, err := verifier.UserID(tt.token())
+			_, err := verifier.Verify(tt.token())
 			if !errors.Is(err, auth.ErrInvalidToken) {
 				t.Fatalf("err = %v, want ErrInvalidToken", err)
 			}

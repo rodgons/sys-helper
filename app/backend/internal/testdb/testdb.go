@@ -85,3 +85,16 @@ func User(t *testing.T, pool *pgxpool.Pool, githubUsername string, opts ...Optio
 	}
 	return id
 }
+
+// Session starts a Supabase Auth session for the user, as signing in does, and returns its id.
+func Session(t *testing.T, pool *pgxpool.Pool, userID string) string {
+	t.Helper()
+	var id string
+	err := pool.QueryRow(context.Background(), `
+		INSERT INTO auth.sessions (id, user_id, created_at, updated_at, aal)
+		VALUES (gen_random_uuid(), $1, now(), now(), 'aal1') RETURNING id`, userID).Scan(&id)
+	if err != nil {
+		t.Fatalf("insert auth.sessions: %v", err)
+	}
+	return id
+}

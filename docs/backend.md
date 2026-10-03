@@ -8,7 +8,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | --- | --- |
 | `cmd/server` | The only place real dependencies are built and hooks are wired (`OnCreate`, `AfterSave`). |
 | `internal/config` | `.env` → `Config`, through an injected `getenv`. |
-| `internal/auth` | JWKS token check (`verifier.go`), the User's identities from `auth.identities` (`identities.go`), the beta `Allowlist` (zero value admits nobody). See Auth below. |
+| `internal/auth` | JWKS token check (`verifier.go`), the live-session check (`sessions.go`), the User's identities from `auth.identities` (`identities.go`), the beta `Allowlist` (zero value admits nobody). See Auth below. |
 | `internal/httpapi` | Routes (`router.go`), handlers, the store interfaces they need (declared next to each handler), error mapping. |
 | `internal/projects` | Projects and Project Slugs. |
 | `internal/architecture` | The canvas document, the Component Type catalog (`document.go`) and versioned saves. |
@@ -21,6 +21,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 
 ## Auth
 
+- **Sessions:** a valid signature isn't enough: access tokens live for an hour. `Verifier.Verify` returns the token's `sub` and `session_id`, and `auth.Sessions.Check` requires that session to still exist in `auth.sessions` (not signed out or revoked, `not_after` not passed) and its `auth.users` row to be neither banned nor deleted. Otherwise → 401 `unauthenticated`.
 - **Identities:** a User signs in with GitHub or Google. When a second provider arrives with the same verified email, Supabase links it to the same `auth.users` row (automatic linking), so one User can have both. `auth.Identities.List` reads the `github` and `google` rows of `auth.identities`, GitHub first, never `user_metadata` (users can edit it). `provider_id` is the immutable account id: the numeric GitHub id, or the Google `sub`. A GitHub row needs a `user_name`; other providers' rows are ignored. No usable identity → `auth.ErrNoIdentity` (→ 403 `identity_required`).
 - **Allowlist:** `ALLOWED_GITHUB_IDS` (numeric GitHub ids) and `ALLOWED_GOOGLE_IDS` (Google subs, never emails). A User is admitted if **any** of their identities is listed under its provider. Both empty admit nobody unless `ALLOW_ALL_USERS=1`. The removed `ALLOW_ALL_GITHUB_USERS` and `ALLOWED_GITHUB_USERS` fail startup naming their replacement. Refused → 403 `not_allowed` with `identities: [{provider, id, name}]`, so the page can show the User what to ask with.
 - **Display:** `User.DisplayName()` is the GitHub username if one is linked, otherwise the Google full name, otherwise the Google email. `User.AvatarURL()` comes from the same identity.

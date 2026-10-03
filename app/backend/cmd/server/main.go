@@ -61,7 +61,7 @@ func run() error {
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			DB:            db,
-			Auth:          auth.Authenticator{Tokens: tokens, Identities: auth.Identities{DB: db}},
+			Auth:          auth.Authenticator{Tokens: tokens, Sessions: auth.Sessions{DB: db}, Identities: auth.Identities{DB: db}},
 			Projects:      projectStore,
 			Architectures: architectures,
 			Conversations: conversations,

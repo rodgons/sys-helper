@@ -70,11 +70,21 @@ func TestUserProfile(t *testing.T) {
 
 type tokens map[string]string
 
-func (t tokens) UserID(token string) (string, error) {
+func (t tokens) Verify(token string) (auth.Token, error) {
 	if id, ok := t[token]; ok {
-		return id, nil
+		return auth.Token{UserID: id, SessionID: "s-" + token}, nil
 	}
-	return "", auth.ErrInvalidToken
+	return auth.Token{}, auth.ErrInvalidToken
+}
+
+// sessions holds the live sessions, as user/session.
+type sessions map[string]bool
+
+func (s sessions) Check(_ context.Context, userID, sessionID string) error {
+	if !s[userID+"/"+sessionID] {
+		return auth.ErrInvalidToken
+	}
+	return nil
 }
 
 type identities map[string][]auth.Identity
@@ -88,8 +98,9 @@ func (i identities) List(_ context.Context, userID string) ([]auth.Identity, err
 
 func TestAuthenticate(t *testing.T) {
 	a := auth.Authenticator{
-		Tokens:     tokens{"good": "u1", "bare": "u2"},
+		Tokens:     tokens{"good": "u1", "bare": "u2", "signed-out": "u1"},
 		Identities: identities{"u1": {github, google}},
+		Sessions:   sessions{"u1/s-good": true, "u2/s-bare": true},
 	}
 
 	t.Run("returns the User with their identities", func(t *testing.T) {
@@ -104,6 +115,12 @@ func TestAuthenticate(t *testing.T) {
 
 	t.Run("rejects invalid tokens", func(t *testing.T) {
 		if _, err := a.Authenticate(context.Background(), "forged"); !errors.Is(err, auth.ErrInvalidToken) {
+			t.Errorf("err = %v, want ErrInvalidToken", err)
+		}
+	})
+
+	t.Run("rejects a valid token whose session ended (signed out, revoked) or whose user is banned", func(t *testing.T) {
+		if _, err := a.Authenticate(context.Background(), "signed-out"); !errors.Is(err, auth.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
 		}
 	})
