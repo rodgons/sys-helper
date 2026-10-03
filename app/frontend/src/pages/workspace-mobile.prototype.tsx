@@ -9,7 +9,6 @@ import { type PointerEvent, type ReactNode, useEffect, useRef, useState } from '
 import type { Review } from '../architecture/review';
 import type { Tab } from '../knowledge/side-panel';
 import { useVariant, VariantSwitcher } from '../prototype/variant-switcher';
-import { Button } from '../ui/button';
 
 export const VARIANTS: [string, string][] = [
   ['A', 'Docked sheet'],
@@ -388,7 +387,7 @@ function IconBtn({
 
 type View = 'canvas' | Tab;
 
-function FullScreenTabs({ canvas, panel, pending, review, counts }: Slots) {
+function FullScreenTabs({ canvas, panel, pending, counts }: Slots) {
   const [view, setView] = useState<View>('conversation');
   const tab: Tab = view === 'canvas' ? 'conversation' : view;
   const layer = (shown: boolean): React.CSSProperties => ({
@@ -410,39 +409,7 @@ function FullScreenTabs({ canvas, panel, pending, review, counts }: Slots) {
         {/* Both layers stay mounted; React Flow needs a measured box, so hide with visibility. */}
         <div style={layer(view === 'canvas')}>
           {canvas}
-          {pending && review && (
-            <div
-              style={{
-                position: 'absolute',
-                left: 8,
-                right: 8,
-                bottom: 8,
-                display: 'flex',
-                gap: 8,
-                alignItems: 'center',
-                padding: 10,
-                borderRadius: 10,
-                background: 'var(--color-raised, #fff)',
-                border: `1px solid ${line}`,
-                boxShadow: '0 6px 20px rgba(0,0,0,.18)',
-              }}
-            >
-              <span style={{ flexGrow: 1, fontSize: 14 }}>Previewing Proposal {review.seq}</span>
-              <Button
-                size="sm"
-                disabled={review.busy || review.stale !== null}
-                onClick={review.accept}
-              >
-                Accept
-              </Button>
-              <Button size="sm" variant="outline" disabled={review.busy} onClick={review.reject}>
-                Reject
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => setView('conversation')}>
-                Chat
-              </Button>
-            </div>
-          )}
+          {/* The canvas's own Proposal banner already offers Accept / Reject over the preview. */}
         </div>
         <div style={layer(view !== 'canvas')}>{panel(tab, (t) => setView(t))}</div>
       </div>
