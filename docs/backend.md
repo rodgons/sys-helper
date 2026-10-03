@@ -14,7 +14,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | `internal/architecture` | The canvas document, the Component Type catalog (`document.go`) and versioned saves. |
 | `internal/conversation` | Messages, Proposals stored with them, accept and reject. |
 | `internal/knowledge` | Experience Level, Requirements, Decisions, user settings. |
-| `internal/usage` | The daily AI caps: `Meter.Record` logs each model call in `ai_usage` and refuses past `AI_DAILY_REPLY_LIMIT` (check + insert under a per-User advisory lock). `Budget.Spend` logs every request to OpenRouter, fallbacks included, in `ai_requests` and refuses past `AI_GLOBAL_DAILY_LIMIT` (`ErrGlobalLimit`, which is an `ErrDailyLimit`; one global advisory lock). |
+| `internal/usage` | The daily AI caps: `Meter.Record` logs each model call in `ai_usage` and refuses past `AI_DAILY_REPLY_LIMIT` (check + insert under a per-User advisory lock); `Meter.Refund` uncounts a call no model answered (`llm.ErrExhausted`, or the global budget refused). `Budget.Spend` logs every request to OpenRouter, fallbacks included, in `ai_requests` and refuses past `AI_GLOBAL_DAILY_LIMIT` (`ErrGlobalLimit`, which is an `ErrDailyLimit`; one global advisory lock). |
 | `internal/proposal` | Proposal ops, `Normalize`, `Validate`, the `propose_changes` tool schema. |
 | `internal/assistant`, `internal/llm` | The AI turn and the model clients (see `docs/ai.md`). |
 | `internal/testdb` | Integration helpers: `Pool(t)`, `User(t, pool, githubUsername, opts...)` (`""` = no GitHub identity; `WithGoogle(fullName)` links a Google one, so it makes GitHub-only, Google-only, linked and identity-less users). |

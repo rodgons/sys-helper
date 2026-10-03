@@ -21,15 +21,31 @@ func TestMeter(t *testing.T) {
 		meter := usage.NewMeter(pool, 2)
 
 		for i := range 2 {
-			if err := meter.Record(ctx, alice); err != nil {
+			if _, err := meter.Record(ctx, alice); err != nil {
 				t.Fatalf("call %d: %v", i+1, err)
 			}
 		}
-		if err := meter.Record(ctx, alice); !errors.Is(err, usage.ErrDailyLimit) {
+		if _, err := meter.Record(ctx, alice); !errors.Is(err, usage.ErrDailyLimit) {
 			t.Fatalf("third call: err = %v, want ErrDailyLimit", err)
 		}
-		if err := meter.Record(ctx, bob); err != nil {
+		if _, err := meter.Record(ctx, bob); err != nil {
 			t.Fatalf("another User: %v", err)
+		}
+	})
+
+	t.Run("a refunded call no longer counts", func(t *testing.T) {
+		user := testdb.User(t, pool, "refunded")
+		meter := usage.NewMeter(pool, 1)
+
+		call, err := meter.Record(ctx, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := meter.Refund(ctx, call); err != nil {
+			t.Fatalf("Refund: %v", err)
+		}
+		if _, err := meter.Record(ctx, user); err != nil {
+			t.Errorf("after a refund: %v, want the call allowed", err)
 		}
 	})
 
@@ -42,7 +58,7 @@ func TestMeter(t *testing.T) {
 		allowed := 0
 		for range 10 {
 			wg.Go(func() {
-				if err := meter.Record(ctx, user); err == nil {
+				if _, err := meter.Record(ctx, user); err == nil {
 					mu.Lock()
 					allowed++
 					mu.Unlock()
@@ -61,7 +77,7 @@ func TestMeter(t *testing.T) {
 		meter := usage.NewMeter(pool, 0)
 
 		for range 3 {
-			if err := meter.Record(ctx, user); err != nil {
+			if _, err := meter.Record(ctx, user); err != nil {
 				t.Fatal(err)
 			}
 		}

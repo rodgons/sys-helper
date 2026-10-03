@@ -26,15 +26,15 @@ func NewMeter(db *pgxpool.Pool, dailyLimit int) *Meter {
 	return &Meter{db: db, DailyLimit: dailyLimit}
 }
 
-// Record counts one model call for the User, or returns ErrDailyLimit and records nothing if they
-// have reached the cap. The check and the insert run under a per-User lock, so concurrent replies
-// can't both take the last call.
-func (m *Meter) Record(ctx context.Context, userID string) error {
+// Record counts one model call for the User and returns its id (for Refund), or returns
+// ErrDailyLimit and records nothing if they have reached the cap. The check and the insert run
+// under a per-User lock, so concurrent replies can't both take the last call.
+func (m *Meter) Record(ctx context.Context, userID string) (string, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
-		return err
+		return "", err
 	}
-	return pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('ai_usage:' || $1::text, 0))`, userID); err != nil {
 			return fmt.Errorf("lock usage: %w", err)
 		}
@@ -57,6 +57,19 @@ func (m *Meter) Record(ctx context.Context, userID string) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
+}
+
+// Refund uncounts a call Record counted that no model answered (every model was busy, or the global
+// budget was spent), so the User isn't charged for it.
+func (m *Meter) Refund(ctx context.Context, call string) error {
+	if _, err := m.db.Exec(ctx, `DELETE FROM ai_usage WHERE id = $1`, call); err != nil {
+		return fmt.Errorf("refund usage: %w", err)
+	}
+	return nil
 }
 
 // ErrGlobalLimit means today's requests for every User together are used up. It is a daily limit,

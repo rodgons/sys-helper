@@ -44,9 +44,10 @@ type Assistant struct {
 		Get(ctx context.Context, userID, suffix string) (knowledge.Knowledge, error)
 	}
 	// Usage records each model call against the User's daily cap (usage.Meter). It returns
-	// usage.ErrDailyLimit once the cap is reached.
+	// usage.ErrDailyLimit once the cap is reached. A call no model answered is refunded.
 	Usage interface {
-		Record(ctx context.Context, userID string) error
+		Record(ctx context.Context, userID string) (call string, err error)
+		Refund(ctx context.Context, call string) error
 	}
 	// HistoryLimit is how many recent Messages the model sees. The Architecture, Requirements and
 	// Decisions carry the long-term memory, so older chat matters less.
@@ -111,7 +112,8 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	model := ""            // the model that answered the last call
 	for attempt := 1; ; attempt++ {
 		// Every model call costs money, retries included, so each one counts against the cap.
-		if err := a.Usage.Record(ctx, userID); err != nil {
+		metered, err := a.Usage.Record(ctx, userID)
+		if err != nil {
 			if attempt > 1 && errors.Is(err, usage.ErrDailyLimit) {
 				note = "(I've reached today's AI limit, so I couldn't finish this proposal. It resets at midnight UTC.)"
 				break
@@ -119,6 +121,13 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 			return conversation.Message{}, err
 		}
 		text, call, answered, err := a.stream(ctx, req, onText)
+		if errors.Is(err, llm.ErrExhausted) || errors.Is(err, usage.ErrDailyLimit) {
+			// The Chain gives these only before any model started: nothing answered, so the User
+			// isn't charged.
+			if refundErr := a.Usage.Refund(context.WithoutCancel(ctx), metered); refundErr != nil {
+				slog.Warn("could not refund an unanswered model call", "error", refundErr)
+			}
+		}
 		if err != nil {
 			// A retry no model could take, or that the global budget refused, failed before sending
 			// anything: keep the reply so far.

@@ -131,18 +131,27 @@ func (fakeKnowledge) Get(context.Context, string, string) (knowledge.Knowledge, 
 
 // meter counts model calls and refuses any beyond limit (0 = no cap).
 type meter struct {
-	mu    sync.Mutex
-	calls int
-	limit int
+	mu       sync.Mutex
+	calls    int
+	limit    int
+	refunded []string
 }
 
-func (m *meter) Record(context.Context, string) error {
+func (m *meter) Record(context.Context, string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.limit > 0 && m.calls >= m.limit {
-		return usage.ErrDailyLimit
+		return "", usage.ErrDailyLimit
 	}
 	m.calls++
+	return fmt.Sprintf("call-%d", m.calls), nil
+}
+
+func (m *meter) Refund(_ context.Context, call string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls--
+	m.refunded = append(m.refunded, call)
 	return nil
 }
 
@@ -372,6 +381,36 @@ func TestReply(t *testing.T) {
 		_, err := newAssistant(model{err: busy}, conv("Welcome", "Hi")).Reply(context.Background(), "u", "s", func(string) {})
 		if !errors.Is(err, assistant.ErrUnavailable) {
 			t.Fatalf("err = %v, want ErrUnavailable", err)
+		}
+	})
+
+	for name, err := range map[string]error{
+		"every free model is busy":     fmt.Errorf("%w (last: HTTP 429)", llm.ErrExhausted),
+		"the global budget is used up": usage.ErrGlobalLimit,
+	} {
+		t.Run("gives the User their call back when "+name, func(t *testing.T) {
+			a := newAssistant(model{err: err}, conv("Welcome", "Hi"))
+			meter := &meter{}
+			a.Usage = meter
+
+			if _, replyErr := a.Reply(context.Background(), "u", "s", func(string) {}); replyErr == nil {
+				t.Fatal("expected an error")
+			}
+			if meter.calls != 0 || len(meter.refunded) != 1 || meter.refunded[0] != "call-1" {
+				t.Errorf("calls = %d, refunded = %v; want the call refunded", meter.calls, meter.refunded)
+			}
+		})
+	}
+
+	t.Run("keeps the call when the model answered, even if it then failed", func(t *testing.T) {
+		a := newAssistant(model{words: []string{"partial"}, err: errors.New("reset")}, conv("Welcome", "Hi"))
+		meter := &meter{}
+		a.Usage = meter
+
+		_, _ = a.Reply(context.Background(), "u", "s", func(string) {})
+
+		if meter.calls != 1 || len(meter.refunded) != 0 {
+			t.Errorf("calls = %d, refunded = %v", meter.calls, meter.refunded)
 		}
 	})
 
