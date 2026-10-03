@@ -51,6 +51,7 @@ type Catalog struct {
 }
 
 // Models returns the model ids to try, best first, with currently demoted ones moved to the back.
+// Excluded models are left out, pinned ones included.
 func (c *Catalog) Models() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -61,6 +62,9 @@ func (c *Catalog) Models() []string {
 	now := c.now()
 	var healthy, demoted []string
 	for _, m := range models {
+		if slices.Contains(c.Exclude, m) {
+			continue
+		}
 		if c.demoted[m].After(now) {
 			demoted = append(demoted, m)
 		} else {

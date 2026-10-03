@@ -158,6 +158,14 @@ func TestCatalog(t *testing.T) {
 		}
 	})
 
+	t.Run("leaves out excluded models even when they are pinned", func(t *testing.T) {
+		c := &llm.Catalog{Pinned: []string{"z:free", "y:free", "x:free"}, Exclude: []string{"y:free"}}
+
+		if got := c.Models(); !slices.Equal(got, []string{"z:free", "x:free"}) {
+			t.Errorf("models = %v", got)
+		}
+	})
+
 	t.Run("keeps the last good list when a refresh fails", func(t *testing.T) {
 		var fail atomic.Bool
 		srv, _ := openRouter(t, &fail, model{id: "a:free"})
