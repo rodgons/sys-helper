@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	"sys-helper/backend/internal/assistant"
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/projects"
 )
@@ -14,6 +15,29 @@ import (
 type ConversationStore interface {
 	List(ctx context.Context, userID, suffix string) ([]conversation.Message, error)
 	Append(ctx context.Context, userID, suffix string, role conversation.Role, body string) (conversation.Message, error)
+}
+
+// ConversationStarter starts a Project's New Conversation: it replaces every Message with a
+// Welcome Message and returns the new list. It refuses with assistant.ErrBusy while a reply for
+// the Project is being generated.
+type ConversationStarter interface {
+	NewConversation(ctx context.Context, userID, suffix string) ([]conversation.Message, error)
+}
+
+func handleNewConversation(starter ConversationStarter) http.HandlerFunc {
+	return withSuffix(func(w http.ResponseWriter, r *http.Request, suffix string) {
+		msgs, err := starter.NewConversation(r.Context(), userFrom(r.Context()).ID, suffix)
+		switch {
+		case errors.Is(err, projects.ErrNotFound):
+			writeError(w, http.StatusNotFound, "not_found")
+		case errors.Is(err, assistant.ErrBusy):
+			writeError(w, http.StatusConflict, "busy")
+		case err != nil:
+			internalError(w, r, err)
+		default:
+			writeJSON(w, http.StatusOK, msgs)
+		}
+	})
 }
 
 func handleListMessages(store ConversationStore) http.HandlerFunc {

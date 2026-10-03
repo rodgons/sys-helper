@@ -119,7 +119,25 @@ export function useReply(slug: string) {
     }
   }, [client, reload, slug, token]);
 
-  return { state, start };
+  /** Back to idle, e.g. so a failed reply's Retry doesn't outlive a New Conversation. */
+  const reset = useCallback(() => setState({ status: 'idle' }), []);
+
+  return { state, start, reset };
+}
+
+/**
+ * Starts a New Conversation: the server replaces every Message (and their Proposals) with a
+ * Welcome Message, and the cached Conversation is replaced with what it returns. Fails with
+ * `ApiError` code `busy` while a reply is being written.
+ */
+export function useNewConversation(slug: string) {
+  const token = useToken();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<Message[]>(`/api/projects/${slug}/conversation`, { token, method: 'POST' }),
+    onSuccess: (messages) => client.setQueryData<Message[]>(key(slug), messages),
+  });
 }
 
 function withStatus(

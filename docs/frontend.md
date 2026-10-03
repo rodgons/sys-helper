@@ -29,7 +29,7 @@ Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` on
 | --- | --- | --- |
 | `['projects']`, `['project', suffix]` | `useProjects`, `useProject` | Mutations set the single project and invalidate the list |
 | `['architecture', suffix]` | `useArchitecture` | Read **once** per visit (`staleTime: ∞`, `gcTime: 0`). The canvas owns the document afterwards; never refetch it into an open canvas |
-| `['messages', suffix]` | `useMessages` | Updated by `setQueryData` (send, reply `done`, Proposal status), not refetches. `usePendingProposal` derives from it |
+| `['messages', suffix]` | `useMessages` | Updated by `setQueryData` (send, reply `done`, Proposal status, New Conversation), not refetches. `usePendingProposal` derives from it |
 | `['knowledge', suffix]` | `useKnowledge` | Invalidated after every knowledge edit, every canvas save (pruning) and every accept. Saving settings invalidates all `['knowledge']` |
 | `['settings']`, `['me', token]` | `useSettings`, `useMe` | `useMe` keeps the previous profile while a refreshed token refetches; otherwise `RequireUser` would unmount the workspace (aborting a streaming reply) every hour |
 
@@ -38,6 +38,12 @@ Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` on
 Three panes: project sidebar, canvas, side panel (Conversation / Requirements / Decisions tabs; all stay mounted). Canvas-related components are keyed by slug suffix, so switching Projects remounts them with fresh state. The canvas publishes two things upward that the chat and the knowledge tabs consume:
 - `Review`: the pending Proposal's accept/reject actions, staleness and progress.
 - `names`: canvas id → display name.
+
+### Side panel width (`lib/panel-width.ts`)
+
+- The User resizes the side panel by dragging the border between it and the canvas (pointer events with pointer capture; `resizing` on `<main>` sets the resize cursor and blocks text selection), or from the keyboard: the border is a focusable vertical `separator` ("Resize panel", `aria-valuenow`/`min`/`max` in px). Arrow keys step 1rem, Home/End jump to the bounds and a double-click resets to the default 24rem. The width applies to all three tabs, because it is the grid's `--right-w`.
+- Bounds: min 20rem; max keeps the canvas at least 32rem wide beside the left pane's current width (16rem open, 3rem rail, the `LEFT_*_REM` constants in `workspace.tsx`), within the panes' 64rem minimum. `usePanelWidth` keeps the chosen width and clamps only what it shows, so it re-clamps when the window resizes or the sidebar toggles, and a window that grows back restores the choice.
+- Stored per browser in `localStorage` (`side-panel-width`, px), never on the server. Like the theme, reads and writes are guarded: a missing, non-numeric, out-of-bounds or blocked value falls back to 24rem. Collapsing the panel to its rail keeps the width; reopening restores it.
 
 ### Canvas (`architecture/canvas.tsx`)
 
@@ -65,6 +71,7 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 - On `done`, the reply is appended to the cache and any pending Proposal is marked `superseded`, mirroring the server.
 - The server saves a completed reply even if the client went away. So when a stream ends without `done` or `error` (the connection dropped), or `POST reply` answers `nothing_to_reply`, the chat reloads `['messages', suffix]` instead of only offering a retry.
 - When the User reviews the pending Proposal that ends the Conversation, the chat starts a reply automatically. Reviews from before page load only get a "Get a reply" button.
+- **New Conversation:** the ghost icon button at the top of the Conversation tab asks in a `Dialog`, then `useNewConversation` POSTs `…/conversation` and **replaces** `['messages', suffix]` with the response (no refetch). Everything derived from the pending Proposal (canvas preview, review, auto-reply) follows by itself. On success the chat calls `useReply().reset()` (a stale Retry goes away), resets the send error and the Up/Down recall, and keeps the draft. `busy` → a toast, nothing changes. The button is disabled while a reply streams, a message sends, a review (`Review.busy`) or the reset is in flight, and when the Conversation is only the Welcome Message.
 
 ## Styling
 

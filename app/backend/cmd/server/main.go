@@ -57,30 +57,32 @@ func run() error {
 	architectures.AfterSave = knowledge.PruneDecisions // Decisions follow the items they explain
 	knowledgeStore := knowledge.NewStore(db)
 	go usage.RunPruner(ctx, db) // the daily caps only need recent rows
+	ai := &assistant.Assistant{
+		Model:         chatModel(ctx, cfg.AI, usage.NewBudget(db, cfg.AI.GlobalDailyLimit)),
+		Conversations: conversations,
+		Architectures: architectures,
+		Knowledge:     knowledgeStore,
+		Usage:         usage.NewMeter(db, cfg.AI.DailyReplyLimit),
+		HistoryLimit:  30,
+		Timeout:       3 * time.Minute,
+	}
 
 	srv := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpapi.NewRouter(httpapi.Deps{
-			DB:            db,
-			Auth:          auth.Authenticator{Tokens: tokens, Sessions: auth.Sessions{DB: db}, Identities: auth.Identities{DB: db}},
-			Projects:      projectStore,
-			Architectures: architectures,
-			Conversations: conversations,
-			Assistant: &assistant.Assistant{
-				Model:         chatModel(ctx, cfg.AI, usage.NewBudget(db, cfg.AI.GlobalDailyLimit)),
-				Conversations: conversations,
-				Architectures: architectures,
-				Knowledge:     knowledgeStore,
-				Usage:         usage.NewMeter(db, cfg.AI.DailyReplyLimit),
-				HistoryLimit:  30,
-				Timeout:       3 * time.Minute,
-			},
-			Reviews:        conversation.Reviews{Conversations: conversations, Architectures: architectures},
-			Knowledge:      knowledgeStore,
-			Settings:       knowledgeStore, // the default Experience Level lives with the per-Project one
-			Accounts:       auth.Accounts{DB: db},
-			AllowedOrigins: cfg.AllowedOrigins,
-			Allowlist:      allowlist(cfg),
+			DB:               db,
+			Auth:             auth.Authenticator{Tokens: tokens, Sessions: auth.Sessions{DB: db}, Identities: auth.Identities{DB: db}},
+			Projects:         projectStore,
+			Architectures:    architectures,
+			Conversations:    conversations,
+			Assistant:        ai,
+			NewConversations: ai, // a reset shares the reply-in-flight guard
+			Reviews:          conversation.Reviews{Conversations: conversations, Architectures: architectures},
+			Knowledge:        knowledgeStore,
+			Settings:         knowledgeStore, // the default Experience Level lives with the per-Project one
+			Accounts:         auth.Accounts{DB: db},
+			AllowedOrigins:   cfg.AllowedOrigins,
+			Allowlist:        allowlist(cfg),
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

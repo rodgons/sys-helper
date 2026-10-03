@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { useSetProposalStatus } from '../lib/conversation';
 import { mockApi, renderWithQuery, signedIn, sseResponse } from '../test/render';
+import { Toaster } from '../ui/toaster';
 import { ChatPane } from './chat-pane';
 
 const SLUG = 'shop-k3xa9q2m7p';
@@ -391,6 +392,34 @@ describe('ChatPane', () => {
       },
     );
 
+    it('scrolls to the AI thinking about its follow-up', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          mockApi({
+            [`GET ${API}/messages`]: [welcome, proposed('pending')],
+            [`POST ${API}/reply`]: () => new Promise<never>(() => {}),
+          }),
+        ),
+      );
+      renderWithQuery(
+        <>
+          <ChatPane slug={SLUG} />
+          <Resolve status="accepted" />
+        </>,
+        { auth: signedIn() },
+      );
+      await screen.findByText('Here is a cache.');
+      // happy-dom doesn't lay out, so give the list a height and scroll it back to the top.
+      Object.defineProperty(messages(), 'scrollHeight', { configurable: true, value: 900 });
+      messages().scrollTop = 0;
+
+      fireEvent.click(screen.getByRole('button', { name: 'resolve' }));
+
+      expect(await within(messages()).findByText('Thinking…')).toBeInTheDocument();
+      await waitFor(() => expect(messages().scrollTop).toBe(900));
+    });
+
     it('offers the reply instead of fetching it when the review happened earlier', async () => {
       const { reply } = setup({}, [welcome, proposed('accepted')]);
 
@@ -400,6 +429,175 @@ describe('ChatPane', () => {
         await within(messages()).findByText('How many users will it have?'),
       ).toBeInTheDocument();
       expect(reply).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('new conversation', () => {
+    const fresh = { role: 'assistant', body: 'Fresh welcome. What next?', createdAt: at };
+    const talk = [
+      welcome,
+      { role: 'user', body: 'A URL shortener', createdAt: at },
+      { role: 'assistant', body: 'How many users?', createdAt: at },
+    ];
+    const pending = {
+      role: 'assistant',
+      body: 'Here is a cache.',
+      createdAt: at,
+      proposal: { seq: 1, summary: 'Add a cache', status: 'pending', baseVersion: 0, changes: [] },
+    };
+    const newButton = () => screen.getByRole('button', { name: 'New conversation' });
+    const dialog = () => screen.getByRole('dialog', { name: 'Start a new conversation?' });
+    const never = () => new Promise<never>(() => {});
+
+    it('is not offered while the conversation is only the welcome message', async () => {
+      setup();
+      await screen.findByText(/who is it for/);
+
+      expect(newButton()).toBeDisabled();
+      expect(newButton()).toHaveAttribute('title', 'New conversation');
+    });
+
+    it('asks first, then replaces the messages with the new ones without reloading', async () => {
+      const start = vi.fn(() => [fresh]);
+      setup({ [`POST ${API}/conversation`]: start }, talk);
+      await screen.findByText('How many users?');
+
+      fireEvent.click(newButton());
+      expect(dialog()).toHaveTextContent(
+        'The current messages will be deleted. Your architecture, requirements and decisions stay, and the AI still sees them.',
+      );
+      expect(dialog()).not.toHaveTextContent(/pending proposal/i);
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(start).not.toHaveBeenCalled();
+
+      fireEvent.click(newButton());
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Start new conversation' }));
+
+      expect(await within(messages()).findByText('Fresh welcome. What next?')).toBeInTheDocument();
+      expect(within(messages()).queryByText('How many users?')).not.toBeInTheDocument();
+      expect(within(messages()).queryByText(/who is it for/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(start).toHaveBeenCalledTimes(1);
+      const loads = vi
+        .mocked(fetch)
+        .mock.calls.filter(
+          ([url, init]) => String(url).endsWith('/messages') && (init?.method ?? 'GET') === 'GET',
+        );
+      expect(loads).toHaveLength(1);
+      expect(newButton()).toBeDisabled();
+    });
+
+    it('warns that a pending proposal will be discarded', async () => {
+      setup({}, [welcome, pending]);
+      await screen.findByText('Here is a cache.');
+
+      fireEvent.click(newButton());
+
+      expect(dialog()).toHaveTextContent('The pending proposal will be discarded.');
+    });
+
+    it('keeps the draft, drops a failed reply and forgets the old messages for recall', async () => {
+      setup(
+        {
+          [`POST ${API}/reply`]: { status: 503, body: { error: 'ai_unavailable' } },
+          [`POST ${API}/conversation`]: [fresh],
+        },
+        [welcome, { role: 'user', body: 'A URL shortener', createdAt: at }],
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Get a reply' }));
+      expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+      fireEvent.change(box(), { target: { value: 'Next idea' } });
+
+      fireEvent.click(newButton());
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Start new conversation' }));
+
+      expect(await within(messages()).findByText('Fresh welcome. What next?')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/isn't available/)).not.toBeInTheDocument();
+      expect(box()).toHaveValue('Next idea');
+      fireEvent.change(box(), { target: { value: '' } });
+      fireEvent.keyDown(box(), { key: 'ArrowUp' });
+      expect(box()).toHaveValue('');
+    });
+
+    it('is disabled while a message is sending', async () => {
+      setup({ [`POST ${API}/messages`]: never }, talk);
+      await screen.findByText('How many users?');
+
+      fireEvent.change(box(), { target: { value: 'More' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+      await waitFor(() => expect(newButton()).toBeDisabled());
+    });
+
+    it('is disabled while the AI replies', async () => {
+      setup({ [`POST ${API}/reply`]: never }, talk);
+      await screen.findByText('How many users?');
+
+      fireEvent.change(box(), { target: { value: 'More' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+      expect(await screen.findByText('Thinking…')).toBeInTheDocument();
+      expect(newButton()).toBeDisabled();
+    });
+
+    it('is disabled while a proposal review is in flight', async () => {
+      vi.stubGlobal('fetch', vi.fn(mockApi({ [`GET ${API}/messages`]: [welcome, pending] })));
+      const review = {
+        seq: 1,
+        stale: null,
+        busy: true,
+        error: null,
+        names: {},
+        accept: vi.fn(),
+        reject: vi.fn(),
+      };
+      renderWithQuery(<ChatPane slug={SLUG} review={review} />, { auth: signedIn() });
+      await screen.findByText('Here is a cache.');
+
+      expect(newButton()).toBeDisabled();
+    });
+
+    it('shows that it is working while the reset runs', async () => {
+      setup({ [`POST ${API}/conversation`]: never }, talk);
+      await screen.findByText('How many users?');
+
+      fireEvent.click(newButton());
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Start new conversation' }));
+
+      const working = await within(dialog()).findByRole('button', { name: 'Starting…' });
+      expect(working).toBeDisabled();
+      expect(working).toHaveAttribute('aria-busy', 'true');
+      expect(newButton()).toBeDisabled();
+    });
+
+    it('says when the AI is still replying, and changes nothing', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          mockApi({
+            [`GET ${API}/messages`]: talk,
+            [`POST ${API}/conversation`]: { status: 409, body: { error: 'busy' } },
+          }),
+        ),
+      );
+      renderWithQuery(
+        <>
+          <ChatPane slug={SLUG} />
+          <Toaster />
+        </>,
+        { auth: signedIn() },
+      );
+      await screen.findByText('How many users?');
+
+      fireEvent.click(newButton());
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Start new conversation' }));
+
+      expect(
+        await screen.findByText('The AI is still replying. Try again when it finishes.'),
+      ).toBeInTheDocument();
+      expect(within(messages()).getByText('How many users?')).toBeInTheDocument();
     });
   });
 });

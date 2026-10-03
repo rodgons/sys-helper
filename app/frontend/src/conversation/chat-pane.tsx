@@ -1,10 +1,13 @@
 import * as stylex from '@stylexjs/stylex';
+import { MessageSquarePlus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Review } from '../architecture/review';
 import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
-import { isLimit } from '../lib/api';
-import { useMessages, useReply, useSendMessage } from '../lib/conversation';
+import { isBusy, isLimit } from '../lib/api';
+import { useMessages, useNewConversation, useReply, useSendMessage } from '../lib/conversation';
 import { Button } from '../ui/button';
+import { Dialog } from '../ui/dialog';
+import { toast } from '../ui/toaster';
 import { Text } from '../ui/typography';
 import { Markdown } from './markdown';
 import { ProposalCard } from './proposal-card';
@@ -23,6 +26,8 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
   const messages = useMessages(slug);
   const send = useSendMessage(slug);
   const reply = useReply(slug);
+  const newConversation = useNewConversation(slug);
+  const [confirming, setConfirming] = useState(false);
   const [draft, setDraft] = useState('');
   // Which of the User's sent messages the draft shows, counting back from the newest (0), like a
   // shell's history. null when the draft is the User's own text.
@@ -53,11 +58,12 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
     }
   }, [pendingSeq, reviewedSeq, start]);
 
-  // Keep the newest message (or the reply being written) in view.
+  // Keep the newest message in view, including the AI's "Thinking…" before its first words (as when
+  // it follows up on a reviewed Proposal, which adds no message), the reply being written and Retry.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll whenever either changes
   useEffect(() => {
     if (list.current) list.current.scrollTop = list.current.scrollHeight;
-  }, [count, streamed]);
+  }, [messages.data, reply.state]);
 
   const canSend = draft.trim() !== '' && !send.isPending && !replying;
   const submit = () => {
@@ -81,8 +87,68 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
   };
   const browsing = recalled === null ? draft === '' : draft === sent[sent.length - 1 - recalled];
 
+  // A New Conversation can't race the User's own actions, and isn't offered when there is nothing
+  // to clear but the Welcome Message.
+  const canStartNew =
+    count > 1 && !replying && !send.isPending && !review?.busy && !newConversation.isPending;
+  const hasPending = messages.data?.some((m) => m.proposal?.status === 'pending') ?? false;
+  const startNew = () =>
+    newConversation.mutate(undefined, {
+      onSuccess: () => {
+        setConfirming(false);
+        setRecalled(null); // the draft stays; only the old sent messages are gone
+        reply.reset();
+        send.reset();
+      },
+      onError: (err) =>
+        toast.error(
+          isBusy(err)
+            ? 'The AI is still replying. Try again when it finishes.'
+            : "Couldn't start a new conversation. Try again.",
+        ),
+    });
+
   return (
     <div {...stylex.props(styles.pane)}>
+      <div {...stylex.props(styles.head)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label="New conversation"
+          title="New conversation"
+          disabled={!canStartNew}
+          onClick={() => setConfirming(true)}
+          xstyle={styles.iconButton}
+        >
+          <MessageSquarePlus size={16} strokeWidth={2} aria-hidden="true" />
+        </Button>
+      </div>
+      <Dialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title="Start a new conversation?"
+        actions={
+          <>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={newConversation.isPending}
+              aria-busy={newConversation.isPending}
+              onClick={startNew}
+            >
+              {newConversation.isPending ? 'Starting…' : 'Start new conversation'}
+            </Button>
+          </>
+        }
+      >
+        <Text size="sm" tone="muted">
+          The current messages will be deleted. Your architecture, requirements and decisions stay,
+          and the AI still sees them.
+          {hasPending && ' The pending proposal will be discarded.'}
+        </Text>
+      </Dialog>
       <ol ref={list} aria-label="Messages" {...stylex.props(styles.list)}>
         {messages.isError && (
           <li>
@@ -181,7 +247,7 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
           <Text size="sm" tone={send.isError ? 'accent' : 'faint'}>
             {send.isError
               ? isLimit(send.error)
-                ? 'This conversation is full. Start a new project to continue.'
+                ? 'This conversation is full. Start a new conversation to continue.'
                 : "Couldn't send your message. Try again."
               : 'Enter to send · Shift+Enter for a new line'}
           </Text>
@@ -196,6 +262,17 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
 
 const styles = stylex.create({
   pane: { display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 },
+  head: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
+    paddingInline: space['--space-2'],
+    paddingBlock: space['--space-1'],
+    borderBottomWidth: 1,
+    borderBottomStyle: 'solid',
+    borderBottomColor: color['--color-line'],
+  },
+  iconButton: { width: 32, paddingInline: 0 },
   list: {
     display: 'flex',
     flexDirection: 'column',

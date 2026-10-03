@@ -5,6 +5,8 @@ package conversation_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -153,8 +155,179 @@ func TestProposals(t *testing.T) {
 		if err := store.Reject(ctx, user, suffix, 1); !errors.Is(err, conversation.ErrNotPending) {
 			t.Errorf("second Reject: err = %v, want ErrNotPending", err)
 		}
-		if err := store.Reject(ctx, user, suffix, 99); !errors.Is(err, projects.ErrNotFound) {
-			t.Errorf("unknown seq: err = %v, want ErrNotFound", err)
+	})
+
+	t.Run("a number with no Proposal was discarded, so it is not pending", func(t *testing.T) {
+		user, suffix := newProject(t)
+		reply(t, user, suffix)
+
+		if err := store.Reject(ctx, user, suffix, 99); !errors.Is(err, conversation.ErrNotPending) {
+			t.Errorf("Reject: err = %v, want ErrNotPending", err)
+		}
+		if _, err := architectures.SaveWith(ctx, user, suffix, 0, architecture.Empty(), conversation.Accept(99)); !errors.Is(err, conversation.ErrNotPending) {
+			t.Errorf("Accept: err = %v, want ErrNotPending", err)
+		}
+		if got, _ := architectures.Get(ctx, user, suffix); got.Version != 0 {
+			t.Errorf("a failed accept still saved: version %d", got.Version)
+		}
+	})
+
+	t.Run("numbers keep going up after Proposals are deleted", func(t *testing.T) {
+		user, suffix := newProject(t)
+		reply(t, user, suffix)
+		reply(t, user, suffix)
+		if _, err := pool.Exec(ctx, `
+			DELETE FROM messages WHERE project_id = (SELECT id FROM projects WHERE user_id = $1 AND slug_suffix = $2)`,
+			user, suffix); err != nil {
+			t.Fatal(err)
+		}
+
+		if m := reply(t, user, suffix); m.Proposal.Seq != 3 {
+			t.Errorf("seq = %d, want 3", m.Proposal.Seq)
+		}
+	})
+
+	t.Run("a New Conversation deletes the Messages and Proposals and starts with the Welcome Message", func(t *testing.T) {
+		user, suffix := newProject(t)
+		reply(t, user, suffix)
+		reply(t, user, suffix) // pending, superseding the first
+
+		msgs, err := store.StartNew(ctx, user, suffix)
+		if err != nil {
+			t.Fatalf("StartNew: %v", err)
+		}
+
+		if len(msgs) != 1 || msgs[0].Role != conversation.RoleAssistant || msgs[0].Body != conversation.WelcomeMessage || msgs[0].Proposal != nil {
+			t.Fatalf("returned = %+v", msgs)
+		}
+		if listed, _ := store.List(ctx, user, suffix); len(listed) != 1 || listed[0].Body != conversation.WelcomeMessage {
+			t.Errorf("listed = %+v", listed)
+		}
+		var proposals int
+		if err := pool.QueryRow(ctx, `
+			SELECT count(*) FROM proposals WHERE project_id = (SELECT id FROM projects WHERE user_id = $1 AND slug_suffix = $2)`,
+			user, suffix).Scan(&proposals); err != nil {
+			t.Fatal(err)
+		}
+		if proposals != 0 {
+			t.Errorf("%d proposals left, want 0", proposals)
+		}
+		if err := store.Reject(ctx, user, suffix, 2); !errors.Is(err, conversation.ErrNotPending) {
+			t.Errorf("reviewing the discarded proposal: err = %v, want ErrNotPending", err)
+		}
+	})
+
+	t.Run("a New Conversation picks up where a Project with content is", func(t *testing.T) {
+		knowledgeStore := knowledge.NewStore(pool)
+		withComponents := func(t *testing.T, user, suffix string) {
+			doc := architecture.Empty()
+			doc.Components = append(doc.Components, architecture.Component{ID: "c-1", Type: "cache", Name: "Cache"})
+			if _, err := architectures.Save(ctx, user, suffix, 0, doc); err != nil {
+				t.Fatal(err)
+			}
+		}
+		withRequirements := func(t *testing.T, user, suffix string) {
+			if _, err := knowledgeStore.AddRequirement(ctx, user, suffix, "scale", "10k users"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		emptyCanvas := func(t *testing.T, user, suffix string) {
+			// A saved Architecture with no Components is still an empty Project.
+			if _, err := architectures.Save(ctx, user, suffix, 0, architecture.Empty()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, tt := range []struct {
+			name  string
+			setup func(t *testing.T, user, suffix string)
+			want  string
+		}{
+			{"an empty project", emptyCanvas, conversation.WelcomeMessage},
+			{"a project with components", withComponents, conversation.PickUpMessage},
+			{"a project with only requirements", withRequirements, conversation.PickUpMessage},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				user, suffix := newProject(t)
+				tt.setup(t, user, suffix)
+
+				msgs, err := store.StartNew(ctx, user, suffix)
+
+				if err != nil || len(msgs) != 1 || msgs[0].Body != tt.want {
+					t.Fatalf("StartNew = %+v, %v; want only %q", msgs, err, tt.want)
+				}
+				if listed, _ := store.List(ctx, user, suffix); len(listed) != 1 || listed[0].Body != tt.want {
+					t.Errorf("listed = %+v", listed)
+				}
+			})
+		}
+	})
+
+	t.Run("Proposal numbers continue after a New Conversation", func(t *testing.T) {
+		user, suffix := newProject(t)
+		reply(t, user, suffix)
+		if _, err := store.StartNew(ctx, user, suffix); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Append(ctx, user, suffix, conversation.RoleUser, "Add another cache"); err != nil {
+			t.Fatal(err)
+		}
+
+		if m := reply(t, user, suffix); m.Proposal.Seq != 2 {
+			t.Errorf("seq = %d, want 2", m.Proposal.Seq)
+		}
+	})
+
+	t.Run("another user can't start a New Conversation in the project", func(t *testing.T) {
+		user, suffix := newProject(t)
+		intruder := testdb.User(t, pool, "hubot")
+
+		if _, err := store.StartNew(ctx, intruder, suffix); !errors.Is(err, projects.ErrNotFound) {
+			t.Errorf("err = %v, want ErrNotFound", err)
+		}
+		if msgs, _ := store.List(ctx, user, suffix); len(msgs) != 2 {
+			t.Errorf("messages = %+v, want them untouched", msgs)
+		}
+	})
+
+	t.Run("the migration seeds the counter from existing Proposals", func(t *testing.T) {
+		withProposals, s1 := newProject(t)
+		reply(t, withProposals, s1)
+		reply(t, withProposals, s1)
+		without, s2 := newProject(t)
+		files, err := filepath.Glob("../../../../supabase/migrations/*_add_next_proposal_seq.sql")
+		if err != nil || len(files) != 1 {
+			t.Fatalf("migration files = %v, %v", files, err)
+		}
+		migration, err := os.ReadFile(files[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }() // DDL is transactional: the schema comes back as it was
+
+		if _, err := tx.Exec(ctx, `ALTER TABLE projects DROP COLUMN next_proposal_seq`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, string(migration)); err != nil {
+			t.Fatalf("run migration: %v", err)
+		}
+
+		next := func(user, suffix string) int {
+			var n int
+			if err := tx.QueryRow(ctx, `SELECT next_proposal_seq FROM projects WHERE user_id = $1 AND slug_suffix = $2`,
+				user, suffix).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			return n
+		}
+		if got := next(withProposals, s1); got != 3 {
+			t.Errorf("with two Proposals: next = %d, want 3", got)
+		}
+		if got := next(without, s2); got != 1 {
+			t.Errorf("without Proposals: next = %d, want 1", got)
 		}
 	})
 
