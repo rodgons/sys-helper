@@ -93,6 +93,26 @@ func TestOpenAIClient(t *testing.T) {
 		}
 	})
 
+	t.Run("says a tool call has started as soon as its first fragment arrives", func(t *testing.T) {
+		// A call alone can take longer to stream than the Chain's first-token timeout, so its start
+		// must count as the model answering.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sse(w,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"propose","arguments":"{"}}]}}]}`,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]}}]}`,
+			)
+		}))
+		defer srv.Close()
+
+		events, err := collect(t, llm.OpenAIClient{BaseURL: srv.URL, Model: "m"}, llm.Request{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) != 2 || !events[0].Calling || events[0].ToolCall != nil || events[1].ToolCall == nil || events[1].Calling {
+			t.Errorf("events = %+v", events)
+		}
+	})
+
 	t.Run("keeps whole tool calls apart when they arrive without an index", func(t *testing.T) {
 		// Some providers stream each call complete and may leave out "index".
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +126,13 @@ func TestOpenAIClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(events) != 2 || events[0].ToolCall.Arguments != "{}" || events[1].ToolCall.Name != "two" || events[1].ToolCall.Arguments != `{"x":1}` {
+		var calls []*llm.ToolCall
+		for _, ev := range events {
+			if ev.ToolCall != nil {
+				calls = append(calls, ev.ToolCall)
+			}
+		}
+		if len(calls) != 2 || calls[0].Arguments != "{}" || calls[1].Name != "two" || calls[1].Arguments != `{"x":1}` {
 			t.Errorf("events = %+v", events)
 		}
 	})

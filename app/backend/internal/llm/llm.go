@@ -48,12 +48,15 @@ type Request struct {
 	Avoid []string
 }
 
-// Event is one piece of a streamed reply: visible text, hidden reasoning, or a complete tool call
-// (tool calls are only emitted once fully received).
+// Event is one piece of a streamed reply: visible text, hidden reasoning, a tool call starting, or
+// a complete tool call (tool calls are only emitted once fully received).
 type Event struct {
 	Text      string
 	Reasoning string
 	ToolCall  *ToolCall
+	// Calling marks the first fragment of a tool call: the model has started answering, although
+	// the call itself only arrives, whole, at the end.
+	Calling bool
 	// Model is the model that produced the event, when the ChatModel picks among several.
 	Model string
 }
