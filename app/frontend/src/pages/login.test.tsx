@@ -19,6 +19,13 @@ describe('Login page', () => {
     expect(auth.signIn).toHaveBeenLastCalledWith('google');
   });
 
+  it('says before sign-in that conversations go to third-party AI models', () => {
+    renderWithQuery(<Root />, { route: '/login', auth: signedOut() });
+
+    expect(screen.getByText(/third-party AI models/i)).toBeVisible();
+    expect(screen.getByText(/may log/i)).toBeVisible();
+  });
+
   it('marks each option with its provider icon, hidden from screen readers', () => {
     renderWithQuery(<Root />, { route: '/login', auth: signedOut() });
 

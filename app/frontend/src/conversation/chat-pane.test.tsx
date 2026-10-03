@@ -76,6 +76,12 @@ describe('ChatPane', () => {
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
   });
 
+  it('reminds the user not to share secrets with the third-party models', async () => {
+    setup();
+
+    expect(await screen.findByText(/third-party AI models/i)).toBeInTheDocument();
+  });
+
   it('sends on Enter and adds a line on Shift+Enter', async () => {
     const { post } = setup();
     await screen.findByText(/who is it for/);

@@ -173,6 +173,9 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
           }}
           {...stylex.props(styles.input)}
         />
+        <Text size="sm" tone="faint">
+          Replies come from third-party AI models that may log what you send. Leave out secrets.
+        </Text>
         <div {...stylex.props(styles.actions)}>
           <Text size="sm" tone={send.isError ? 'accent' : 'faint'}>
             {send.isError
