@@ -4,6 +4,7 @@ import { Route, Routes, useLocation } from 'react-router';
 import { SettingsDialog } from './account/settings-dialog';
 import { useAuth } from './lib/auth';
 import { useMe } from './lib/me';
+import { setThemeChoice, useThemeChoice } from './lib/theme';
 import { HomePage } from './pages/home';
 import { LoginPage } from './pages/login';
 import { ProjectsPage } from './pages/projects';
@@ -13,6 +14,7 @@ import { Avatar } from './ui/avatar';
 import { ButtonRouteLink } from './ui/button';
 import { Menu, MenuHeader, MenuItem, MenuSeparator } from './ui/menu';
 import { SiteHeader } from './ui/site-header';
+import { ThemeMenu } from './ui/theme-menu';
 import { Toaster } from './ui/toaster';
 import { Text } from './ui/typography';
 
@@ -26,12 +28,14 @@ export function Root() {
   // Signed-in Users work from their projects; the home page is for visitors.
   const links = auth.status === 'signedIn' ? [] : VISITOR_LINKS;
   const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const theme = useThemeChoice();
 
   return (
     <>
       <SiteHeader
         links={links}
         currentPath={normalized}
+        tools={<ThemeMenu choice={theme} onChange={setThemeChoice} />}
         actions={normalized === '/login' ? null : <AuthAction />}
       />
       <Routes>

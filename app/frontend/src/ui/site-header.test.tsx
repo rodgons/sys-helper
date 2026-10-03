@@ -45,4 +45,21 @@ describe('SiteHeader', () => {
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Menu' })).not.toBeInTheDocument();
   });
+
+  it('puts the tools before the actions', () => {
+    render(
+      <MemoryRouter>
+        <SiteHeader
+          links={[]}
+          currentPath="/"
+          tools={<button type="button">Theme</button>}
+          actions={<button type="button">Account</button>}
+        />
+      </MemoryRouter>,
+    );
+
+    const [first, second] = screen.getAllByRole('button');
+    expect(first).toHaveTextContent('Theme');
+    expect(second).toHaveTextContent('Account');
+  });
 });

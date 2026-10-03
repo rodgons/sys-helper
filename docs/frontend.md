@@ -70,6 +70,13 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 - New base components go in `src/ui/` and must be shown on `/ui-kit` (`pages/ui-kit.tsx`).
 - Icons: `lucide-react`. Toasts: `react-toastify` via `ui/toaster.tsx`.
 
+### Theme (`lib/theme.ts`, `ui/theme-menu.tsx`)
+
+- Every color token is `light-dark(light, dark)`, so it follows `color-scheme`: `light dark` (the OS) by default. Add new colors the same way; never key a token on `prefers-color-scheme`.
+- The User picks System, Light or Dark in the header's `ThemeMenu`, to the left of the avatar and at every width. The choice lives in `localStorage` (`theme`) only. A forced one sets `<html data-theme>`, which `global.css` turns into `color-scheme`; System removes it.
+- `public/theme-init.js` applies the stored choice before the first paint. It is a blocking external script because the CSP (`script-src 'self'`) forbids inline ones. `useThemeChoice()` reads `data-theme`, so the two never disagree.
+- Anything that picks a scheme outside CSS follows the choice: React Flow's `colorMode`, the home page screenshot (the `<source media>` only when System) and the two `theme-color` metas, retargeted with `media="all"`/`"not all"`.
+
 ## Tests
 
 - Vitest + Testing Library: `renderWithQuery(ui, { route, auth: signedIn() })`, `mockApi({ 'GET /api/…': body | {status, body} | fn })` (unmatched requests throw), `sseResponse(...)` for replies, `<LocationProbe />` for navigation. All in `src/test/render.tsx`.

@@ -8,16 +8,19 @@ import { Logo } from './logo';
 export type NavLink = { href: string; label: string };
 
 /**
- * Sticky top bar: brand left, pill nav links, actions right. Below `md` the links move into a
- * full-width menu with large display-type rows. Without links there is neither nav nor menu.
+ * Sticky top bar: brand left, pill nav links, then `tools` and `actions` right. Below `md` the
+ * links move into a full-width menu with large display-type rows and the actions hide; `tools`
+ * (e.g. the theme switch) show at every width. Without links there is neither nav nor menu.
  */
 export function SiteHeader({
   links,
   currentPath,
+  tools,
   actions,
 }: {
   links: NavLink[];
   currentPath: string;
+  tools?: ReactNode;
   actions?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -47,7 +50,10 @@ export function SiteHeader({
             ))}
           </nav>
         )}
-        <div {...stylex.props(styles.actions)}>{actions}</div>
+        <div {...stylex.props(styles.end)}>
+          {tools}
+          <div {...stylex.props(styles.actions)}>{actions}</div>
+        </div>
         {hasLinks && (
           <button
             type="button"
@@ -139,15 +145,19 @@ const styles = stylex.create({
     transitionProperty: 'background-color, color',
     transitionDuration: motion['--duration'],
   },
-  actions: {
-    display: { default: 'none', [media.md]: 'flex' },
+  end: {
+    display: 'flex',
     alignItems: 'center',
     gap: space['--space-2'],
     marginInlineStart: 'auto',
   },
+  actions: {
+    display: { default: 'none', [media.md]: 'flex' },
+    alignItems: 'center',
+    gap: space['--space-2'],
+  },
   menuButton: {
     display: { default: 'inline-flex', [media.md]: 'none' },
-    marginInlineStart: 'auto',
     height: 36,
     paddingInline: space['--space-3'],
     borderWidth: 1,

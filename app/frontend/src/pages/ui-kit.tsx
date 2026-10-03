@@ -2,6 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import { LogOut, Settings } from 'lucide-react';
 import { type ReactNode, useId, useState } from 'react';
 import { color, font, media, radius, space, text } from '../design/tokens.stylex';
+import { setThemeChoice, useThemeChoice } from '../lib/theme';
 import { Avatar } from '../ui/avatar';
 import { Badge } from '../ui/badge';
 import { GitHubIcon, GoogleIcon } from '../ui/brand-icons';
@@ -19,11 +20,13 @@ import { PaneToggle } from '../ui/pane-toggle';
 import { SelectField } from '../ui/select-field';
 import { TextArea } from '../ui/text-area';
 import { TextField } from '../ui/text-field';
+import { ThemeMenu } from '../ui/theme-menu';
 import { toast } from '../ui/toaster';
 import { Display, Heading, InlineCode, Label, Readout, Text } from '../ui/typography';
 
 /** Living reference for the design system: every token and base component, rendered. */
 export function UiKitPage() {
+  const theme = useThemeChoice();
   return (
     <main>
       <Section xstyle={styles.hero}>
@@ -310,7 +313,7 @@ export function UiKitPage() {
         <Overlays />
       </DocSection>
 
-      <DocSection id="account" index="12" title="Avatar & menu">
+      <DocSection id="account" index="12" title="Avatar, menu & theme">
         <Cluster gap={3}>
           <Avatar name="octocat" src="https://github.com/octocat.png" />
           <Avatar name="octocat" />
@@ -332,6 +335,8 @@ export function UiKitPage() {
               Sign out
             </MenuItem>
           </Menu>
+          {/* Wired to the real theme, so the whole kit can be checked in both schemes. */}
+          <ThemeMenu choice={theme} onChange={setThemeChoice} />
         </Cluster>
       </DocSection>
 

@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { setThemeChoice } from './lib/theme';
 import { Root } from './root';
 import { LocationProbe, mockApi, renderWithQuery, signedIn, signedOut } from './test/render';
 
@@ -44,6 +45,17 @@ describe('Root', () => {
 
     await within(screen.getByRole('banner')).findByRole('img', { name: 'octocat' });
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument();
+  });
+
+  it('offers the theme switch in the header, also on the login page', () => {
+    renderWithQuery(<Root />, { route: '/login' });
+
+    const banner = within(screen.getByRole('banner'));
+    fireEvent.click(banner.getByRole('button', { name: 'Theme' }));
+    fireEvent.click(banner.getByRole('menuitemradio', { name: 'Dark' }));
+
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    setThemeChoice('system');
   });
 
   it('links to the login page from the header when signed out', () => {

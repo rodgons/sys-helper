@@ -7,7 +7,11 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    <meta name="theme-color" content="#140a33" />
+    <!-- The --color-canvas token in each scheme; lib/theme.ts retargets them to a forced theme. -->
+    <meta name="theme-color" data-scheme="light" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" data-scheme="dark" content="#0d0a12" media="(prefers-color-scheme: dark)" />
+    <!-- Blocking on purpose: applies the stored theme before the first paint. External, for the CSP. -->
+    <script src="/theme-init.js"></script>
     <title>sys-helper</title>
   </head>
   <body>
