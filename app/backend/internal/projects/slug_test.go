@@ -69,7 +69,7 @@ func TestCleanName(t *testing.T) {
 	if got, err := projects.CleanName("  URL Shortener \n"); err != nil || got != "URL Shortener" {
 		t.Errorf("CleanName = %q, %v", got, err)
 	}
-	for _, bad := range []string{"", "   ", string(make([]rune, 101))} {
+	for _, bad := range []string{"", "   ", string(make([]rune, 101)), "Shop\x00"} {
 		if _, err := projects.CleanName(bad); err == nil {
 			t.Errorf("CleanName(%q) succeeded, want error", bad)
 		}

@@ -115,6 +115,9 @@ func CheckRequirement(category, statement *string) error {
 	if statement != nil && !between(*statement, 1, MaxStatement) {
 		return fmt.Errorf("%w: a requirement statement must be 1 to %d characters", ErrInvalid, MaxStatement)
 	}
+	if statement != nil && hasNUL(*statement) {
+		return fmt.Errorf("%w: a requirement statement can't contain NUL characters", ErrInvalid)
+	}
 	return nil
 }
 
@@ -129,6 +132,8 @@ func CheckDecisionText(title, rationale, pattern, alternative string) error {
 		return fmt.Errorf("%w: a decision pattern must be at most %d characters", ErrInvalid, MaxPattern)
 	case utf8.RuneCountInString(alternative) > MaxAlternative:
 		return fmt.Errorf("%w: a decision alternative must be at most %d characters", ErrInvalid, MaxAlternative)
+	case hasNUL(title + rationale + pattern + alternative):
+		return fmt.Errorf("%w: a decision can't contain NUL characters", ErrInvalid)
 	}
 	return nil
 }
@@ -154,6 +159,9 @@ func CheckLevel(level string) error {
 	}
 	return nil
 }
+
+// hasNUL says whether s contains NUL, which Postgres can't store.
+func hasNUL(s string) bool { return strings.ContainsRune(s, 0) }
 
 func between(s string, lo, hi int) bool {
 	n := utf8.RuneCountInString(strings.TrimSpace(s))

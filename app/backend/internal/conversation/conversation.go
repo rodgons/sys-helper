@@ -32,8 +32,10 @@ const MaxReply = 20000
 
 const truncatedMarker = "\n\n…[reply truncated]"
 
-// CapReply cuts an AI reply that is too long to store, ending it with a visible marker.
+// CapReply makes an AI reply storable: it drops NUL characters (Postgres can't store them) and
+// cuts a reply that is too long, ending it with a visible marker.
 func CapReply(body string) string {
+	body = strings.ReplaceAll(body, "\x00", "")
 	if utf8.RuneCountInString(body) <= MaxReply {
 		return body
 	}
@@ -69,7 +71,8 @@ type Message struct {
 // CleanUserMessage trims a User's message and checks its length.
 func CleanUserMessage(body string) (string, error) {
 	body = strings.TrimSpace(body)
-	if body == "" || utf8.RuneCountInString(body) > MaxUserMessage {
+	// Postgres can't store NUL.
+	if body == "" || utf8.RuneCountInString(body) > MaxUserMessage || strings.ContainsRune(body, 0) {
 		return "", ErrInvalidMessage
 	}
 	return body, nil
