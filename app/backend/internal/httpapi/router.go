@@ -15,17 +15,19 @@ type Pinger interface {
 }
 
 type Deps struct {
-	DB             Pinger
-	Auth           Authenticator
-	Projects       ProjectStore
-	Architectures  ArchitectureStore
-	Conversations  ConversationStore
-	Assistant      Replier
-	Reviews        ProposalReviews
-	Knowledge      KnowledgeStore
-	Settings       SettingsStore
-	Accounts       AccountStore
-	AllowedOrigins []string
+	DB            Pinger
+	Auth          Authenticator
+	Projects      ProjectStore
+	Architectures ArchitectureStore
+	Conversations ConversationStore
+	Assistant     Replier
+	// NewConversations is the Assistant too: a reset shares its reply-in-flight guard.
+	NewConversations ConversationStarter
+	Reviews          ProposalReviews
+	Knowledge        KnowledgeStore
+	Settings         SettingsStore
+	Accounts         AccountStore
+	AllowedOrigins   []string
 	// Allowlist admits Users to the beta. Its zero value admits nobody.
 	Allowlist auth.Allowlist
 }
@@ -49,6 +51,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("PUT /api/projects/{slug}/architecture", user(handleSaveArchitecture(deps.Architectures)))
 	mux.HandleFunc("GET /api/projects/{slug}/messages", user(handleListMessages(deps.Conversations)))
 	mux.HandleFunc("POST /api/projects/{slug}/messages", user(handleSendMessage(deps.Conversations)))
+	mux.HandleFunc("POST /api/projects/{slug}/conversation", user(handleNewConversation(deps.NewConversations)))
 	mux.HandleFunc("POST /api/projects/{slug}/reply", user(handleReply(deps.Assistant)))
 	mux.HandleFunc("POST /api/projects/{slug}/proposals/{seq}/accept", user(handleAcceptProposal(deps.Reviews)))
 	mux.HandleFunc("POST /api/projects/{slug}/proposals/{seq}/reject", user(handleRejectProposal(deps.Reviews)))

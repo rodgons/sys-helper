@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"sys-helper/backend/internal/assistant"
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/httpapi"
 	"sys-helper/backend/internal/projects"
@@ -113,6 +114,65 @@ func TestConversation(t *testing.T) {
 			if rec.Code != http.StatusNotFound {
 				t.Errorf("%s: status = %d, want 404", method, rec.Code)
 			}
+		}
+	})
+}
+
+// fakeStarter starts New Conversations in octocat's project k3xa9q2m7p.
+type fakeStarter struct {
+	busy    bool // a reply is in flight
+	started bool
+}
+
+func (f *fakeStarter) NewConversation(_ context.Context, userID, suffix string) ([]conversation.Message, error) {
+	if userID != octocat.ID || suffix != "k3xa9q2m7p" {
+		return nil, projects.ErrNotFound
+	}
+	if f.busy {
+		return nil, assistant.ErrBusy
+	}
+	f.started = true
+	return []conversation.Message{{Role: conversation.RoleAssistant, Body: conversation.WelcomeMessage, CreatedAt: time.Unix(0, 0).UTC()}}, nil
+}
+
+func TestNewConversation(t *testing.T) {
+	const path = "/api/projects/shop-k3xa9q2m7p/conversation"
+	newDeps := func() (httpapi.Deps, *fakeStarter) {
+		f := &fakeStarter{}
+		return httpapi.Deps{DB: fakePinger{}, Auth: fakeAuth{octocat}, Allowlist: everyone, NewConversations: f}, f
+	}
+
+	t.Run("starts a new conversation and returns its messages", func(t *testing.T) {
+		deps, f := newDeps()
+
+		rec := call(t, deps, http.MethodPost, path, "")
+
+		if rec.Code != http.StatusOK || !f.started {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+		}
+		if msgs := decode[[]messageJSON](t, rec); len(msgs) != 1 || msgs[0].Role != "assistant" || msgs[0].Body != conversation.WelcomeMessage {
+			t.Errorf("messages = %+v", msgs)
+		}
+	})
+
+	t.Run("answers 404 for another user's or an unknown project", func(t *testing.T) {
+		deps, f := newDeps()
+
+		rec := call(t, deps, http.MethodPost, "/api/projects/nope-zzzzzzzzzz/conversation", "")
+
+		if rec.Code != http.StatusNotFound || decode[map[string]string](t, rec)["error"] != "not_found" || f.started {
+			t.Errorf("status = %d, body = %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("refuses while a reply is being generated", func(t *testing.T) {
+		deps, f := newDeps()
+		f.busy = true
+
+		rec := call(t, deps, http.MethodPost, path, "")
+
+		if rec.Code != http.StatusConflict || decode[map[string]string](t, rec)["error"] != "busy" {
+			t.Errorf("status = %d, body = %s", rec.Code, rec.Body)
 		}
 	})
 }

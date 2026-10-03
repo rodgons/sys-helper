@@ -24,7 +24,8 @@ var (
 	// ErrNothingToReply means the Conversation ends with neither a User message nor a Proposal the
 	// User has just reviewed.
 	ErrNothingToReply = errors.New("the conversation has nothing to reply to")
-	// ErrBusy means a reply for this Project is already being generated.
+	// ErrBusy means a reply for this Project is already being generated, or a New Conversation is
+	// being started.
 	ErrBusy = errors.New("a reply is already in progress")
 	// ErrUnavailable means no model can answer: none is configured, or every free model is busy
 	// (llm.ErrExhausted), which passes.
@@ -36,6 +37,7 @@ type Assistant struct {
 	Conversations interface {
 		Recent(ctx context.Context, userID, suffix string, n int) ([]conversation.Message, error)
 		AppendReply(ctx context.Context, userID, suffix, body, model string, changes *proposal.Changes, baseVersion int) (conversation.Message, error)
+		StartNew(ctx context.Context, userID, suffix string) ([]conversation.Message, error)
 	}
 	Architectures interface {
 		Get(ctx context.Context, userID, suffix string) (architecture.Versioned, error)
@@ -55,7 +57,7 @@ type Assistant struct {
 	// Timeout bounds a whole reply.
 	Timeout time.Duration
 
-	inFlight sync.Map // userID + suffix → struct{}
+	inFlight sync.Map // userID + suffix → struct{}, while a reply or a reset runs
 }
 
 // proposalAttempts is how many times the model may submit propose_changes in one reply: an
@@ -75,11 +77,11 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	if a.Model == nil {
 		return conversation.Message{}, ErrUnavailable
 	}
-	key := userID + "/" + suffix
-	if _, busy := a.inFlight.LoadOrStore(key, struct{}{}); busy {
-		return conversation.Message{}, ErrBusy
+	release, err := a.reserve(userID, suffix)
+	if err != nil {
+		return conversation.Message{}, err
 	}
-	defer a.inFlight.Delete(key)
+	defer release()
 
 	// The model sees only the recent history, so only that is read.
 	msgs, err := a.Conversations.Recent(ctx, userID, suffix, a.HistoryLimit)
@@ -184,6 +186,28 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	body = conversation.CapReply(body)
 	// Save even if the client went away mid-stream: the reply is complete and paid for.
 	return a.Conversations.AppendReply(context.WithoutCancel(ctx), userID, suffix, body, model, accepted, arch.Version)
+}
+
+// NewConversation starts a New Conversation: it replaces the Project's Messages (and their
+// Proposals) with a Welcome Message and returns the new list. It holds the same guard as a reply,
+// so a reply still running can't land in the new Conversation, and no reply starts mid-reset.
+func (a *Assistant) NewConversation(ctx context.Context, userID, suffix string) ([]conversation.Message, error) {
+	release, err := a.reserve(userID, suffix)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return a.Conversations.StartNew(ctx, userID, suffix)
+}
+
+// reserve claims the User's Project for one reply or reset, or returns ErrBusy if another holds
+// it. The guard is in memory, so it holds per process.
+func (a *Assistant) reserve(userID, suffix string) (release func(), err error) {
+	key := userID + "/" + suffix
+	if _, busy := a.inFlight.LoadOrStore(key, struct{}{}); busy {
+		return nil, ErrBusy
+	}
+	return func() { a.inFlight.Delete(key) }, nil
 }
 
 // stream runs one model call, forwarding text to onText. It returns the text, the first tool

@@ -27,6 +27,8 @@ type fakeConversations struct {
 	msgs   []conversation.Message
 	models []string // the model AppendReply was given for each reply
 	asked  []int    // how many recent Messages each Recent call asked for
+
+	startBlock chan struct{} // StartNew waits for it, if set
 }
 
 func (f *fakeConversations) Recent(_ context.Context, _, suffix string, n int) ([]conversation.Message, error) {
@@ -57,6 +59,20 @@ func (f *fakeConversations) AppendReply(_ context.Context, _, _ string, body, mo
 	}
 	f.msgs = append(f.msgs, m)
 	return m, nil
+}
+
+// StartNew replaces the Messages with a Welcome Message, after waiting for startBlock if set.
+func (f *fakeConversations) StartNew(_ context.Context, _, suffix string) ([]conversation.Message, error) {
+	if suffix != "s" {
+		return nil, projects.ErrNotFound
+	}
+	if f.startBlock != nil {
+		<-f.startBlock
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.msgs = []conversation.Message{{Role: conversation.RoleAssistant, Body: conversation.WelcomeMessage}}
+	return append([]conversation.Message(nil), f.msgs...), nil
 }
 
 type fakeArchitectures struct{}
@@ -164,6 +180,86 @@ func (k staticKnowledge) Get(context.Context, string, string) (knowledge.Knowled
 func newAssistant(m llm.ChatModel, c *fakeConversations) *assistant.Assistant {
 	return &assistant.Assistant{Model: m, Conversations: c, Architectures: fakeArchitectures{}, Knowledge: fakeKnowledge{},
 		Usage: &meter{}, HistoryLimit: 4, Timeout: time.Second}
+}
+
+func TestNewConversation(t *testing.T) {
+	t.Run("replaces the messages with the welcome message", func(t *testing.T) {
+		c := conv("Welcome", "Hi", "Hello")
+
+		msgs, err := newAssistant(nil, c).NewConversation(context.Background(), "u", "s")
+
+		if err != nil || len(msgs) != 1 || msgs[0].Body != conversation.WelcomeMessage {
+			t.Fatalf("msgs = %+v, err = %v", msgs, err)
+		}
+	})
+
+	t.Run("reports an unknown project", func(t *testing.T) {
+		if _, err := newAssistant(nil, conv("Welcome")).NewConversation(context.Background(), "u", "other"); !errors.Is(err, projects.ErrNotFound) {
+			t.Fatalf("err = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("refuses while a reply to the project is running", func(t *testing.T) {
+		block := make(chan struct{})
+		c := conv("Welcome", "Hi")
+		a := newAssistant(model{words: []string{"x"}, block: block}, c)
+		done := make(chan error)
+		go func() {
+			_, err := a.Reply(context.Background(), "u", "s", func(string) {})
+			done <- err
+		}()
+		time.Sleep(20 * time.Millisecond)
+
+		_, err := a.NewConversation(context.Background(), "u", "s")
+		close(block)
+
+		if !errors.Is(err, assistant.ErrBusy) {
+			t.Errorf("reset: err = %v, want ErrBusy", err)
+		}
+		if err := <-done; err != nil {
+			t.Errorf("reply: %v", err)
+		}
+		if len(c.msgs) != 3 {
+			t.Errorf("messages = %+v, want the reply saved and nothing reset", c.msgs)
+		}
+	})
+
+	t.Run("a reply is refused while a reset is running", func(t *testing.T) {
+		c := conv("Welcome", "Hi")
+		c.startBlock = make(chan struct{})
+		a := newAssistant(model{words: []string{"x"}}, c)
+		done := make(chan error)
+		go func() {
+			_, err := a.NewConversation(context.Background(), "u", "s")
+			done <- err
+		}()
+		time.Sleep(20 * time.Millisecond)
+
+		_, err := a.Reply(context.Background(), "u", "s", func(string) {})
+		close(c.startBlock)
+
+		if !errors.Is(err, assistant.ErrBusy) {
+			t.Errorf("reply: err = %v, want ErrBusy", err)
+		}
+		if err := <-done; err != nil {
+			t.Errorf("reset: %v", err)
+		}
+		if len(c.msgs) != 1 {
+			t.Errorf("messages = %+v, want only the welcome message", c.msgs)
+		}
+	})
+
+	t.Run("another user's reply does not block it", func(t *testing.T) {
+		block := make(chan struct{})
+		defer close(block)
+		a := newAssistant(model{words: []string{"x"}, block: block}, conv("Welcome", "Hi"))
+		go func() { _, _ = a.Reply(context.Background(), "v", "s", func(string) {}) }()
+		time.Sleep(20 * time.Millisecond)
+
+		if _, err := a.NewConversation(context.Background(), "u", "s"); err != nil {
+			t.Errorf("reset: %v", err)
+		}
+	})
 }
 
 func TestReply(t *testing.T) {

@@ -214,6 +214,42 @@ describe('Workspace', () => {
     expect(await screen.findByText('“URL Shortener” was deleted.')).toBeInTheDocument();
   });
 
+  it('drops the pending proposal from the canvas when a new conversation starts', async () => {
+    const at = '2026-09-30T00:00:00Z';
+    const welcome = { role: 'assistant', body: 'What are you building?', createdAt: at };
+    const proposal = {
+      seq: 1,
+      summary: 'Add a cache',
+      status: 'pending',
+      baseVersion: 0,
+      changes: [{ op: 'add_component', ref: 'cache', type: 'cache', name: 'Order Cache' }],
+    };
+    stubApi({
+      'GET /api/projects/url-shortener-k3xa9q2m7p/messages': [
+        welcome,
+        { role: 'assistant', body: 'Here is a cache.', createdAt: at, proposal },
+      ],
+      'POST /api/projects/url-shortener-k3xa9q2m7p/conversation': [welcome],
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    expect(await screen.findByRole('region', { name: 'Proposal' })).toBeInTheDocument();
+    expect(screen.getByText('Order Cache')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Start a new conversation?' })).getByRole(
+        'button',
+        { name: 'Start new conversation' },
+      ),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Proposal' })).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText('Order Cache')).not.toBeInTheDocument();
+    expect(screen.queryByText('Here is a cache.')).not.toBeInTheDocument();
+  });
+
   it('tells small screens the workspace is built for desktop', async () => {
     stubApi();
     renderAt('/p/url-shortener-k3xa9q2m7p');

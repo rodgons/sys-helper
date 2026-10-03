@@ -45,13 +45,8 @@ const maxModel = 200
 func (s *Store) AppendReply(ctx context.Context, userID, suffix, body, model string, changes *proposal.Changes, baseVersion int) (Message, error) {
 	var m Message
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
-		var projectID string
 		// Locking the project serializes Proposals, so seq and "one pending" stay consistent.
-		err := tx.QueryRow(ctx, `SELECT id FROM projects WHERE user_id = $1 AND slug_suffix = $2 FOR UPDATE`,
-			userID, suffix).Scan(&projectID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return projects.ErrNotFound
-		}
+		projectID, err := lockProject(ctx, tx, userID, suffix)
 		if err != nil {
 			return err
 		}

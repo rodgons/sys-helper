@@ -58,7 +58,7 @@ var ErrInvalidMessage = fmt.Errorf("message must be 1 to %d characters", MaxUser
 const MaxMessages = 500
 
 // ErrLimit means the Conversation already has MaxMessages Messages.
-var ErrLimit = fmt.Errorf("a conversation can have at most %d messages; start a new project to continue", MaxMessages)
+var ErrLimit = fmt.Errorf("a conversation can have at most %d messages; start a new conversation to continue", MaxMessages)
 
 type Message struct {
 	Role      Role      `json:"role"`
@@ -148,14 +148,9 @@ func (s *Store) Append(ctx context.Context, userID, suffix string, role Role, bo
 	var m Message
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		// The Project's row lock keeps concurrent sends from passing the cap together.
-		var projectID string
-		err := tx.QueryRow(ctx, `SELECT id FROM projects WHERE user_id = $1 AND slug_suffix = $2 FOR UPDATE`,
-			userID, suffix).Scan(&projectID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return projects.ErrNotFound
-		}
+		projectID, err := lockProject(ctx, tx, userID, suffix)
 		if err != nil {
-			return fmt.Errorf("find project: %w", err)
+			return err
 		}
 		var n int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM messages WHERE project_id = $1`, projectID).Scan(&n); err != nil {
@@ -168,6 +163,43 @@ func (s *Store) Append(ctx context.Context, userID, suffix string, role Role, bo
 		return err
 	})
 	return m, err
+}
+
+// StartNew starts a New Conversation: it deletes every Message of the Project (their Proposals go
+// with them, a pending one included), adds the Welcome Message and returns the new list. It holds
+// the Project's row lock, which serializes it with sends, saved replies and accepts. The Proposal
+// counter is left alone, so numbering continues.
+func (s *Store) StartNew(ctx context.Context, userID, suffix string) ([]Message, error) {
+	var m Message
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		projectID, err := lockProject(ctx, tx, userID, suffix)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM messages WHERE project_id = $1`, projectID); err != nil {
+			return fmt.Errorf("delete messages: %w", err)
+		}
+		m, err = insert(ctx, tx, projectID, RoleAssistant, WelcomeMessage)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return []Message{m}, nil
+}
+
+// lockProject finds the User's Project and locks its row until tx ends.
+func lockProject(ctx context.Context, tx pgx.Tx, userID, suffix string) (string, error) {
+	var id string
+	err := tx.QueryRow(ctx, `SELECT id FROM projects WHERE user_id = $1 AND slug_suffix = $2 FOR UPDATE`,
+		userID, suffix).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", projects.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("find project: %w", err)
+	}
+	return id, nil
 }
 
 func (s *Store) projectID(ctx context.Context, userID, suffix string) (string, error) {

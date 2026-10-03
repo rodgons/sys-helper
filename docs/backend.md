@@ -52,13 +52,13 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | 400 | `invalid_json`, `invalid_name`, `invalid_message`, `invalid_architecture` (+detail), `invalid` (+detail, knowledge) |
 | 401 / 403 | `unauthenticated` / `identity_required` (no GitHub or Google identity), `not_allowed` (allowlist; +`identities`) |
 | 404 | `not_found` (also other Users' Projects, bad slugs, malformed `seq`, bad ids) |
-| 409 | `conflict` (stale version), `not_pending` (Proposal already resolved, or a `seq` with no Proposal in an owned Project: numbers only go up, so it was discarded), `busy` (reply in flight), `nothing_to_reply`, `limit_reached` (+detail for knowledge; see Limits) |
+| 409 | `conflict` (stale version), `not_pending` (Proposal already resolved, or a `seq` with no Proposal in an owned Project: numbers only go up, so it was discarded), `busy` (reply in flight, or a New Conversation while one is), `nothing_to_reply`, `limit_reached` (+detail for knowledge; see Limits) |
 | 429 | `daily_limit` from `/reply` (`AI_DAILY_REPLY_LIMIT` model calls per User, or `AI_GLOBAL_DAILY_LIMIT` requests for everyone, per UTC day; 0 disables). Sending a message is never capped. |
 | 502 / 503 | `ai_failed` / `ai_unavailable` (no API key, or every free model tried was busy or failing: try again shortly) |
 
 ## Limits
 
-Every Requirement and Decision goes into each AI prompt, so storage is capped: `projects.MaxProjects` (50 per User, counted under a per-User advisory lock), `knowledge.MaxRequirements` and `MaxDecisions` (200 per Project, counted under the Project row lock), and `knowledge.MaxReferences` (50 targets and 50 cited Requirements per Decision, also a SQL `check`). `conversation.MaxMessages` (500 per Project, counted under the Project row lock) bounds a Conversation, which the page loads whole; only a User's message is refused at the cap. Over a limit → 409 `limit_reached`. `proposal.Validate` applies the same caps so the model is told before the User accepts.
+Every Requirement and Decision goes into each AI prompt, so storage is capped: `projects.MaxProjects` (50 per User, counted under a per-User advisory lock), `knowledge.MaxRequirements` and `MaxDecisions` (200 per Project, counted under the Project row lock), and `knowledge.MaxReferences` (50 targets and 50 cited Requirements per Decision, also a SQL `check`). `conversation.MaxMessages` (500 per Project, counted under the Project row lock) bounds a Conversation, which the page loads whole; only a User's message is refused at the cap, and a New Conversation clears it. Over a limit → 409 `limit_reached`. `proposal.Validate` applies the same caps so the model is told before the User accepts.
 
 ## Endpoints
 
@@ -72,6 +72,7 @@ All under `/api`, all need a User.
 | `GET, POST /projects` · `GET, PATCH, DELETE /projects/{slug}` | `{slug, name, updatedAt}`; list is newest first |
 | `GET, PUT /projects/{slug}/architecture` | `{version, document}`; PUT returns the new `version` |
 | `GET, POST /projects/{slug}/messages` | POST takes `{body}`; role is always `user`; 409 `limit_reached` once the Conversation has 500 Messages |
+| `POST /projects/{slug}/conversation` | New Conversation, no body: deletes every Message (their Proposals cascade, a pending one included) and adds a Welcome Message, in one transaction under the Project row lock (`conversation.Store.StartNew`, through `Assistant.NewConversation`); 200 with the new Messages, same shape as the list; 409 `busy` while a reply for the Project is running. The Proposal counter is untouched. No AI call and no rate limit |
 | `POST /projects/{slug}/reply` | SSE `delta` / `done` / `error`; see `docs/ai.md` |
 | `POST /projects/{slug}/proposals/{seq}/accept` | body `{version, document}` = the canvas with the Proposal applied |
 | `POST /projects/{slug}/proposals/{seq}/reject` | |

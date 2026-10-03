@@ -187,6 +187,63 @@ func TestProposals(t *testing.T) {
 		}
 	})
 
+	t.Run("a New Conversation deletes the Messages and Proposals and starts with the Welcome Message", func(t *testing.T) {
+		user, suffix := newProject(t)
+		reply(t, user, suffix)
+		reply(t, user, suffix) // pending, superseding the first
+
+		msgs, err := store.StartNew(ctx, user, suffix)
+		if err != nil {
+			t.Fatalf("StartNew: %v", err)
+		}
+
+		if len(msgs) != 1 || msgs[0].Role != conversation.RoleAssistant || msgs[0].Body != conversation.WelcomeMessage || msgs[0].Proposal != nil {
+			t.Fatalf("returned = %+v", msgs)
+		}
+		if listed, _ := store.List(ctx, user, suffix); len(listed) != 1 || listed[0].Body != conversation.WelcomeMessage {
+			t.Errorf("listed = %+v", listed)
+		}
+		var proposals int
+		if err := pool.QueryRow(ctx, `
+			SELECT count(*) FROM proposals WHERE project_id = (SELECT id FROM projects WHERE user_id = $1 AND slug_suffix = $2)`,
+			user, suffix).Scan(&proposals); err != nil {
+			t.Fatal(err)
+		}
+		if proposals != 0 {
+			t.Errorf("%d proposals left, want 0", proposals)
+		}
+		if err := store.Reject(ctx, user, suffix, 2); !errors.Is(err, conversation.ErrNotPending) {
+			t.Errorf("reviewing the discarded proposal: err = %v, want ErrNotPending", err)
+		}
+	})
+
+	t.Run("Proposal numbers continue after a New Conversation", func(t *testing.T) {
+		user, suffix := newProject(t)
+		reply(t, user, suffix)
+		if _, err := store.StartNew(ctx, user, suffix); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Append(ctx, user, suffix, conversation.RoleUser, "Add another cache"); err != nil {
+			t.Fatal(err)
+		}
+
+		if m := reply(t, user, suffix); m.Proposal.Seq != 2 {
+			t.Errorf("seq = %d, want 2", m.Proposal.Seq)
+		}
+	})
+
+	t.Run("another user can't start a New Conversation in the project", func(t *testing.T) {
+		user, suffix := newProject(t)
+		intruder := testdb.User(t, pool, "hubot")
+
+		if _, err := store.StartNew(ctx, intruder, suffix); !errors.Is(err, projects.ErrNotFound) {
+			t.Errorf("err = %v, want ErrNotFound", err)
+		}
+		if msgs, _ := store.List(ctx, user, suffix); len(msgs) != 2 {
+			t.Errorf("messages = %+v, want them untouched", msgs)
+		}
+	})
+
 	t.Run("the migration seeds the counter from existing Proposals", func(t *testing.T) {
 		withProposals, s1 := newProject(t)
 		reply(t, withProposals, s1)
