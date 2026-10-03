@@ -149,7 +149,7 @@ func TestProjects(t *testing.T) {
 
 	t.Run("rejects invalid names", func(t *testing.T) {
 		deps, _ := newDeps()
-		for _, body := range []string{`{"name":"   "}`, `{"name":"` + strings.Repeat("x", 101) + `"}`, `not json`} {
+		for _, body := range []string{`{"name":"   "}`, `{"name":"` + strings.Repeat("x", 101) + `"}`, `not json`, `{"name":"Shop","owner":"hubot"}`} {
 			rec := call(t, deps, http.MethodPost, "/api/projects", body)
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("POST %s: status = %d, want 400", body, rec.Code)
