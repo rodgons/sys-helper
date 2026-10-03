@@ -81,7 +81,7 @@ All under `/api`, all need a User.
 
 ## Database
 
-Migrations live in `supabase/migrations` (`make db-migration name=x`, `make db-reset`). Tables: `projects` (+`experience_level`), `architectures` (one jsonb document per Project), `messages`, `proposals` (`seq`, `status`, `base_version`, partial unique index = one pending per Project), `requirements`, `decisions` (`requirement_nums int[]`, `targets text[]` of canvas ids), `user_settings`, `ai_usage` (one row per model call; hangs off `auth.users`, so deleting a Project doesn't reset the count), `ai_requests` (one row per request to OpenRouter, for the global budget). `messages.model` records which model wrote an AI Message (debugging only; not sent to the client).
+Migrations live in `supabase/migrations` (`make db-migration name=x`, `make db-reset`). Tables: `projects` (+`experience_level`), `architectures` (one jsonb document per Project), `messages`, `proposals` (`seq`, `status`, `base_version`, partial unique index = one pending per Project), `requirements`, `decisions` (`requirement_nums int[]`, `targets text[]` of canvas ids), `user_settings`, `ai_usage` (one row per model call; hangs off `auth.users`, so deleting a Project doesn't reset the count), `ai_requests` (one row per request to OpenRouter, for the global budget). Both keep a week (`usage.Retention`): `usage.RunPruner`, started in `main`, deletes older rows every hour. `messages.model` records which model wrote an AI Message (debugging only; not sent to the client).
 
 Every new table:
 - `enable row level security` with **no policies**. Only the Go API (table owner) touches data; this keeps it out of Supabase's Data API.

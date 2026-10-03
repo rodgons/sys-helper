@@ -56,6 +56,7 @@ func run() error {
 	architectures := architecture.NewStore(db)
 	architectures.AfterSave = knowledge.PruneDecisions // Decisions follow the items they explain
 	knowledgeStore := knowledge.NewStore(db)
+	go usage.RunPruner(ctx, db) // the daily caps only need recent rows
 
 	srv := &http.Server{
 		Addr: ":" + cfg.Port,

@@ -64,11 +64,11 @@ func TestVerifier(t *testing.T) {
 	}
 	valid := func() jwt.MapClaims {
 		return jwt.MapClaims{
-			"iss": srv.URL + "/auth/v1",
-			"aud": "authenticated",
-			"sub": "user-1",
+			"iss":        srv.URL + "/auth/v1",
+			"aud":        "authenticated",
+			"sub":        "user-1",
 			"session_id": "session-1",
-			"exp": time.Now().Add(time.Hour).Unix(),
+			"exp":        time.Now().Add(time.Hour).Unix(),
 		}
 	}
 
