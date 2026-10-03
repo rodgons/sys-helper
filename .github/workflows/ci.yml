@@ -1,0 +1,70 @@
+# Runs what `make test-all` runs, plus dependency vulnerability checks, on every push and PR.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, unit tests, vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4 # version from package.json's packageManager
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: app/backend/go.mod
+          cache-dependency-path: app/backend/go.sum
+      - run: pnpm install --frozen-lockfile
+      - run: make lint
+      - run: make test
+      - name: govulncheck
+        working-directory: app/backend
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - run: pnpm audit --prod
+
+  full-stack:
+    name: Integration and E2E tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: app/backend/go.mod
+          cache-dependency-path: app/backend/go.sum
+      - run: pnpm install --frozen-lockfile
+      # The local stack's keys are the Supabase CLI's public demo defaults; only the publishable key
+      # isn't in .env.example, so read it from the running stack.
+      - name: Start Supabase and write .env
+        run: |
+          cp .env.example .env
+          make supabase-start
+          key=$(pnpm exec supabase status -o env | sed -n 's/^PUBLISHABLE_KEY="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p')
+          sed -i "s|^VITE_SUPABASE_PUBLISHABLE_KEY=.*|VITE_SUPABASE_PUBLISHABLE_KEY=$key|" .env
+      - run: make test-integration
+      - run: pnpm --filter frontend exec playwright install --with-deps chromium
+      - run: make test-e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: app/frontend/playwright-report
+          retention-days: 7

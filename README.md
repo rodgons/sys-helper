@@ -73,7 +73,7 @@ make db-reset                            # re-apply all migrations + supabase/se
 | `make setup` / `make dev` | Install deps; Supabase + API (Air) + Vite |
 | `make test` | Unit tests, both apps (no Supabase needed) |
 | `make test-integration` / `make test-e2e` | Need Supabase running (`make supabase-start`) |
-| `make test-all` | lint + unit + integration + E2E — what CI should run |
+| `make test-all` | lint + unit + integration + E2E — what CI (`.github/workflows/ci.yml`) runs, plus `govulncheck` and `pnpm audit` |
 | `make lint` / `make format` | tsc + Biome + gofmt + go vet / auto-fix |
 | `make test-ai-live` | Check the configured models stream and call tools (costs credits) |
 | `make build` | Both production Docker images |
@@ -96,7 +96,7 @@ make test-watch-frontend   # vitest watch
 | Integration            | `*_integration_test.go` with `//go:build integration`, real Postgres | (covered by E2E)                                                   | yes            | `make test-integration` |
 | End-to-end             | n/a                                                           | `app/frontend/e2e/*.spec.ts`: Playwright boots the API and Vite     | yes            | `make test-e2e`         |
 
-`make test-all` runs lint, unit, integration and E2E. That's what CI should run.
+`make test-all` runs lint, unit, integration and E2E. CI (`.github/workflows/ci.yml`) runs the same on every push and PR, plus `govulncheck` and `pnpm audit`.
 
 ### Conventions
 
