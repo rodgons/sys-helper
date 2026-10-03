@@ -11,6 +11,9 @@ import (
 // proposal, also proposes adding an API service in front of a cache.
 type Fake struct{}
 
+// FakeModel is the model name on Fake's events.
+const FakeModel = "fake"
+
 // FakeProposal is the propose_changes arguments Fake sends.
 const FakeProposal = `{"summary": "Add an API service backed by a cache", "changes": [
 	{"op": "set_experience_level", "level": "beginner"},
@@ -31,12 +34,12 @@ func (Fake) Stream(_ context.Context, req Request) iter.Seq2[Event, error] {
 		}
 		reply := "This is a fake AI reply (AI_FAKE=1). You said: " + last
 		for _, word := range strings.SplitAfter(reply, " ") {
-			if !yield(Event{Text: word}, nil) {
+			if !yield(Event{Text: word, Model: FakeModel}, nil) {
 				return
 			}
 		}
 		if strings.Contains(strings.ToLower(last), "propose") && len(req.Tools) > 0 {
-			yield(Event{ToolCall: &ToolCall{ID: "fake_call", Name: req.Tools[0].Name, Arguments: FakeProposal}}, nil)
+			yield(Event{ToolCall: &ToolCall{ID: "fake_call", Name: req.Tools[0].Name, Arguments: FakeProposal}, Model: FakeModel}, nil)
 		}
 	}
 }

@@ -66,7 +66,7 @@ func run() error {
 			Architectures: architectures,
 			Conversations: conversations,
 			Assistant: &assistant.Assistant{
-				Model:         chatModel(cfg.AI),
+				Model:         chatModel(ctx, cfg.AI, usage.NewBudget(db, cfg.AI.GlobalDailyLimit)),
 				Conversations: conversations,
 				Architectures: architectures,
 				Knowledge:     knowledgeStore,
@@ -118,25 +118,34 @@ func allowlist(cfg config.Config) auth.Allowlist {
 	return auth.Allowlist{GitHubIDs: cfg.AllowedGitHubIDs, GoogleIDs: cfg.AllowedGoogleIDs, Everyone: cfg.AllowAllUsers}
 }
 
-// chatModel builds the assistant's model: the fake, or the primary model with its fallback. It
-// returns nil (replies answer "AI unavailable") when no API key is set.
-func chatModel(cfg config.AI) llm.ChatModel {
+// maxModelAttempts caps the free models one model call tries before giving up (ai_unavailable).
+// Each attempt spends the account's quota and up to AI_FIRST_TOKEN_TIMEOUT of the User's wait.
+const maxModelAttempts = 3
+
+// chatModel builds the assistant's model: the fake, or a Chain over OpenRouter's free models,
+// whose list is refreshed in the background until ctx ends. It returns nil (replies answer "AI
+// unavailable") when no API key is set.
+func chatModel(ctx context.Context, cfg config.AI, budget *usage.Budget) llm.ChatModel {
 	if cfg.Fake {
 		slog.Warn("using the fake AI model (AI_FAKE=1)")
 		return llm.Fake{}
 	}
 	if cfg.APIKey == "" {
-		slog.Warn(cfg.KeyVar+" is not set; AI replies are disabled", "provider", cfg.Provider)
+		slog.Warn("OPENROUTER_API_KEY is not set; AI replies are disabled")
 		return nil
 	}
-	slog.Info("AI model", "provider", cfg.Provider, "model", cfg.Model, "fallback", cfg.FallbackModel)
-	primary := llm.OpenAIClient{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Model: cfg.Model}
-	if cfg.FallbackModel == "" {
-		return primary
+	catalog := &llm.Catalog{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Exclude: cfg.ExcludeModels, Pinned: cfg.Models}
+	if len(cfg.Models) > 0 {
+		slog.Info("AI models pinned", "models", cfg.Models)
 	}
-	return llm.Fallback{
-		Primary:           primary,
-		Secondary:         llm.OpenAIClient{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Model: cfg.FallbackModel},
+	go catalog.Run(ctx, cfg.RefreshInterval)
+	return &llm.Chain{
+		Models: catalog,
+		Client: func(model string) llm.ChatModel {
+			return llm.OpenAIClient{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Model: model}
+		},
 		FirstEventTimeout: cfg.FirstTokenTimeout,
+		MaxAttempts:       maxModelAttempts,
+		Budget:            budget.Spend,
 	}
 }

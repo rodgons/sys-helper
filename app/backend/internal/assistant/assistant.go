@@ -26,15 +26,16 @@ var (
 	ErrNothingToReply = errors.New("the conversation has nothing to reply to")
 	// ErrBusy means a reply for this Project is already being generated.
 	ErrBusy = errors.New("a reply is already in progress")
-	// ErrUnavailable means no model is configured.
-	ErrUnavailable = errors.New("no AI model is configured")
+	// ErrUnavailable means no model can answer: none is configured, or every free model is busy
+	// (llm.ErrExhausted), which passes.
+	ErrUnavailable = errors.New("no AI model is available")
 )
 
 type Assistant struct {
 	Model         llm.ChatModel
 	Conversations interface {
 		List(ctx context.Context, userID, suffix string) ([]conversation.Message, error)
-		AppendReply(ctx context.Context, userID, suffix, body string, changes *proposal.Changes, baseVersion int) (conversation.Message, error)
+		AppendReply(ctx context.Context, userID, suffix, body, model string, changes *proposal.Changes, baseVersion int) (conversation.Message, error)
 	}
 	Architectures interface {
 		Get(ctx context.Context, userID, suffix string) (architecture.Versioned, error)
@@ -106,6 +107,7 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	var problems []string  // why each rejected propose_changes call was invalid
 	var arguments []string // and what it sent
 	note := ""             // appended to the reply when it ends without the Proposal the model was making
+	model := ""            // the model that answered the last call
 	for attempt := 1; ; attempt++ {
 		// Every model call costs money, retries included, so each one counts against the cap.
 		if err := a.Usage.Record(ctx, userID); err != nil {
@@ -115,15 +117,26 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 			}
 			return conversation.Message{}, err
 		}
-		text, call, err := a.stream(ctx, req, onText)
+		text, call, answered, err := a.stream(ctx, req, onText)
 		if err != nil {
+			// A retry no model could take, or that the global budget refused, failed before sending
+			// anything: keep the reply so far.
+			if attempt > 1 && (errors.Is(err, llm.ErrExhausted) || errors.Is(err, usage.ErrDailyLimit)) {
+				slog.Warn("no model took the proposal retry", "project", suffix, "error", err)
+				note = "(I couldn't finish this proposal because the AI is busy right now. Ask me to try again shortly.)"
+				break
+			}
+			if errors.Is(err, llm.ErrExhausted) {
+				return conversation.Message{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
+			}
 			return conversation.Message{}, err
 		}
+		model = answered
 		reply.WriteString(text)
 		if call == nil {
 			break
 		}
-		changes, problem := parseChanges(call.Arguments, arch.Document, known)
+		changes, problem := parseChanges(*call, arch.Document, known)
 		if problem == nil {
 			accepted = &changes
 			break
@@ -137,7 +150,11 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 				"project", suffix, "attempts", attempt, "problems", problems, "arguments", arguments)
 			break
 		}
-		// Show the model its call and what was wrong with it, and let it try again.
+		// Show the call and what was wrong with it, and let another model try, if there is one: the
+		// same model tends to repeat its mistake.
+		if model != "" {
+			req.Avoid = append(req.Avoid, model)
+		}
 		req.Messages = append(req.Messages,
 			llm.Message{Role: llm.RoleAssistant, Content: text, ToolCalls: []llm.ToolCall{*call}},
 			llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: "The proposal was not saved: " + problem.Error() + ". Call propose_changes again with corrected changes."},
@@ -156,33 +173,37 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 	}
 	body = conversation.CapReply(body)
 	// Save even if the client went away mid-stream: the reply is complete and paid for.
-	return a.Conversations.AppendReply(context.WithoutCancel(ctx), userID, suffix, body, accepted, arch.Version)
+	return a.Conversations.AppendReply(context.WithoutCancel(ctx), userID, suffix, body, model, accepted, arch.Version)
 }
 
-// stream runs one model call, forwarding text to onText. It returns the text and the first
-// propose_changes call, if any.
-func (a *Assistant) stream(ctx context.Context, req llm.Request, onText func(string)) (string, *llm.ToolCall, error) {
-	var text strings.Builder
-	var call *llm.ToolCall
+// stream runs one model call, forwarding text to onText. It returns the text, the first tool
+// call, if any, and the model that answered ("" if unknown).
+func (a *Assistant) stream(ctx context.Context, req llm.Request, onText func(string)) (text string, call *llm.ToolCall, model string, err error) {
+	var b strings.Builder
 	for ev, err := range a.Model.Stream(ctx, req) {
 		if err != nil {
-			return "", nil, fmt.Errorf("model reply: %w", err)
+			return "", nil, "", fmt.Errorf("model reply: %w", err)
+		}
+		if ev.Model != "" {
+			model = ev.Model
 		}
 		if ev.Text != "" {
-			text.WriteString(ev.Text)
+			b.WriteString(ev.Text)
 			onText(ev.Text)
 		}
-		if ev.ToolCall != nil && ev.ToolCall.Name == proposal.Tool.Name && call == nil {
+		if ev.ToolCall != nil && call == nil {
 			call = ev.ToolCall
 		}
 	}
-	return text.String(), call, nil
+	return b.String(), call, model, nil
 }
 
-func parseChanges(arguments string, doc architecture.Document, known knowledge.Knowledge) (proposal.Changes, error) {
-	var changes proposal.Changes
-	if err := json.Unmarshal([]byte(arguments), &changes); err != nil {
-		return proposal.Changes{}, fmt.Errorf("arguments are not valid JSON for this tool: %w", err)
+// parseChanges reads a tool call as a Proposal and checks it. Calls to other tools are invalid
+// too, so the model hears about them instead of the reply ending empty.
+func parseChanges(call llm.ToolCall, doc architecture.Document, known knowledge.Knowledge) (proposal.Changes, error) {
+	changes, err := proposal.FromCall(call.Name, call.Arguments)
+	if err != nil {
+		return proposal.Changes{}, err
 	}
 	changes.Normalize()
 	return changes, changes.Validate(doc, known)
@@ -280,7 +301,7 @@ func describeKnowledge(k knowledge.Knowledge) string {
 	var b strings.Builder
 	level := k.ExperienceLevel
 	if level == "" {
-		level = "unknown (ask early, then record it with set_experience_level)"
+		level = "unknown (ask early, then record it with a set_experience_level change in propose_changes)"
 	}
 	fmt.Fprintf(&b, "The user's experience level: %s.\n\nRequirements:\n", level)
 

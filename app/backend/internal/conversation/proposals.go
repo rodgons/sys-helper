@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -35,9 +36,12 @@ type Proposal struct {
 	BaseVersion int               `json:"baseVersion"`
 }
 
-// AppendReply adds an AI Message and, if changes is set, the Proposal it carries, superseding any
-// pending one. Both are saved together or not at all.
-func (s *Store) AppendReply(ctx context.Context, userID, suffix, body string, changes *proposal.Changes, baseVersion int) (Message, error) {
+// maxModel is the longest model id stored on a Message (the messages.model check).
+const maxModel = 200
+
+// AppendReply adds an AI Message written by model ("" if unknown) and, if changes is set, the
+// Proposal it carries, superseding any pending one. Both are saved together or not at all.
+func (s *Store) AppendReply(ctx context.Context, userID, suffix, body, model string, changes *proposal.Changes, baseVersion int) (Message, error) {
 	var m Message
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var projectID string
@@ -54,10 +58,13 @@ func (s *Store) AppendReply(ctx context.Context, userID, suffix, body string, ch
 		if err != nil {
 			return err
 		}
+		if utf8.RuneCountInString(model) > maxModel {
+			model = string([]rune(model)[:maxModel]) // keep the paid-for reply over a full model id
+		}
 		m = Message{Role: RoleAssistant, Body: body}
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO messages (id, project_id, role, body) VALUES ($1, $2, 'assistant', $3)
-			RETURNING created_at`, messageID, projectID, body).Scan(&m.CreatedAt); err != nil {
+			INSERT INTO messages (id, project_id, role, body, model) VALUES ($1, $2, 'assistant', $3, nullif($4, ''))
+			RETURNING created_at`, messageID, projectID, body, model).Scan(&m.CreatedAt); err != nil {
 			return err
 		}
 		if changes == nil {

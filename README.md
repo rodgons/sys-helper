@@ -49,9 +49,10 @@ Everything comes from the root `.env` (copied from `.env.example` by `make setup
 | `ALLOWED_GITHUB_IDS` | Beta allowlist of immutable numeric GitHub ids. Get an id from `https://api.github.com/users/<name>`. |
 | `ALLOWED_GOOGLE_IDS` | Beta allowlist of Google account ids (the `sub`, never an email: emails can be reassigned). Nobody knows theirs offhand, so the not-allowed page shows a signed-in person their Google id with a copy button; they send it to you. |
 | `ALLOW_ALL_USERS=1` | Admits everyone on any provider. A User is admitted if any of their identities is listed; with both lists empty and this unset, nobody can sign in. `ALLOW_ALL_GITHUB_USERS` was removed: the API refuses to start while it is set. |
-| `AI_PROVIDER`, `AI_MODEL`, `AI_FALLBACK_MODEL` | OpenAI-compatible provider (`nvidia` or `gemini`), the model to stream, and the fallback used when the primary sends nothing within `AI_FIRST_TOKEN_TIMEOUT`. No key → the API runs, AI replies answer "not set up". |
-| `NVIDIA_API_KEY` / `GEMINI_API_KEY` | The key for the chosen provider. |
+| `OPENROUTER_API_KEY` | The assistant uses OpenRouter's free models, discovered at runtime and tried best first. No key → the API runs, AI replies answer "unavailable". The account must allow free endpoints, which may log or train on prompts. `AI_PROVIDER`, `AI_MODEL`, `AI_FALLBACK_MODEL` and the NVIDIA/Gemini keys were removed: the API refuses to start while one is set. |
+| `AI_MODELS`, `AI_EXCLUDE_MODELS` | Optional: pin free models (in order, skipping discovery), or leave some out. |
 | `AI_DAILY_REPLY_LIMIT` | Model calls per User per UTC day (retries included); `0` disables. Sending a message is never capped. |
+| `AI_GLOBAL_DAILY_LIMIT` | Requests to OpenRouter per UTC day for all Users together, fallbacks included (default 50, the free quota; 1000 after buying $10 of credit). `0` disables. |
 | `AI_FAKE=1` | Canned model, no network. E2E sets it. |
 | `SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID` / `_SECRET` | The GitHub OAuth app used by local Supabase sign-in. Callback: `http://127.0.0.1:54321/auth/v1/callback`. |
 | `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` / `_SECRET` | The Google OAuth client used by local Supabase sign-in (optional: without it only the Google button fails). Authorised redirect URI: `http://127.0.0.1:54321/auth/v1/callback`. Local Google sign-in needs `skip_nonce_check = true`, already set in `supabase/config.toml`. |

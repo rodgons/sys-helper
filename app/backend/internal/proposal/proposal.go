@@ -93,6 +93,29 @@ type Changes struct {
 	Changes []Change `json:"changes"`
 }
 
+// FromCall reads a tool call as Changes. Besides propose_changes, it takes a call named after an
+// op (some models call set_experience_level as a tool of its own) as a Proposal of that one
+// Change. Any other tool is an error written for the model, like Validate's.
+func FromCall(name, arguments string) (Changes, error) {
+	if name != Tool.Name && !slices.Contains(ops, name) {
+		return Changes{}, fmt.Errorf("there is no %s tool: make every change through %s, with %q as a change's op if that is what you meant", name, Tool.Name, name)
+	}
+	if name == Tool.Name {
+		var c Changes
+		if err := json.Unmarshal([]byte(arguments), &c); err != nil {
+			return Changes{}, fmt.Errorf("arguments are not valid JSON for this tool: %w", err)
+		}
+		return c, nil
+	}
+	var ch Change
+	if err := json.Unmarshal([]byte(arguments), &ch); err != nil {
+		return Changes{}, fmt.Errorf("arguments are not valid JSON for a %s change: %w", name, err)
+	}
+	ch.Op = name
+	summary := strings.ReplaceAll(name, "_", " ")
+	return Changes{Summary: strings.ToUpper(summary[:1]) + summary[1:], Changes: []Change{ch}}, nil
+}
+
 // ComponentID and ConnectionID are the ids items added by Proposal seq get once accepted. The
 // client applies Proposals with the same scheme (src/architecture/proposal.ts), so Decisions can be
 // attached to new items by these ids.

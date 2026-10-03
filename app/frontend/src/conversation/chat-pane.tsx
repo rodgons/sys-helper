@@ -11,9 +11,10 @@ import { ProposalCard } from './proposal-card';
 const MAX_LENGTH = 4000;
 
 const REPLY_ERRORS: Record<string, string> = {
-  ai_unavailable: "The AI isn't set up on this server yet.",
+  // No model is configured, or every free model is busy (they are shared and rate-limited).
+  ai_unavailable: "The AI isn't available right now. Please try again in a minute.",
   busy: 'The AI is already answering this project in another tab.',
-  daily_limit: "You've reached today's AI limit. It resets at midnight UTC.",
+  daily_limit: "Today's AI limit has been reached. It resets at midnight UTC.",
 };
 
 /** Right pane of the workspace: the Project's Conversation and a composer. */

@@ -331,3 +331,41 @@ func TestValidateExplainsTheOpAndTypeFieldsWhenTheTypeIsMissing(t *testing.T) {
 		t.Fatalf("err = %v, want it to explain the op and type fields", err)
 	}
 }
+
+func TestFromCall(t *testing.T) {
+	t.Run("reads propose_changes arguments", func(t *testing.T) {
+		c, err := proposal.FromCall("propose_changes", `{"summary": "Set level", "changes": [{"op": "set_experience_level", "level": "expert"}]}`)
+		if err != nil || c.Summary != "Set level" || len(c.Changes) != 1 || c.Changes[0].Level != "expert" {
+			t.Fatalf("changes = %+v, err = %v", c, err)
+		}
+	})
+
+	t.Run("reads a call named after an op as a one-change Proposal", func(t *testing.T) {
+		// Logged on 2026-10-02 (Nemotron 3 Super): the op called as a tool of its own.
+		c, err := proposal.FromCall("set_experience_level", `{"level": "beginner"}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Summary != "Set experience level" || len(c.Changes) != 1 || c.Changes[0].Op != "set_experience_level" || c.Changes[0].Level != "beginner" {
+			t.Fatalf("changes = %+v", c)
+		}
+		if err := c.Validate(canvas(), knowledge.Knowledge{}); err != nil {
+			t.Errorf("Validate: %v", err)
+		}
+	})
+
+	t.Run("tells the model to use propose_changes for any other tool", func(t *testing.T) {
+		_, err := proposal.FromCall("draw_diagram", `{}`)
+		if err == nil || !strings.Contains(err.Error(), "draw_diagram") || !strings.Contains(err.Error(), "propose_changes") {
+			t.Fatalf("err = %v, want one naming the tool and propose_changes", err)
+		}
+	})
+
+	t.Run("reports arguments that aren't JSON", func(t *testing.T) {
+		for _, name := range []string{"propose_changes", "set_experience_level"} {
+			if _, err := proposal.FromCall(name, `{"level": `); err == nil {
+				t.Errorf("%s: expected an error", name)
+			}
+		}
+	})
+}

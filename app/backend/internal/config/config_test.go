@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -105,83 +106,81 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
-	t.Run("takes the models from the environment", func(t *testing.T) {
-		cfg, err := config.Load(env(required(map[string]string{
-			"NVIDIA_API_KEY":    "nvapi-x",
-			"AI_MODEL":          "z-ai/glm-5.3",
-			"AI_FALLBACK_MODEL": "openai/gpt-oss-20b",
-		})))
+	t.Run("uses OpenRouter's free models by default", func(t *testing.T) {
+		cfg, err := config.Load(env(required(map[string]string{"OPENROUTER_API_KEY": "sk-or-x"})))
 		if err != nil {
 			t.Fatal(err)
 		}
 		want := config.AI{
-			Provider:          "nvidia",
-			KeyVar:            "NVIDIA_API_KEY",
-			BaseURL:           "https://integrate.api.nvidia.com/v1",
-			APIKey:            "nvapi-x",
-			Model:             "z-ai/glm-5.3",
-			FallbackModel:     "openai/gpt-oss-20b",
+			BaseURL:           "https://openrouter.ai/api/v1",
+			APIKey:            "sk-or-x",
+			RefreshInterval:   time.Hour,
 			FirstTokenTimeout: 20 * time.Second,
 			DailyReplyLimit:   100,
+			GlobalDailyLimit:  50,
 		}
-		if cfg.AI != want {
+		if !reflect.DeepEqual(cfg.AI, want) {
 			t.Errorf("AI = %+v, want %+v", cfg.AI, want)
-		}
-	})
-
-	t.Run("uses Gemini when AI_PROVIDER is gemini", func(t *testing.T) {
-		cfg, err := config.Load(env(required(map[string]string{
-			"AI_PROVIDER":       "gemini",
-			"GEMINI_API_KEY":    "gem-x",
-			"NVIDIA_API_KEY":    "nvapi-x",
-			"AI_MODEL":          "gemini-3.8-flash",
-			"AI_FALLBACK_MODEL": "gemini-3.5-flash-lite",
-		})))
-		if err != nil {
-			t.Fatal(err)
-		}
-		ai := cfg.AI
-		if ai.Provider != "gemini" || ai.APIKey != "gem-x" || ai.KeyVar != "GEMINI_API_KEY" ||
-			ai.BaseURL != "https://generativelanguage.googleapis.com/v1beta/openai" || ai.Model != "gemini-3.8-flash" {
-			t.Errorf("AI = %+v", ai)
 		}
 	})
 
 	t.Run("reads AI overrides", func(t *testing.T) {
 		cfg, err := config.Load(env(required(map[string]string{
 			"AI_BASE_URL":            "http://models.test/v1",
+			"AI_MODELS":              "a/one:free, b/two:free",
+			"AI_EXCLUDE_MODELS":      "c/three:free",
+			"AI_MODELS_REFRESH":      "30m",
 			"AI_FIRST_TOKEN_TIMEOUT": "5s",
 			"AI_DAILY_REPLY_LIMIT":   "0",
+			"AI_GLOBAL_DAILY_LIMIT":  "1000",
 			"AI_FAKE":                "1",
 		})))
 		if err != nil {
 			t.Fatal(err)
 		}
-		ai := cfg.AI
-		if ai.BaseURL != "http://models.test/v1" || ai.FallbackModel != "" ||
-			ai.FirstTokenTimeout != 5*time.Second || ai.DailyReplyLimit != 0 || !ai.Fake {
-			t.Errorf("AI = %+v", ai)
+		want := config.AI{
+			BaseURL:           "http://models.test/v1",
+			Models:            []string{"a/one:free", "b/two:free"},
+			ExcludeModels:     []string{"c/three:free"},
+			RefreshInterval:   30 * time.Minute,
+			FirstTokenTimeout: 5 * time.Second,
+			DailyReplyLimit:   0,
+			GlobalDailyLimit:  1000,
+			Fake:              true,
+		}
+		if !reflect.DeepEqual(cfg.AI, want) {
+			t.Errorf("AI = %+v, want %+v", cfg.AI, want)
 		}
 	})
 
 	t.Run("runs without a model when there is no API key", func(t *testing.T) {
 		cfg, err := config.Load(env(required(nil)))
-		if err != nil || cfg.AI.Model != "" || cfg.AI.FallbackModel != "" {
+		if err != nil || cfg.AI.APIKey != "" {
 			t.Fatalf("AI = %+v, err = %v", cfg.AI, err)
 		}
 	})
 
 	for _, bad := range []map[string]string{
 		{"AI_FIRST_TOKEN_TIMEOUT": "soon"},
+		{"AI_MODELS_REFRESH": "0s"},
 		{"AI_DAILY_REPLY_LIMIT": "-1"},
+		{"AI_GLOBAL_DAILY_LIMIT": "lots"},
 		{"AI_DAILY_MESSAGE_LIMIT": "100"}, // replaced by AI_DAILY_REPLY_LIMIT
-		{"NVIDIA_API_KEY": "nvapi-x"},     // a key without AI_MODEL
-		{"AI_PROVIDER": "gemini", "GEMINI_API_KEY": "gem-x"},
-		{"AI_PROVIDER": "openai"},
+		{"AI_MODELS": "openai/gpt-9"},     // a paid model
 	} {
 		t.Run("rejects invalid AI settings", func(t *testing.T) {
 			if _, err := config.Load(env(required(bad))); err == nil {
 				t.Fatalf("Load(%v) succeeded", bad)
+			}
+		})
+	}
+
+	// Settings of the providers OpenRouter replaced: a deployment that still sets them must notice.
+	for _, old := range []string{"AI_PROVIDER", "AI_MODEL", "AI_FALLBACK_MODEL", "NVIDIA_API_KEY", "GEMINI_API_KEY"} {
+		t.Run("names the replacement for "+old, func(t *testing.T) {
+			_, err := config.Load(env(required(map[string]string{old: "x"})))
+			if err == nil || !strings.Contains(err.Error(), old) || !strings.Contains(err.Error(), "OPENROUTER_API_KEY") {
+				t.Fatalf("err = %v, want one naming %s and OPENROUTER_API_KEY", err, old)
 			}
 		})
 	}

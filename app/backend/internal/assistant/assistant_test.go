@@ -1,8 +1,10 @@
 package assistant_test
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"strings"
 	"sync"
@@ -21,8 +23,9 @@ import (
 )
 
 type fakeConversations struct {
-	mu   sync.Mutex
-	msgs []conversation.Message
+	mu     sync.Mutex
+	msgs   []conversation.Message
+	models []string // the model AppendReply was given for each reply
 }
 
 func (f *fakeConversations) List(_ context.Context, _, suffix string) ([]conversation.Message, error) {
@@ -42,9 +45,10 @@ func (f *fakeConversations) Append(_ context.Context, _, _ string, role conversa
 	return m, nil
 }
 
-func (f *fakeConversations) AppendReply(_ context.Context, _, _ string, body string, changes *proposal.Changes, base int) (conversation.Message, error) {
+func (f *fakeConversations) AppendReply(_ context.Context, _, _ string, body, model string, changes *proposal.Changes, base int) (conversation.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.models = append(f.models, model)
 	m := conversation.Message{Role: conversation.RoleAssistant, Body: body}
 	if changes != nil {
 		m.Proposal = &conversation.Proposal{Seq: 1, Summary: changes.Summary, Changes: changes.Changes, Status: conversation.ProposalPending, BaseVersion: base}
@@ -63,6 +67,7 @@ func (fakeArchitectures) Get(context.Context, string, string) (architecture.Vers
 
 // model records the request and streams words, optionally failing at the end or blocking.
 type model struct {
+	name  string // the model id on each event
 	words []string
 	err   error
 	block chan struct{}
@@ -77,11 +82,11 @@ func (m model) Stream(_ context.Context, req llm.Request) iter.Seq2[llm.Event, e
 		if m.block != nil {
 			<-m.block
 		}
-		if !yield(llm.Event{Reasoning: "hidden thoughts"}, nil) {
+		if !yield(llm.Event{Reasoning: "hidden thoughts", Model: m.name}, nil) {
 			return
 		}
 		for _, w := range m.words {
-			if !yield(llm.Event{Text: w}, nil) {
+			if !yield(llm.Event{Text: w, Model: m.name}, nil) {
 				return
 			}
 		}
@@ -289,6 +294,26 @@ func TestReply(t *testing.T) {
 		}
 	})
 
+	t.Run("records which model wrote the reply", func(t *testing.T) {
+		c := conv("Welcome", "Hi")
+
+		if _, err := newAssistant(model{name: "vendor/a:free", words: []string{"Hello"}}, c).Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		if len(c.models) != 1 || c.models[0] != "vendor/a:free" {
+			t.Errorf("models = %q", c.models)
+		}
+	})
+
+	t.Run("reports every free model being busy as unavailable", func(t *testing.T) {
+		busy := fmt.Errorf("%w (last: HTTP 429)", llm.ErrExhausted)
+
+		_, err := newAssistant(model{err: busy}, conv("Welcome", "Hi")).Reply(context.Background(), "u", "s", func(string) {})
+		if !errors.Is(err, assistant.ErrUnavailable) {
+			t.Fatalf("err = %v, want ErrUnavailable", err)
+		}
+	})
+
 	t.Run("reports when no model is configured", func(t *testing.T) {
 		a := newAssistant(nil, conv("Welcome", "Hi"))
 		a.Model = nil
@@ -313,8 +338,11 @@ type turns struct {
 }
 
 type turn struct {
-	text string
-	args string // propose_changes arguments; empty for none
+	text  string
+	args  string // propose_changes arguments; empty for none
+	tool  string // the tool called with args, if not propose_changes
+	model string // the model id on each event
+	err   error  // fails the call before anything is sent
 }
 
 func (s *turns) Stream(_ context.Context, req llm.Request) iter.Seq2[llm.Event, error] {
@@ -324,11 +352,16 @@ func (s *turns) Stream(_ context.Context, req llm.Request) iter.Seq2[llm.Event, 
 		t := s.turns[0]
 		s.turns = s.turns[1:]
 		s.mu.Unlock()
-		if t.text != "" && !yield(llm.Event{Text: t.text}, nil) {
+		if t.err != nil {
+			yield(llm.Event{}, t.err)
+			return
+		}
+		if t.text != "" && !yield(llm.Event{Text: t.text, Model: t.model}, nil) {
 			return
 		}
 		if t.args != "" {
-			yield(llm.Event{ToolCall: &llm.ToolCall{ID: "call_1", Name: "propose_changes", Arguments: t.args}}, nil)
+			name := cmp.Or(t.tool, "propose_changes")
+			yield(llm.Event{ToolCall: &llm.ToolCall{ID: "call_1", Name: name, Arguments: t.args}, Model: t.model}, nil)
 		}
 	}
 }
@@ -387,6 +420,70 @@ func TestProposals(t *testing.T) {
 		}
 		if call := retry[len(retry)-2]; call.Role != llm.RoleAssistant || len(call.ToolCalls) != 1 {
 			t.Errorf("assistant tool call = %+v", call)
+		}
+	})
+
+	t.Run("retries an invalid proposal on another model, and records the one that answered", func(t *testing.T) {
+		bad := `{"summary": "x", "changes": []}`
+		m := &turns{turns: []turn{{text: "Adding a cache.", args: bad, model: "a:free"}, {args: validArgs, model: "b:free"}}}
+		c := conv("Welcome", "Add a cache")
+
+		msg, err := newAssistant(m, c).Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal == nil {
+			t.Fatalf("message = %+v, err = %v", msg, err)
+		}
+		if len(m.reqs[0].Avoid) != 0 || len(m.reqs[1].Avoid) != 1 || m.reqs[1].Avoid[0] != "a:free" {
+			t.Errorf("avoided %v, then %v; want nothing, then a:free", m.reqs[0].Avoid, m.reqs[1].Avoid)
+		}
+		if c.models[0] != "b:free" {
+			t.Errorf("recorded model %q, want b:free", c.models[0])
+		}
+	})
+
+	for name, err := range map[string]error{
+		"every model is busy":          fmt.Errorf("%w (last: HTTP 503)", llm.ErrExhausted),
+		"the global budget is used up": usage.ErrGlobalLimit,
+	} {
+		t.Run("saves the reply with a note when "+name+" for the retry", func(t *testing.T) {
+			bad := `{"summary": "x", "changes": []}`
+			m := &turns{turns: []turn{{text: "Here goes.", args: bad, model: "a:free"}, {err: err}}}
+			c := conv("Welcome", "Add a cache")
+
+			msg, replyErr := newAssistant(m, c).Reply(context.Background(), "u", "s", func(string) {})
+
+			if replyErr != nil || msg.Proposal != nil || !strings.HasPrefix(msg.Body, "Here goes.") || !strings.Contains(msg.Body, "couldn't") {
+				t.Fatalf("message = %+v, err = %v", msg, replyErr)
+			}
+			if c.models[0] != "a:free" {
+				t.Errorf("recorded model %q, want a:free", c.models[0])
+			}
+		})
+	}
+
+	t.Run("takes a call named after an op as a proposal of that change", func(t *testing.T) {
+		// Nemotron 3 Super called set_experience_level as a tool and sent no text, which used to
+		// fail the reply as empty.
+		m := &turns{turns: []turn{{tool: "set_experience_level", args: `{"level": "expert"}`}}}
+
+		msg, err := newAssistant(m, conv("Welcome", "Design a URL shortener")).Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal == nil || msg.Proposal.Changes[0].Level != "expert" || msg.Body != "Set experience level" {
+			t.Fatalf("message = %+v, err = %v", msg, err)
+		}
+	})
+
+	t.Run("sends a call to an unknown tool back to the model", func(t *testing.T) {
+		m := &turns{turns: []turn{{text: "Let me draw it.", tool: "draw_diagram", args: `{}`}, {text: " Here it is.", args: validArgs}}}
+
+		msg, err := newAssistant(m, conv("Welcome", "Add a cache")).Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal == nil {
+			t.Fatalf("message = %+v, err = %v", msg, err)
+		}
+		retry := m.reqs[1].Messages
+		if result := retry[len(retry)-1]; result.Role != llm.RoleTool || !strings.Contains(result.Content, "no draw_diagram tool") {
+			t.Errorf("tool result = %+v", result)
 		}
 	})
 
