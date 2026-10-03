@@ -11,7 +11,7 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 | `architecture/` | Canvas (React Flow): `canvas.tsx` (Editor + Proposal review), `model.ts` (catalog, doc ↔ flow), `proposal.ts`, `autosave.ts`, `layout.ts` (dagre), `nodes.tsx`, `shapes.tsx`, `dock.tsx`, `inspector.tsx` |
 | `conversation/` | Chat pane, markdown, Proposal card |
 | `knowledge/` | Right-pane tabs (`side-panel.tsx`), Requirements, Decisions |
-| `projects/`, `account/` | Sidebar, title, new-project form; Settings dialog |
+| `projects/`, `account/` | Sidebar, title, new-project form; Settings dialog (default Experience Level, and Delete account behind a second confirmation, which signs out on success) |
 | `ui/`, `design/` | Base components and StyleX tokens (the "design system") |
 
 ## Sign-in

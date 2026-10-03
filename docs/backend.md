@@ -67,6 +67,7 @@ All under `/api`, all need a User.
 | Route | Notes |
 | --- | --- |
 | `GET /me` | `{displayName, avatarUrl}` (see Auth › Display) |
+| `DELETE /me` | Deletes the User's `auth.users` row (`auth.Accounts`), which cascades to their identities, sessions, Projects, settings and `ai_usage`; 204. Their token stops working at once (its session is gone). `ai_requests` belongs to nobody, so the global budget isn't refilled. |
 | `GET, PUT /settings` | `{experienceLevel}`; `""` clears the default |
 | `GET, POST /projects` · `GET, PATCH, DELETE /projects/{slug}` | `{slug, name, updatedAt}`; list is newest first |
 | `GET, PUT /projects/{slug}/architecture` | `{version, document}`; PUT returns the new `version` |

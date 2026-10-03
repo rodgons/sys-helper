@@ -78,6 +78,7 @@ func run() error {
 			Reviews:        conversation.Reviews{Conversations: conversations, Architectures: architectures},
 			Knowledge:      knowledgeStore,
 			Settings:       knowledgeStore, // the default Experience Level lives with the per-Project one
+			Accounts:       auth.Accounts{DB: db},
 			AllowedOrigins: cfg.AllowedOrigins,
 			Allowlist:      allowlist(cfg),
 		}),
