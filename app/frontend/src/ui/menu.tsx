@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
-import type { LucideIcon } from 'lucide-react';
+import { Check, type LucideIcon } from 'lucide-react';
 import {
   createContext,
   type ReactNode,
@@ -15,8 +15,8 @@ const CloseMenu = createContext<() => void>(() => {});
 
 /**
  * Dropdown menu behind a button (`trigger` is its visible content, `label` its accessible name).
- * It opens below the button, aligned right, focuses the first item, and closes on Escape, on a
- * click outside or after an item runs.
+ * It opens below the button, aligned right, focuses the checked item (else the first), and closes
+ * on Escape, on a click outside or after an item runs.
  */
 export function Menu({
   label,
@@ -37,7 +37,11 @@ export function Menu({
 
   useEffect(() => {
     if (!open) return;
-    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    const menu = menuRef.current;
+    (
+      menu?.querySelector<HTMLElement>('[aria-checked="true"]') ??
+      menu?.querySelector<HTMLElement>('[role^="menuitem"]')
+    )?.focus();
     const onPointerDown = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -81,21 +85,30 @@ export function Menu({
   );
 }
 
-/** One action in a Menu, with an optional decorative icon on its left. */
+/**
+ * One action in a Menu, with an optional decorative icon on its left. Passing `checked` makes it
+ * one of a set of choices (`menuitemradio`), ticked on the right when it is the current one.
+ */
 export function MenuItem({
   icon: Icon,
+  checked,
   onSelect,
   children,
 }: {
   icon?: LucideIcon;
+  checked?: boolean;
   onSelect: () => void;
   children: ReactNode;
 }) {
   const close = useContext(CloseMenu);
+  const role =
+    checked === undefined
+      ? ({ role: 'menuitem' } as const)
+      : ({ role: 'menuitemradio', 'aria-checked': checked } as const);
   return (
     <button
       type="button"
-      role="menuitem"
+      {...role}
       onClick={() => {
         close();
         onSelect();
@@ -106,6 +119,9 @@ export function MenuItem({
         <Icon size={16} strokeWidth={1.75} aria-hidden="true" {...stylex.props(styles.icon)} />
       )}
       {children}
+      {checked && (
+        <Check size={16} strokeWidth={2} aria-hidden="true" {...stylex.props(styles.check)} />
+      )}
     </button>
   );
 }
@@ -182,6 +198,7 @@ const styles = stylex.create({
     overflowWrap: 'anywhere',
   },
   icon: { flexShrink: 0, color: color['--color-fg-muted'] },
+  check: { flexShrink: 0, marginInlineStart: 'auto', color: color['--color-accent-strong'] },
   separator: {
     marginBlock: space['--space-2'],
     marginInline: 0,

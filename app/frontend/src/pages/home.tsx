@@ -4,6 +4,7 @@ import workspaceDark from '../assets/workspace-dark.webp';
 import workspaceLight from '../assets/workspace-light.webp';
 import { color, font, radius, space, text } from '../design/tokens.stylex';
 import { useAuth } from '../lib/auth';
+import { useThemeChoice } from '../lib/theme';
 import { ButtonRouteLink } from '../ui/button';
 import { Card } from '../ui/card';
 import { Grid, Section, Stack } from '../ui/layout';
@@ -28,6 +29,7 @@ const STEPS = [
 /** Public landing page. Signed-in Users go straight to their projects. */
 export function HomePage() {
   const auth = useAuth();
+  const theme = useThemeChoice();
   if (auth.status === 'signedIn') return <Navigate to="/projects" replace />;
 
   return (
@@ -61,11 +63,13 @@ export function HomePage() {
             </Display>
           </Stack>
           <figure {...stylex.props(styles.figure)}>
-            {/* Recaptured by `make demo-screenshots`; the scheme matches the visitor's. */}
+            {/* Recaptured by `make demo-screenshots`; the scheme matches the visitor's theme. */}
             <picture>
-              <source srcSet={workspaceDark} media="(prefers-color-scheme: dark)" />
+              {theme === 'system' && (
+                <source srcSet={workspaceDark} media="(prefers-color-scheme: dark)" />
+              )}
               <img
-                src={workspaceLight}
+                src={theme === 'dark' ? workspaceDark : workspaceLight}
                 width={2880}
                 height={1800}
                 alt="The sys-helper workspace: a social app's architecture canvas in the middle, and the AI's conversation on the right with a pending proposal to add hashtag search."

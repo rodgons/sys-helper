@@ -27,6 +27,7 @@ import type { VersionedArchitecture } from '../lib/architecture';
 import { useToken } from '../lib/auth';
 import { useRefreshMessages, useSetProposalStatus } from '../lib/conversation';
 import { useKnowledge, useRefreshKnowledge } from '../lib/knowledge';
+import { useThemeChoice } from '../lib/theme';
 import { Button } from '../ui/button';
 import { Label, Text } from '../ui/typography';
 import { type SaveStatus, useAutosave } from './autosave';
@@ -110,6 +111,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
   // A save can prune Decisions whose components are gone, so reload them after each one.
   const autosave = useAutosave(slug, initial.version, refreshKnowledge);
   const reactFlow = useReactFlow();
+  const theme = useThemeChoice();
   const wrapper = useRef<HTMLDivElement>(null);
   // Where the last connection was clicked, on the canvas, so its window opens there.
   const [clicked, setClicked] = useState<({ id: string } & XY) | null>(null);
@@ -309,7 +311,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
         nodesConnectable={!review.state?.busy}
         deleteKeyCode={review.state?.busy ? null : 'Backspace'}
         defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
-        colorMode="system"
+        colorMode={theme}
         fitView={fitOnLoad}
         fitViewOptions={fit}
         proOptions={{ hideAttribution: true }}

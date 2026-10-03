@@ -3,32 +3,32 @@ import * as stylex from '@stylexjs/stylex';
 // Design tokens. Keys start with `--` so StyleX keeps them as literal CSS custom properties:
 // the names are stable, readable in devtools, and usable from global.css.
 
-const DARK = '@media (prefers-color-scheme: dark)';
-
 /**
  * Semantic colors. Components pick a role (canvas, fg, line, accent…), never a raw hex.
  * `accent` is a fill that carries white text; `accentStrong` is the accent as readable text.
+ * Each is `light-dark(light, dark)`, so the scheme follows `color-scheme`: the OS by default,
+ * or the User's choice through `<html data-theme>` (global.css, `lib/theme.ts`).
  */
 export const color = stylex.defineVars({
-  '--color-canvas': { default: '#ffffff', [DARK]: '#0d0a12' },
-  '--color-subtle': { default: '#f6f5f8', [DARK]: '#17131e' },
-  '--color-surface': { default: '#ffffff', [DARK]: '#0d0a12' },
-  '--color-raised': { default: '#ffffff', [DARK]: '#1b1822' },
-  '--color-line': { default: '#e4e2e8', [DARK]: '#2a2631' },
-  '--color-line-strong': { default: '#0d0b12', [DARK]: '#4a4552' },
-  '--color-fg': { default: '#0d0b12', [DARK]: '#ecebef' },
-  '--color-fg-muted': { default: '#534f5c', [DARK]: '#a9a5b0' },
-  '--color-fg-faint': { default: '#6e6977', [DARK]: '#858090' },
-  '--color-accent': { default: '#7c3aed', [DARK]: '#7c3aed' },
-  '--color-accent-strong': { default: '#6425d0', [DARK]: '#b79cff' },
-  '--color-accent-soft': { default: '#f2ecff', [DARK]: '#24133f' },
+  '--color-canvas': 'light-dark(#ffffff, #0d0a12)',
+  '--color-subtle': 'light-dark(#f6f5f8, #17131e)',
+  '--color-surface': 'light-dark(#ffffff, #0d0a12)',
+  '--color-raised': 'light-dark(#ffffff, #1b1822)',
+  '--color-line': 'light-dark(#e4e2e8, #2a2631)',
+  '--color-line-strong': 'light-dark(#0d0b12, #4a4552)',
+  '--color-fg': 'light-dark(#0d0b12, #ecebef)',
+  '--color-fg-muted': 'light-dark(#534f5c, #a9a5b0)',
+  '--color-fg-faint': 'light-dark(#6e6977, #858090)',
+  '--color-accent': '#7c3aed',
+  '--color-accent-strong': 'light-dark(#6425d0, #b79cff)',
+  '--color-accent-soft': 'light-dark(#f2ecff, #24133f)',
   '--color-on-accent': '#ffffff',
-  '--color-slab': { default: '#0f0d14', [DARK]: '#1c1922' },
-  '--color-on-slab': { default: '#ffffff', [DARK]: '#f1f0f3' },
-  '--color-success': { default: '#0a8f50', [DARK]: '#34d399' },
-  '--color-warning': { default: '#b56f00', [DARK]: '#f5b43c' },
-  '--color-danger': { default: '#d1263a', [DARK]: '#ff6b6b' },
-  '--color-info': { default: '#2563d9', [DARK]: '#7aa7ff' },
+  '--color-slab': 'light-dark(#0f0d14, #1c1922)',
+  '--color-on-slab': 'light-dark(#ffffff, #f1f0f3)',
+  '--color-success': 'light-dark(#0a8f50, #34d399)',
+  '--color-warning': 'light-dark(#b56f00, #f5b43c)',
+  '--color-danger': 'light-dark(#d1263a, #ff6b6b)',
+  '--color-info': 'light-dark(#2563d9, #7aa7ff)',
 });
 
 /** 4px spacing scale plus fluid section rhythm. */
