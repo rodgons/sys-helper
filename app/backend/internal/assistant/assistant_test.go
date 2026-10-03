@@ -308,6 +308,18 @@ func TestReply(t *testing.T) {
 		}
 	})
 
+	t.Run("tells the model not to re-ask requirements already recorded", func(t *testing.T) {
+		var req llm.Request
+
+		if _, err := newAssistant(model{words: []string{"ok"}, got: &req}, conv("Welcome", "Hi")).Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+
+		if system := req.Messages[0].Content; !strings.Contains(system, "If the requirements below already cover the basics, don't ask about them again; build on them.") {
+			t.Errorf("system message lacks the no-re-interview rule:\n%s", system)
+		}
+	})
+
 	t.Run("trims a large project's knowledge to a budget, saying what it left out", func(t *testing.T) {
 		var k knowledge.Knowledge
 		for i := 1; i <= knowledge.MaxRequirements; i++ {

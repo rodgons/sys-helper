@@ -51,6 +51,13 @@ const WelcomeMessage = "Hi! I'm your AI architect. Before we draw anything, I'll
 	"design decision I propose will point back to them. You can also edit the canvas yourself at any time.\n\n" +
 	"What are you building, and who is it for?"
 
+// PickUpMessage is the Welcome Message of a New Conversation in a Project that already has
+// content (Components or Requirements): the AI still knows the Project, so it asks what to work
+// on next instead of what is being built.
+const PickUpMessage = "Fresh start! I still have this project's architecture, requirements and decisions, " +
+	"so nothing on the canvas is lost. What would you like to work on next: refine a requirement, " +
+	"dig into a part of the design, or explore something new?"
+
 var ErrInvalidMessage = fmt.Errorf("message must be 1 to %d characters", MaxUserMessage)
 
 // MaxMessages caps a Conversation, so a Project's history (which the page loads whole) stays
@@ -166,9 +173,10 @@ func (s *Store) Append(ctx context.Context, userID, suffix string, role Role, bo
 }
 
 // StartNew starts a New Conversation: it deletes every Message of the Project (their Proposals go
-// with them, a pending one included), adds the Welcome Message and returns the new list. It holds
-// the Project's row lock, which serializes it with sends, saved replies and accepts. The Proposal
-// counter is left alone, so numbering continues.
+// with them, a pending one included), adds a Welcome Message and returns the new list. The Welcome
+// Message is PickUpMessage when the Project has Components or Requirements, WelcomeMessage
+// otherwise. It holds the Project's row lock, which serializes it with sends, saved replies and
+// accepts. The Proposal counter is left alone, so numbering continues.
 func (s *Store) StartNew(ctx context.Context, userID, suffix string) ([]Message, error) {
 	var m Message
 	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
@@ -176,10 +184,21 @@ func (s *Store) StartNew(ctx context.Context, userID, suffix string) ([]Message,
 		if err != nil {
 			return err
 		}
+		var hasContent bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM architectures WHERE project_id = $1
+			                 AND jsonb_array_length(coalesce(document->'components', '[]')) > 0)
+			    OR EXISTS (SELECT 1 FROM requirements WHERE project_id = $1)`, projectID).Scan(&hasContent); err != nil {
+			return fmt.Errorf("check project content: %w", err)
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM messages WHERE project_id = $1`, projectID); err != nil {
 			return fmt.Errorf("delete messages: %w", err)
 		}
-		m, err = insert(ctx, tx, projectID, RoleAssistant, WelcomeMessage)
+		welcome := WelcomeMessage
+		if hasContent {
+			welcome = PickUpMessage
+		}
+		m, err = insert(ctx, tx, projectID, RoleAssistant, welcome)
 		return err
 	})
 	if err != nil {

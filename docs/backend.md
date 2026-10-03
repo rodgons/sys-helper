@@ -72,7 +72,7 @@ All under `/api`, all need a User.
 | `GET, POST /projects` · `GET, PATCH, DELETE /projects/{slug}` | `{slug, name, updatedAt}`; list is newest first |
 | `GET, PUT /projects/{slug}/architecture` | `{version, document}`; PUT returns the new `version` |
 | `GET, POST /projects/{slug}/messages` | POST takes `{body}`; role is always `user`; 409 `limit_reached` once the Conversation has 500 Messages |
-| `POST /projects/{slug}/conversation` | New Conversation, no body: deletes every Message (their Proposals cascade, a pending one included) and adds a Welcome Message, in one transaction under the Project row lock (`conversation.Store.StartNew`, through `Assistant.NewConversation`); 200 with the new Messages, same shape as the list; 409 `busy` while a reply for the Project is running. The Proposal counter is untouched. No AI call and no rate limit |
+| `POST /projects/{slug}/conversation` | New Conversation, no body: deletes every Message (their Proposals cascade, a pending one included) and adds a Welcome Message (`conversation.PickUpMessage` if the Architecture has Components or there are Requirements, otherwise the standard `WelcomeMessage` that new Projects get), in one transaction under the Project row lock (`conversation.Store.StartNew`, through `Assistant.NewConversation`); 200 with the new Messages, same shape as the list; 409 `busy` while a reply for the Project is running. The Proposal counter is untouched. No AI call and no rate limit |
 | `POST /projects/{slug}/reply` | SSE `delta` / `done` / `error`; see `docs/ai.md` |
 | `POST /projects/{slug}/proposals/{seq}/accept` | body `{version, document}` = the canvas with the Proposal applied |
 | `POST /projects/{slug}/proposals/{seq}/reject` | |

@@ -217,6 +217,51 @@ func TestProposals(t *testing.T) {
 		}
 	})
 
+	t.Run("a New Conversation picks up where a Project with content is", func(t *testing.T) {
+		knowledgeStore := knowledge.NewStore(pool)
+		withComponents := func(t *testing.T, user, suffix string) {
+			doc := architecture.Empty()
+			doc.Components = append(doc.Components, architecture.Component{ID: "c-1", Type: "cache", Name: "Cache"})
+			if _, err := architectures.Save(ctx, user, suffix, 0, doc); err != nil {
+				t.Fatal(err)
+			}
+		}
+		withRequirements := func(t *testing.T, user, suffix string) {
+			if _, err := knowledgeStore.AddRequirement(ctx, user, suffix, "scale", "10k users"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		emptyCanvas := func(t *testing.T, user, suffix string) {
+			// A saved Architecture with no Components is still an empty Project.
+			if _, err := architectures.Save(ctx, user, suffix, 0, architecture.Empty()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, tt := range []struct {
+			name  string
+			setup func(t *testing.T, user, suffix string)
+			want  string
+		}{
+			{"an empty project", emptyCanvas, conversation.WelcomeMessage},
+			{"a project with components", withComponents, conversation.PickUpMessage},
+			{"a project with only requirements", withRequirements, conversation.PickUpMessage},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				user, suffix := newProject(t)
+				tt.setup(t, user, suffix)
+
+				msgs, err := store.StartNew(ctx, user, suffix)
+
+				if err != nil || len(msgs) != 1 || msgs[0].Body != tt.want {
+					t.Fatalf("StartNew = %+v, %v; want only %q", msgs, err, tt.want)
+				}
+				if listed, _ := store.List(ctx, user, suffix); len(listed) != 1 || listed[0].Body != tt.want {
+					t.Errorf("listed = %+v", listed)
+				}
+			})
+		}
+	})
+
 	t.Run("Proposal numbers continue after a New Conversation", func(t *testing.T) {
 		user, suffix := newProject(t)
 		reply(t, user, suffix)
