@@ -23,11 +23,12 @@ const (
 	ProposalSuperseded ProposalStatus = "superseded"
 )
 
-// ErrNotPending means the Proposal was already accepted, rejected or superseded.
+// ErrNotPending means the Proposal was already accepted, rejected or superseded, or was discarded
+// with its Message.
 var ErrNotPending = errors.New("proposal is not pending")
 
 // Proposal is a set of Architecture changes the AI suggested in a Message. Seq numbers Proposals
-// within a Project; BaseVersion is the Architecture version the changes were written against.
+// within a Project, from the forward-only projects.next_proposal_seq; BaseVersion is the Architecture version the changes were written against.
 type Proposal struct {
 	Seq         int               `json:"seq"`
 	Summary     string            `json:"summary"`
@@ -80,10 +81,16 @@ func (s *Store) AppendReply(ctx context.Context, userID, suffix, body, model str
 			return err
 		}
 		p := Proposal{Summary: changes.Summary, Changes: changes.Changes, Status: ProposalPending, BaseVersion: baseVersion}
+		// The forward-only counter, not "highest + 1", so a deleted Proposal's number (and the
+		// canvas ids derived from it) is never reused.
 		if err := tx.QueryRow(ctx, `
+			UPDATE projects SET next_proposal_seq = next_proposal_seq + 1 WHERE id = $1
+			RETURNING next_proposal_seq - 1`, projectID).Scan(&p.Seq); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO proposals (id, project_id, message_id, seq, base_version, summary, changes)
-			VALUES ($1, $2, $3, (SELECT coalesce(max(seq), 0) + 1 FROM proposals WHERE project_id = $2), $4, $5, $6)
-			RETURNING seq`, id, projectID, messageID, baseVersion, p.Summary, p.Changes).Scan(&p.Seq); err != nil {
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`, id, projectID, messageID, p.Seq, baseVersion, p.Summary, p.Changes); err != nil {
 			return err
 		}
 		m.Proposal = &p
@@ -206,7 +213,8 @@ func resolve(ctx context.Context, db querier, projectID string, seq int, status 
 		WHERE p.project_id = $1 AND p.seq = $2 AND old.id = p.id
 		RETURNING old.status`, projectID, seq, status).Scan(&current)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return projects.ErrNotFound
+		// Numbers only go up, so a missing one was discarded (deleted with its Message).
+		return ErrNotPending
 	}
 	if err != nil {
 		return fmt.Errorf("resolve proposal: %w", err)

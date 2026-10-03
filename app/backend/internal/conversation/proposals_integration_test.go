@@ -5,6 +5,8 @@ package conversation_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -153,8 +155,77 @@ func TestProposals(t *testing.T) {
 		if err := store.Reject(ctx, user, suffix, 1); !errors.Is(err, conversation.ErrNotPending) {
 			t.Errorf("second Reject: err = %v, want ErrNotPending", err)
 		}
-		if err := store.Reject(ctx, user, suffix, 99); !errors.Is(err, projects.ErrNotFound) {
-			t.Errorf("unknown seq: err = %v, want ErrNotFound", err)
+	})
+
+	t.Run("a number with no Proposal was discarded, so it is not pending", func(t *testing.T) {
+		user, suffix := newProject(t)
+		reply(t, user, suffix)
+
+		if err := store.Reject(ctx, user, suffix, 99); !errors.Is(err, conversation.ErrNotPending) {
+			t.Errorf("Reject: err = %v, want ErrNotPending", err)
+		}
+		if _, err := architectures.SaveWith(ctx, user, suffix, 0, architecture.Empty(), conversation.Accept(99)); !errors.Is(err, conversation.ErrNotPending) {
+			t.Errorf("Accept: err = %v, want ErrNotPending", err)
+		}
+		if got, _ := architectures.Get(ctx, user, suffix); got.Version != 0 {
+			t.Errorf("a failed accept still saved: version %d", got.Version)
+		}
+	})
+
+	t.Run("numbers keep going up after Proposals are deleted", func(t *testing.T) {
+		user, suffix := newProject(t)
+		reply(t, user, suffix)
+		reply(t, user, suffix)
+		if _, err := pool.Exec(ctx, `
+			DELETE FROM messages WHERE project_id = (SELECT id FROM projects WHERE user_id = $1 AND slug_suffix = $2)`,
+			user, suffix); err != nil {
+			t.Fatal(err)
+		}
+
+		if m := reply(t, user, suffix); m.Proposal.Seq != 3 {
+			t.Errorf("seq = %d, want 3", m.Proposal.Seq)
+		}
+	})
+
+	t.Run("the migration seeds the counter from existing Proposals", func(t *testing.T) {
+		withProposals, s1 := newProject(t)
+		reply(t, withProposals, s1)
+		reply(t, withProposals, s1)
+		without, s2 := newProject(t)
+		files, err := filepath.Glob("../../../../supabase/migrations/*_add_next_proposal_seq.sql")
+		if err != nil || len(files) != 1 {
+			t.Fatalf("migration files = %v, %v", files, err)
+		}
+		migration, err := os.ReadFile(files[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }() // DDL is transactional: the schema comes back as it was
+
+		if _, err := tx.Exec(ctx, `ALTER TABLE projects DROP COLUMN next_proposal_seq`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, string(migration)); err != nil {
+			t.Fatalf("run migration: %v", err)
+		}
+
+		next := func(user, suffix string) int {
+			var n int
+			if err := tx.QueryRow(ctx, `SELECT next_proposal_seq FROM projects WHERE user_id = $1 AND slug_suffix = $2`,
+				user, suffix).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			return n
+		}
+		if got := next(withProposals, s1); got != 3 {
+			t.Errorf("with two Proposals: next = %d, want 3", got)
+		}
+		if got := next(without, s2); got != 1 {
+			t.Errorf("without Proposals: next = %d, want 1", got)
 		}
 	})
 

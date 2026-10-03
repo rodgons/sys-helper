@@ -36,7 +36,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
   - `architecture.Store.AfterSave` = `knowledge.PruneDecisions` (drops vanished targets, deletes Decisions left with none).
   - `architecture.Store.SaveWith(…, also)`: `also` runs after the version check. Accepting a Proposal passes `conversation.Accept(seq)`.
 - **Versioned Architecture:** `architectures.version` starts at 0 (no row). A save carries its base version; a mismatch returns `architecture.ErrConflict` (→ 409 `conflict`) and saves nothing.
-- **IDs:** new rows use UUIDv7 generated in Go (`uuid.NewV7()`), which also orders Messages. Requirements and Decisions are numbered per Project (`num`), shown as `R1`/`D1` (`knowledge.RequirementID`, `ParseRequirementID`). Numbers come from the forward-only counters `projects.next_requirement_num` / `next_decision_num`, so a deleted item's number is never reused (anything seeding these tables directly must advance them too).
+- **IDs:** new rows use UUIDv7 generated in Go (`uuid.NewV7()`), which also orders Messages. Requirements and Decisions are numbered per Project (`num`), shown as `R1`/`D1` (`knowledge.RequirementID`, `ParseRequirementID`). Numbers come from the forward-only counters `projects.next_requirement_num` / `next_decision_num`, so a deleted item's number is never reused (anything seeding these tables directly must advance them too). Proposal numbers (`seq`) work the same way through `projects.next_proposal_seq`, because accepted items' canvas ids (`p{seq}-{ref}`) and the Decisions targeting them derive from it, and Proposals are deleted with their Messages.
 - **Package-level functions taking a `DB`/`pgx.Tx`** (e.g. `knowledge.Load`, `knowledge.AddRequirement`) exist so other packages can act inside their own transaction. Store methods wrap them with ownership + locking.
 - **Effective Experience Level:** `knowledge.Load` coalesces `projects.experience_level` with `user_settings.experience_level`. Read the level only through it.
 
@@ -51,8 +51,8 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | --- | --- |
 | 400 | `invalid_json`, `invalid_name`, `invalid_message`, `invalid_architecture` (+detail), `invalid` (+detail, knowledge) |
 | 401 / 403 | `unauthenticated` / `identity_required` (no GitHub or Google identity), `not_allowed` (allowlist; +`identities`) |
-| 404 | `not_found` (also other Users' Projects, bad slugs, bad `seq`/ids) |
-| 409 | `conflict` (stale version), `not_pending` (Proposal already resolved), `busy` (reply in flight), `nothing_to_reply`, `limit_reached` (+detail for knowledge; see Limits) |
+| 404 | `not_found` (also other Users' Projects, bad slugs, malformed `seq`, bad ids) |
+| 409 | `conflict` (stale version), `not_pending` (Proposal already resolved, or a `seq` with no Proposal in an owned Project: numbers only go up, so it was discarded), `busy` (reply in flight), `nothing_to_reply`, `limit_reached` (+detail for knowledge; see Limits) |
 | 429 | `daily_limit` from `/reply` (`AI_DAILY_REPLY_LIMIT` model calls per User, or `AI_GLOBAL_DAILY_LIMIT` requests for everyone, per UTC day; 0 disables). Sending a message is never capped. |
 | 502 / 503 | `ai_failed` / `ai_unavailable` (no API key, or every free model tried was busy or failing: try again shortly) |
 
@@ -82,7 +82,7 @@ All under `/api`, all need a User.
 
 ## Database
 
-Migrations live in `supabase/migrations` (`make db-migration name=x`, `make db-reset`). Tables: `projects` (+`experience_level`), `architectures` (one jsonb document per Project), `messages`, `proposals` (`seq`, `status`, `base_version`, partial unique index = one pending per Project), `requirements`, `decisions` (`requirement_nums int[]`, `targets text[]` of canvas ids), `user_settings`, `ai_usage` (one row per model call; hangs off `auth.users`, so deleting a Project doesn't reset the count), `ai_requests` (one row per request to OpenRouter, for the global budget). Both keep a week (`usage.Retention`): `usage.RunPruner`, started in `main`, deletes older rows every hour. `messages.model` records which model wrote an AI Message (debugging only; not sent to the client).
+Migrations live in `supabase/migrations` (`make db-migration name=x`, `make db-reset`). Tables: `projects` (+`experience_level`), `architectures` (one jsonb document per Project), `messages`, `proposals` (`seq` from `projects.next_proposal_seq`, `status`, `base_version`, partial unique index = one pending per Project), `requirements`, `decisions` (`requirement_nums int[]`, `targets text[]` of canvas ids), `user_settings`, `ai_usage` (one row per model call; hangs off `auth.users`, so deleting a Project doesn't reset the count), `ai_requests` (one row per request to OpenRouter, for the global budget). Both keep a week (`usage.Retention`): `usage.RunPruner`, started in `main`, deletes older rows every hour. `messages.model` records which model wrote an AI Message (debugging only; not sent to the client).
 
 Every new table:
 - `enable row level security` with **no policies**. Only the Go API (table owner) touches data; this keeps it out of Supabase's Data API.

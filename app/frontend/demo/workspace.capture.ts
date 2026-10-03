@@ -256,7 +256,8 @@ test('capture the workspace', async ({ page, signIn }) => {
   );
   await sql.begin(async (tx) => {
     await tx`UPDATE projects SET experience_level = 'intermediate',
-               next_requirement_num = ${requirements.length + 1}, next_decision_num = ${decisions.length + 1}
+               next_requirement_num = ${requirements.length + 1}, next_decision_num = ${decisions.length + 1},
+               next_proposal_seq = 2
              WHERE id = ${project.id}`;
     for (const [i, [category, statement]] of requirements.entries()) {
       await tx`INSERT INTO requirements (id, project_id, num, category, statement)

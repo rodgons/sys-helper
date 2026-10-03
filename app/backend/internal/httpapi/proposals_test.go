@@ -14,6 +14,7 @@ import (
 )
 
 // fakeReviews knows octocat's project k3xa9q2m7p at architecture version 3 with pending proposal 2.
+// Any other number in it was discarded, so it is not pending.
 type fakeReviews struct {
 	status   map[int]string
 	accepted architecture.Document
@@ -21,7 +22,7 @@ type fakeReviews struct {
 }
 
 func (f *fakeReviews) Accept(_ context.Context, userID, suffix string, seq, base int, doc architecture.Document) (int, error) {
-	if userID != octocat.ID || suffix != "k3xa9q2m7p" || f.status[seq] == "" {
+	if userID != octocat.ID || suffix != "k3xa9q2m7p" {
 		return 0, projects.ErrNotFound
 	}
 	if base != 3 {
@@ -38,7 +39,7 @@ func (f *fakeReviews) Accept(_ context.Context, userID, suffix string, seq, base
 }
 
 func (f *fakeReviews) Reject(_ context.Context, userID, suffix string, seq int) error {
-	if userID != octocat.ID || suffix != "k3xa9q2m7p" || f.status[seq] == "" {
+	if userID != octocat.ID || suffix != "k3xa9q2m7p" {
 		return projects.ErrNotFound
 	}
 	if f.status[seq] != "pending" {
@@ -90,6 +91,16 @@ func TestProposalReviews(t *testing.T) {
 		}
 	})
 
+	t.Run("a missing or foreign project is still not found", func(t *testing.T) {
+		deps, _ := newDeps()
+
+		rec := call(t, deps, http.MethodPost, "/api/projects/shop-zzzzzzzzzz/proposals/2/reject", "")
+
+		if rec.Code != http.StatusNotFound || decode[map[string]string](t, rec)["error"] != "not_found" {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+		}
+	})
+
 	tests := []struct {
 		name, path, body string
 		status           int
@@ -100,7 +111,8 @@ func TestProposalReviews(t *testing.T) {
 		{"reject a superseded proposal", "1/reject", "", http.StatusConflict, "not_pending"},
 		{"accept an invalid architecture", "2/accept", `{"version":3,"document":{"components":[{"id":"x","type":"mainframe","name":"M","position":{"x":0,"y":0}}],"connections":[]}}`, http.StatusBadRequest, "invalid_architecture"},
 		{"accept without a document", "2/accept", `{"version":3}`, http.StatusBadRequest, "invalid_json"},
-		{"unknown proposal", "9/reject", "", http.StatusNotFound, "not_found"},
+		{"reject a discarded proposal", "9/reject", "", http.StatusConflict, "not_pending"},
+		{"accept a discarded proposal", "9/accept", `{"version":3,"document":` + doc + `}`, http.StatusConflict, "not_pending"},
 		{"malformed number", "two/reject", "", http.StatusNotFound, "not_found"},
 	}
 	for _, tt := range tests {
