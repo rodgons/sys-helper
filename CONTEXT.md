@@ -42,11 +42,15 @@ _Avoid_: Edge, arrow, link
 ### Reasoning
 
 **Conversation**:
-The chat between the User and the AI inside a Project. It is made up of Messages.
+The chat between the User and the AI inside a Project. It is made up of Messages. The User can start a New Conversation at any time.
 _Avoid_: Chat, thread, session
 
+**New Conversation**:
+Replacing a Project's Conversation with a fresh one that starts from the Welcome Message. The old Messages are discarded, not archived. The Architecture, Requirements, Decisions and Experience Level are kept, so the AI still knows the Project.
+_Avoid_: Restart, reset, clear chat
+
 **Welcome Message**:
-The fixed first Message of every new Conversation. It tells the User the AI will ask about what they want to build and ends with the first question.
+The fixed first Message of every new Conversation. It tells the User the AI will ask about what they want to build and ends with the first question. For a Project that already has an Architecture or Requirements (after a New Conversation), it instead says the AI still knows the Project and asks what to work on next.
 
 **Requirement**:
 A stated need or constraint of the Project that design choices answer to, such as expected users, read/write ratio, latency target, consistency needs, or budget. It has a category (Scale, Performance, Availability, Consistency, Security, Cost, Constraints or Functional) and a one-line statement, and is numbered R1, R2, … within its Project.
