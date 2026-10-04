@@ -11,6 +11,7 @@ import { ApiError } from '../lib/api';
 import { useArchitecture } from '../lib/architecture';
 import { useCompact } from '../lib/compact';
 import { usePendingProposal } from '../lib/conversation';
+import { useKeyboardHeight } from '../lib/keyboard';
 import { usePanelWidth } from '../lib/panel-width';
 import { slugSuffix, useProject } from '../lib/projects';
 import { ProjectSidebar } from '../projects/project-sidebar';
@@ -40,6 +41,8 @@ export function WorkspacePage() {
 function Workspace({ slug }: { slug: string }) {
   const project = useProject(slug);
   const compact = useCompact();
+  // On iOS the compact workspace follows the visual viewport above the keyboard.
+  const visibleHeight = useKeyboardHeight(compact);
   const view = useWorkspaceView(slug, compact);
   const panes = useRef<HTMLDivElement>(null);
   // Where the compact canvas renders its Inspector: inside the sheet, under the tab row.
@@ -78,7 +81,12 @@ function Workspace({ slug }: { slug: string }) {
   if (project.data.slug !== slug) return <Navigate to={`/p/${project.data.slug}`} replace />;
 
   return (
-    <div {...stylex.props(styles.shell, compact && styles.compactShell)}>
+    <div
+      {...stylex.props(
+        styles.shell,
+        compact && styles.shellHeight(visibleHeight === null ? '100dvh' : `${visibleHeight}px`),
+      )}
+    >
       {compact ? <WorkspaceBar key={project.data.slug} project={project.data} /> : null}
       <main {...stylex.props(styles.workspace, resizing && styles.resizing)}>
         <div
@@ -378,8 +386,9 @@ const styles = stylex.create({
     flexDirection: 'column',
     height: `calc(100dvh - ${layout['--header-h']})`,
   },
-  // No site header on compact screens: the workspace bar is the only one.
-  compactShell: { height: '100dvh' },
+  // No site header on compact screens: the workspace bar is the only one, and the workspace fills
+  // what is visible (`dvh` follows the keyboard on Android; useKeyboardHeight on iOS).
+  shellHeight: (height: string) => ({ height }),
   workspace: { display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 },
   panes: {
     display: 'grid',
