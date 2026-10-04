@@ -2,6 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import { describeChange, type Proposal } from '../architecture/proposal';
 import type { Review } from '../architecture/review';
 import { color, radius, space, text } from '../design/tokens.stylex';
+import { PatternText } from '../knowledge/pattern-prototype';
 import { Badge, type BadgeTone } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Label, Text } from '../ui/typography';
@@ -30,7 +31,15 @@ export function ProposalCard({ proposal, review }: { proposal: Proposal; review:
       <ul {...stylex.props(styles.changes)}>
         {proposal.changes.map((c, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: a proposal's changes never reorder
-          <li key={i}>{describeChange(c, review?.names ?? {}, proposal.changes)}</li>
+          <li key={i}>
+            {describeChange(c, review?.names ?? {}, proposal.changes)}
+            {c.op === 'add_decision' && c.pattern && (
+              <>
+                {' · '}
+                <PatternText text={c.pattern} />
+              </>
+            )}
+          </li>
         ))}
       </ul>
       {pending && review?.stale && (
