@@ -48,7 +48,7 @@ const settle = () => act(() => vi.advanceTimersByTimeAsync(1000));
 // Components on the canvas, by id; not the ghosts of what an undo or redo just removed.
 const onCanvas = () =>
   [...document.querySelectorAll('.react-flow__node')]
-    .filter((n) => !n.querySelector('[data-diff="removed"]'))
+    .filter((n) => !n.textContent?.includes('· removed'))
     .map((n) => n.getAttribute('data-id'));
 const node = (id: string) =>
   document.querySelector(`.react-flow__node[data-id="${id}"]`) as HTMLElement;
@@ -385,7 +385,9 @@ describe('Undo and redo on the canvas', () => {
 
     await act(() => vi.advanceTimersByTimeAsync(1500));
     expect(node(cache)).not.toHaveTextContent('· new');
-    expect(document.querySelector('[data-diff]')).toBeNull();
+    expect(document.querySelector('.react-flow__nodes')).not.toHaveTextContent(
+      /· (new|changed|removed)/,
+    );
   });
 
   it('ends the flash at the next edit', () => {
@@ -396,7 +398,9 @@ describe('Undo and redo on the canvas', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add DNS' }));
 
-    expect(document.querySelector('[data-diff]')).toBeNull();
+    expect(document.querySelector('.react-flow__nodes')).not.toHaveTextContent(
+      /· (new|changed|removed)/,
+    );
   });
 
   it('announces each undo and redo, beside the one status', () => {
@@ -504,6 +508,18 @@ describe('Undo and redo on the canvas', () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(undoButton()).toHaveAccessibleName('Undo Accept Proposal #2');
+    });
+
+    it('keeps the preview in view through an undo', () => {
+      stubSave();
+      renderWith();
+      fireEvent.click(screen.getByRole('button', { name: 'Add DNS' }));
+
+      fireEvent.click(undoButton());
+
+      expect(screen.getByText('Order Cache')).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Proposal' })).toBeInTheDocument();
+      expect(acceptButton()).toBeEnabled();
     });
 
     it('turns out of date when an undo takes away what it changes, and back with redo', () => {

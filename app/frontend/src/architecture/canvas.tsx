@@ -33,7 +33,7 @@ import { Button } from '../ui/button';
 import { Label, Text } from '../ui/typography';
 import { type SaveStatus, useAutosave } from './autosave';
 import { ComponentDock, ComponentPicker, DRAG_TYPE } from './dock';
-import { History, type StepChanges, stepChanges } from './history';
+import { History, type Snapshot, type StepChanges, stepChanges } from './history';
 import { Inspector } from './inspector';
 import { tidy } from './layout';
 import {
@@ -240,7 +240,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
   });
 
   // History stays put while an accept or reject is being sent, and once saving has stopped.
-  const blocked = Boolean(review.state?.busy) || autosave.status === 'conflict';
+  const historyLocked = Boolean(review.state?.busy) || autosave.status === 'conflict';
   // What the last undo or redo changed, flashed with the Proposal preview's markers for a moment.
   const [flash, setFlash] = useState<StepChanges | null>(null);
   useEffect(() => {
@@ -248,9 +248,10 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
     const timer = setTimeout(() => setFlash(null), FLASH_MS);
     return () => clearTimeout(timer);
   }, [flash]);
-  const [announcement, setAnnouncement] = useState('');
+  // Numbered so that saying the same thing twice in a row is still a change screen readers announce.
+  const [announcement, setAnnouncement] = useState({ text: '', n: 0 });
   // Set by an undo or redo: the Inspector stays shut until the User picks something themselves.
-  const [quiet, setQuiet] = useState(false);
+  const [inspectorShut, setInspectorShut] = useState(false);
   // The item whose Inspector is open, if any (set during render, read by restore).
   const inspecting = useRef<string | null>(null);
   const [panTo, setPanTo] = useState<{ ids: string[] } | null>(null);
@@ -258,7 +259,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
 
   /** Undoes or redoes a step: saved like any edit, then selected, shown and announced. */
   const restore = (direction: 'undo' | 'redo') => {
-    if (blocked || locked.current) return;
+    if (historyLocked || locked.current) return;
     const current = latest.current;
     const step = direction === 'undo' ? history.undo(current) : history.redo(current);
     if (!step) return;
@@ -272,14 +273,15 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
     );
     replaying.current = false;
     setFlash(changes);
-    setAnnouncement(`${direction === 'undo' ? 'Undid' : 'Redid'} ${step.label}`);
+    const text = `${direction === 'undo' ? 'Undid' : 'Redid'} ${step.label}`;
+    setAnnouncement((a) => ({ text, n: a.n + 1 }));
     if (touched.size > 0) setPanTo({ ids: [...touched] });
     // Never open the Inspector; one already open on the only item changed stays open.
     const open = inspecting.current;
     if (!(open && touched.size === 1 && touched.has(open))) {
       setOpened(null);
       setClicked(null);
-      setQuiet(true);
+      setInspectorShut(true);
       if (sheet?.open) sheet.onOpenChange(false);
     }
   };
@@ -356,7 +358,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
     const node = newComponentNode(type, position, latest.current.nodes);
     // A new component opens straight away, to be named: in the sheet on compact (so crossing to
     // desktop leaves it just selected), else in its window.
-    setQuiet(false);
+    setInspectorShut(false);
     if (sheet) sheet.onOpenChange(true);
     else setOpened(node.id);
     update(
@@ -482,8 +484,8 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
     <Inspector
       slug={slug}
       saved={autosave.status === 'saved'}
-      nodes={quiet || (only && !floating) ? [] : selectedNodes}
-      edges={quiet && !edgeAnchor ? [] : selectedEdges}
+      nodes={inspectorShut || (only && !floating) ? [] : selectedNodes}
+      edges={inspectorShut && !edgeAnchor ? [] : selectedEdges}
       hint={only && !floating ? 'Click it again to edit it.' : undefined}
       onEditComponent={editComponent}
       onEditConnection={editConnection}
@@ -533,12 +535,12 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
         // Compact: one tap selects and opens the Inspector in the sheet. Desktop: a click selects,
         // a second click opens the window beside the component.
         onNodeClick={(_, node) => {
-          setQuiet(false);
+          setInspectorShut(false);
           if (compact) sheet.onOpenChange(true);
           else setOpened(selectedBefore.current === node.id ? node.id : null);
         }}
         onPaneClick={() => {
-          setQuiet(false);
+          setInspectorShut(false);
           if (compact) sheet.onOpenChange(false);
           else setOpened(null);
         }}
@@ -550,7 +552,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
           else deselect();
         }}
         onEdgeClick={(e, edge) => {
-          setQuiet(false);
+          setInspectorShut(false);
           if (compact) sheet.onOpenChange(true);
           else
             setClicked({
@@ -594,26 +596,18 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
           orientation={compact ? 'horizontal' : 'vertical'}
           fitViewOptions={fit}
         >
-          <ControlButton
+          <HistoryButton
+            direction="undo"
+            label={history.undoLabel}
+            disabled={historyLocked}
             onClick={() => restore('undo')}
-            disabled={blocked || !history.undoLabel}
-            aria-label={history.undoLabel ? `Undo ${history.undoLabel}` : 'Undo'}
-            title={
-              history.undoLabel ? `Undo ${history.undoLabel} (${UNDO_KEYS})` : `Undo (${UNDO_KEYS})`
-            }
-          >
-            <Undo2 />
-          </ControlButton>
-          <ControlButton
+          />
+          <HistoryButton
+            direction="redo"
+            label={history.redoLabel}
+            disabled={historyLocked}
             onClick={() => restore('redo')}
-            disabled={blocked || !history.redoLabel}
-            aria-label={history.redoLabel ? `Redo ${history.redoLabel}` : 'Redo'}
-            title={
-              history.redoLabel ? `Redo ${history.redoLabel} (${REDO_KEYS})` : `Redo (${REDO_KEYS})`
-            }
-          >
-            <Redo2 />
-          </ControlButton>
+          />
           <ControlButton
             onClick={tidyUp}
             // A pending Proposal's preview fixes where its new components go, so tidying under it
@@ -629,7 +623,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
           <SaveIndicator status={autosave.status} />
           {/* Not a status: the canvas has exactly one, the save indicator. */}
           <div aria-live="polite" {...stylex.props(styles.srOnly)}>
-            {announcement}
+            <span key={announcement.n}>{announcement.text}</span>
           </div>
         </Panel>
         {compact ? (
@@ -753,7 +747,7 @@ function useShow(wrapper: { current: HTMLDivElement | null }) {
   );
 }
 
-type Flow = { nodes: ComponentNode[]; edges: ConnectionEdge[] };
+type Flow = Snapshot;
 
 // How long an undo or redo flashes what it changed.
 const FLASH_MS = 1500;
@@ -1049,6 +1043,38 @@ function CompactProposalBar({ proposal, review }: { proposal: Proposal; review: 
         </Text>
       )}
     </section>
+  );
+}
+
+/**
+ * Undo or Redo in the canvas controls, named after the step it takes ("Undo Delete Database") and
+ * disabled when there is none.
+ */
+function HistoryButton({
+  direction,
+  label,
+  disabled,
+  onClick,
+}: {
+  direction: 'undo' | 'redo';
+  label: string | null;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const [verb, keys, Icon] =
+    direction === 'undo'
+      ? (['Undo', UNDO_KEYS, Undo2] as const)
+      : (['Redo', REDO_KEYS, Redo2] as const);
+  const name = label ? `${verb} ${label}` : verb;
+  return (
+    <ControlButton
+      onClick={onClick}
+      disabled={disabled || !label}
+      aria-label={name}
+      title={`${name} (${keys})`}
+    >
+      <Icon />
+    </ControlButton>
   );
 }
 
