@@ -1,7 +1,15 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useNavigate } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Root } from '../root';
-import { LocationProbe, mockApi, renderWithQuery, signedIn } from '../test/render';
+import {
+  LocationProbe,
+  mockApi,
+  renderWithQuery,
+  setCompact,
+  signedIn,
+  sseResponse,
+} from '../test/render';
 
 const me = { displayName: 'octocat', avatarUrl: '' };
 const shortener = {
@@ -12,6 +20,16 @@ const shortener = {
 const noKnowledge = { experienceLevel: '', requirements: [], decisions: [] };
 const emptyArchitecture = { version: 0, document: { components: [], connections: [] } };
 const chat = { slug: 'chat-app-a1b2c3d4e5', name: 'Chat App', updatedAt: '2026-09-29T00:00:00Z' };
+
+/** A button that navigates within the app, as a link elsewhere on the page would. */
+function GoTo({ path }: { path: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(path)}>
+      Go
+    </button>
+  );
+}
 
 function renderAt(route: string) {
   return renderWithQuery(
@@ -249,12 +267,158 @@ describe('Workspace', () => {
     expect(screen.queryByText('Order Cache')).not.toBeInTheDocument();
     expect(screen.queryByText('Here is a cache.')).not.toBeInTheDocument();
   });
+});
 
-  it('tells small screens the workspace is built for desktop', async () => {
+describe('Workspace on compact screens', () => {
+  const at = '2026-09-30T00:00:00Z';
+  const proposal = {
+    seq: 1,
+    summary: 'Add a cache',
+    status: 'pending',
+    baseVersion: 0,
+    changes: [{ op: 'add_component', ref: 'cache', type: 'cache', name: 'Order Cache' }],
+  };
+  const handle = () => screen.getByRole('separator', { name: 'Resize panel' });
+  const snap = () => handle().getAttribute('aria-valuetext');
+
+  it('docks the side panel under the canvas, with no project list, resizer or notice', async () => {
+    setCompact(true);
     stubApi();
     renderAt('/p/url-shortener-k3xa9q2m7p');
 
-    expect(await screen.findByText(/best on a screen at least 1024px wide/i)).toBeInTheDocument();
+    expect(await screen.findByRole('tab', { name: 'Conversation', selected: true })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Canvas' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Projects' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Hide (projects|chat)/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/best on a screen/i)).not.toBeInTheDocument();
+    expect(handle()).toHaveAttribute('aria-orientation', 'horizontal');
+    expect(screen.getAllByRole('tablist')).toHaveLength(1);
+  });
+
+  it('shows the counts, the Needs Review dot and the pending-Proposal dot on its tabs', async () => {
+    setCompact(true);
+    stubApi({
+      'GET /api/projects/url-shortener-k3xa9q2m7p/knowledge': {
+        experienceLevel: '',
+        requirements: [{ id: 'R1', category: 'scale', statement: '10k redirects per second' }],
+        decisions: [
+          {
+            id: 'D1',
+            title: 'Cache redirects',
+            rationale: 'Reads dominate.',
+            pattern: '',
+            alternative: '',
+            requirements: [],
+            targets: [],
+            author: 'ai',
+            needsReview: true,
+          },
+        ],
+      },
+      'GET /api/projects/url-shortener-k3xa9q2m7p/messages': [
+        { role: 'assistant', body: 'Here is a cache.', createdAt: at, proposal },
+      ],
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    expect(await screen.findByRole('tab', { name: /Requirements 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Decisions 1 1 need review/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('tab', { name: /Conversation Proposal to review/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('opens at half, toggles peek and half from the handle, and opens half from a tab', async () => {
+    setCompact(true);
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'Half-typed' } });
+    expect(snap()).toBe('Half');
+
+    fireEvent.click(handle());
+    expect(snap()).toBe('Peek');
+    fireEvent.click(handle());
+    expect(snap()).toBe('Half');
+    fireEvent.keyDown(handle(), { key: 'Home' });
+    fireEvent.click(screen.getByRole('tab', { name: /Requirements/ }));
+
+    expect(snap()).toBe('Half');
+    expect(screen.getByRole('tab', { name: /Requirements/, selected: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Conversation' }));
+    expect(screen.getByLabelText('Message')).toHaveValue('Half-typed');
+  });
+
+  it('opens at half on every Project open', async () => {
+    setCompact(true);
+    stubApi();
+    renderWithQuery(
+      <>
+        <Root />
+        <GoTo path="/p/chat-app-a1b2c3d4e5" />
+      </>,
+      { route: '/p/url-shortener-k3xa9q2m7p', auth: signedIn() },
+    );
+    await screen.findByLabelText('Message');
+    fireEvent.keyDown(handle(), { key: 'End' });
+    expect(snap()).toBe('Full');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Chat App' })).toBeInTheDocument();
+    expect(snap()).toBe('Half');
+  });
+
+  it('drops from full to half when a Proposal arrives', async () => {
+    setCompact(true);
+    stubApi({
+      'POST /api/projects/url-shortener-k3xa9q2m7p/messages': ({ json }: { json?: unknown }) => ({
+        status: 201,
+        body: { role: 'user', body: (json as { body: string }).body, createdAt: at },
+      }),
+      'POST /api/projects/url-shortener-k3xa9q2m7p/reply': () =>
+        sseResponse(['done', { role: 'assistant', body: 'A cache.', createdAt: at, proposal }]),
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'Speed it up' } });
+    fireEvent.keyDown(handle(), { key: 'End' });
+    expect(snap()).toBe('Full');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByRole('region', { name: 'Proposal' })).toBeInTheDocument();
+    expect(snap()).toBe('Half');
+  });
+
+  it('keeps the draft, unsaved canvas edits and the tab across the breakpoint', async () => {
+    stubApi({
+      'PUT /api/projects/url-shortener-k3xa9q2m7p/architecture': ({
+        json,
+      }: {
+        json?: unknown;
+      }) => ({
+        version: (json as { version: number }).version + 1,
+      }),
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'Half-typed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Cache' }));
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /Requirements/ }));
+
+    setCompact(true);
+
+    expect(screen.getByRole('separator', { name: 'Resize panel' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Requirements/, selected: true })).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toHaveValue('Half-typed');
+    expect(document.querySelector('.react-flow__node')).toHaveTextContent('Cache');
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+    setCompact(false);
+
+    expect(screen.getByRole('button', { name: 'Hide chat' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Requirements/, selected: true })).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toHaveValue('Half-typed');
+    expect(document.querySelector('.react-flow__node')).toHaveTextContent('Cache');
   });
 });
 

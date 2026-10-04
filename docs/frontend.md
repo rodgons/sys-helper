@@ -36,9 +36,17 @@ Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` on
 
 ## Workspace (`pages/workspace.tsx`)
 
-Three panes: project sidebar, canvas, side panel (Conversation / Requirements / Decisions tabs; all stay mounted). Canvas-related components are keyed by slug suffix, so switching Projects remounts them with fresh state. The canvas publishes two things upward that the chat and the knowledge tabs consume:
+Three panes on desktop: project sidebar, canvas, side panel (Conversation / Requirements / Decisions tabs; all stay mounted). Compact screens get one column instead (below). Canvas-related components are keyed by slug suffix, so switching Projects remounts them with fresh state. The canvas publishes two things upward that the chat and the knowledge tabs consume:
 - `Review`: the pending Proposal's accept/reject actions, staleness and progress.
 - `names`: canvas id → display name.
+
+### Compact layout (below 64rem)
+
+- **One tier:** everything below `media.lg` (phones and portrait tablets) is compact; 64rem and up is desktop. `COMPACT_QUERY` (`design/breakpoints.ts`, `(max-width: 63.99rem)`) names it in JS, and a test ties it to `media.lg`. `useCompact()` (`lib/compact.ts`) reads it through `matchMedia` and `useSyncExternalStore`, so every consumer flips together.
+- **`useCompact()` drives behaviour and tier-only chrome** (canvas props, where the Inspector renders, the sheet or the resizer and rails, the sidebar). Tier-only chrome holds no important state. Sizing and placement stay in StyleX media keys.
+- **One tree:** the canvas and the side panel keep their place in the React tree on both tiers (chrome that only one tier has renders `null` in its slot), so crossing the breakpoint never remounts them: the chat draft, a streaming reply (the reply hook aborts on unmount) and unsaved canvas edits survive. Never render a second workspace tree.
+- **Bottom sheet** (`knowledge/bottom-sheet.tsx`): the side panel docks under the canvas, which shrinks to fit above it. It is never an overlay, and the canvas is never in a scrolling or CSS-transformed box (React Flow's handle offsets break). Its handle is a horizontal window splitter (`separator` "Resize panel", `aria-valuetext` Peek/Half/Full): dragging snaps to the nearest of **peek** (76px: handle and tab row), **half** (50%) and **full** (all but 56px); a tap or Enter toggles peek and half; the arrow keys, Home and End step. The sheet draws its own tab row (`PanelTabs`, with the counts, the Needs Review dot and a pending-Proposal dot) and renders `SidePanel` `bare` with a controlled `tab`; a tab tapped at peek opens half.
+- **What resets** (`useWorkspaceView` in `workspace.tsx`): opening a Project starts on the Conversation with the sheet at half (not remembered); crossing the breakpoint puts the sheet at half and keeps the tab; a Proposal arriving while the sheet is full drops it to half, so its preview shows. The side-panel width keeps its own storage.
 
 ### Side panel width (`lib/panel-width.ts`)
 
@@ -90,6 +98,7 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 
 ## Tests
 
+- `setCompact(true | false)` (`src/test/render.tsx`) puts a test in the compact or desktop layout by stubbing `matchMedia` (the test DOM evaluates no media queries); calling it mid-test crosses the breakpoint. `setup.ts` resets it to desktop before each test.
 - Vitest + Testing Library: `renderWithQuery(ui, { route, auth: signedIn() })`, `mockApi({ 'GET /api/…': body | {status, body} | fn })` (unmatched requests throw), `sseResponse(...)` for replies, `<LocationProbe />` for navigation. All in `src/test/render.tsx`.
 - E2E in `e2e/*.spec.ts`, using `test` from `e2e/fixtures.ts` (`signIn({ provider, page })`, default GitHub, returns the identity's display `name` and provider `id`), against the real API with `AI_FAKE=1`. Playwright builds and runs its own API and Vite on dedicated ports (`e2e/servers.ts`: 18080/15173), so it never reuses a `make dev` server that would call the real model. A second API on 18081 admits nobody; not-allowed tests reroute their API calls to it with `page.route`.
 - Playwright has two projects. `chromium` (desktop) runs every spec except `*.mobile.spec.ts`; `mobile` (Chromium at 390×844 with `hasTouch` and `isMobile`, so `pointer: coarse` matches and the compact layout applies) runs only `*.mobile.spec.ts`. The test DOM evaluates no media queries, so touch sizes (16px fields, 44×44 targets) are measured there (`e2e/touch-sizing.mobile.spec.ts`).
