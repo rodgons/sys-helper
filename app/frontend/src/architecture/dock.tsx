@@ -1,6 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { color, motion, radius, space, text } from '../design/tokens.stylex';
 import { COMPONENT_TYPES } from './model';
 import { lookOf } from './shapes';
@@ -46,16 +46,23 @@ export function ComponentDock({ onAdd }: { onAdd: (type: string) => void }) {
  */
 export function ComponentPicker({ onAdd }: { onAdd: (type: string) => void }) {
   const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  // The grid opens above the button and scrolls within the canvas above it, however short the
+  // canvas is with the sheet raised.
+  const [room, setRoom] = useState<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    const canvas = root.current?.closest('.react-flow')?.getBoundingClientRect();
+    const top = root.current?.getBoundingClientRect().top;
+    if (canvas && top !== undefined && top > canvas.top) setRoom(top - canvas.top - 16);
     const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [open]);
 
   return (
-    <div {...stylex.props(styles.picker)}>
+    <div ref={root} {...stylex.props(styles.picker)}>
       {open && (
         <>
           {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard way out is Esc. */}
@@ -66,7 +73,11 @@ export function ComponentPicker({ onAdd }: { onAdd: (type: string) => void }) {
             onClick={() => setOpen(false)}
             {...stylex.props(styles.backdrop)}
           />
-          <div role="dialog" aria-label="Add component" {...stylex.props(styles.grid)}>
+          <div
+            role="dialog"
+            aria-label="Add component"
+            {...stylex.props(styles.grid, room !== null && styles.room(`${room}px`))}
+          >
             {COMPONENT_TYPES.map((t) => {
               const Icon = lookOf(t.type).icon;
               return (
@@ -134,6 +145,7 @@ const styles = stylex.create({
     backgroundColor: color['--color-raised'],
     boxShadow: '0 8px 24px rgb(0 0 0 / 0.16)',
   },
+  room: (maxHeight: string) => ({ maxHeight }),
   choice: {
     display: 'flex',
     flexDirection: 'column',

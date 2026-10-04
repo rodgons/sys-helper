@@ -186,10 +186,9 @@ const styles = stylex.create({
     overflowY: 'auto',
   },
   item: {
-    display: 'flex',
-    alignItems: 'center',
+    display: 'block',
     flexShrink: 0,
-    minHeight: 48,
+    lineHeight: '48px',
     paddingInline: space['--space-3'],
     borderRadius: radius['--radius-sm'],
     fontSize: text['--text-md'],

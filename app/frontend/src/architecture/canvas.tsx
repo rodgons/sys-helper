@@ -414,7 +414,13 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={24} />
-        <Controls showInteractive={false} showZoom={!compact} fitViewOptions={fit}>
+        <Controls
+          showInteractive={false}
+          showZoom={!compact}
+          // Compact: one row beside "+ Add", clear of the Proposal banner above them.
+          orientation={compact ? 'horizontal' : 'vertical'}
+          fitViewOptions={fit}
+        >
           <ControlButton
             onClick={tidyUp}
             // A pending Proposal's preview fixes where its new components go, so tidying under it
@@ -749,7 +755,9 @@ function CompactProposalBar({ proposal, review }: { proposal: Proposal; review: 
   return (
     <section aria-label="Proposal" {...stylex.props(styles.proposal, styles.compactProposal)}>
       <div {...stylex.props(styles.compactLine)}>
-        <Label tone="accent">Proposal #{proposal.seq}</Label>
+        <Label tone="accent" xstyle={styles.nowrap}>
+          Proposal #{proposal.seq}
+        </Label>
         <span {...stylex.props(styles.compactSummary)}>{proposal.summary}</span>
         <Button
           size="sm"
@@ -829,6 +837,7 @@ const styles = stylex.create({
     maxWidth: '36rem',
     paddingBlock: space['--space-2'],
   },
+  nowrap: { whiteSpace: 'nowrap', flexShrink: 0 },
   compactLine: { display: 'flex', alignItems: 'center', gap: space['--space-2'], minWidth: 0 },
   compactSummary: {
     flexGrow: 1,
