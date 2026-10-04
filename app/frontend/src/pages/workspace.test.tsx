@@ -733,6 +733,51 @@ describe('Canvas on compact screens', () => {
   });
 });
 
+describe('Undoing an accepted Proposal', () => {
+  const at = '2026-09-30T00:00:00Z';
+  const API = '/api/projects/url-shortener-k3xa9q2m7p';
+
+  it('takes the canvas back and keeps the Proposal accepted', async () => {
+    const save = vi.fn(({ json }: { json?: unknown }) => ({
+      version: (json as { version: number }).version + 1,
+    }));
+    stubApi({
+      [`GET ${API}/messages`]: [
+        {
+          role: 'assistant',
+          body: 'Here is a cache.',
+          createdAt: at,
+          proposal: {
+            seq: 1,
+            summary: 'Add a cache',
+            status: 'pending',
+            baseVersion: 0,
+            changes: [{ op: 'add_component', ref: 'cache', type: 'cache', name: 'Order Cache' }],
+          },
+        },
+      ],
+      [`POST ${API}/proposals/1/accept`]: { version: 1 },
+      [`POST ${API}/reply`]: () =>
+        sseResponse(['done', { role: 'assistant', body: 'Noted.', createdAt: at }]),
+      [`PUT ${API}/architecture`]: save,
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const bar = within(await screen.findByRole('region', { name: 'Proposal' }));
+
+    fireEvent.click(bar.getByRole('button', { name: 'Accept' }));
+    const undo = await screen.findByRole('button', { name: 'Undo Accept Proposal #1' });
+    fireEvent.click(undo);
+
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 2000 });
+    expect(save.mock.calls.at(-1)?.[0].json).toEqual({
+      version: 1,
+      document: { components: [], connections: [] },
+    });
+    expect(screen.getByText('Accepted')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Proposal' })).not.toBeInTheDocument();
+  });
+});
+
 describe('Proposal banner on compact screens', () => {
   const at = '2026-09-30T00:00:00Z';
   const API = '/api/projects/url-shortener-k3xa9q2m7p';

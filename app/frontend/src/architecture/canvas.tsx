@@ -19,7 +19,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
 } from '@xyflow/react';
-import { Workflow } from 'lucide-react';
+import { Redo2, Undo2, Workflow } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { color, radius, space, text } from '../design/tokens.stylex';
@@ -33,6 +33,7 @@ import { Button } from '../ui/button';
 import { Label, Text } from '../ui/typography';
 import { type SaveStatus, useAutosave } from './autosave';
 import { ComponentDock, ComponentPicker, DRAG_TYPE } from './dock';
+import { History, type StepChanges, stepChanges } from './history';
 import { Inspector } from './inspector';
 import { tidy } from './layout';
 import {
@@ -40,6 +41,7 @@ import {
   type ComponentNode,
   type ConnectionData,
   type ConnectionEdge,
+  type Diff,
   freeSpot,
   fromFlow,
   newComponentNode,
@@ -131,11 +133,56 @@ const changesDocument = (c: NodeChange | EdgeChange) =>
   c.type === 'replace' ||
   (c.type === 'position' && !c.dragging);
 
+/**
+ * An edit to the document, as one undo step: its label ("Delete Database"), the run it merges into
+ * (see History) and, when the canvas already shows part of it (a drag), the canvas before it began.
+ */
+type Edit = { label: string; run?: string; before?: Flow };
+
+const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+const UNDO_KEYS = MAC ? '⌘Z' : 'Ctrl+Z';
+const REDO_KEYS = MAC ? '⇧⌘Z' : 'Ctrl+Y';
+
+/** The undo (or redo) shortcut a keypress is, if any: ⌘Z/Ctrl+Z; ⇧⌘Z, Ctrl+Shift+Z or Ctrl+Y. */
+function shortcut(e: KeyboardEvent): 'undo' | 'redo' | null {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return null;
+  // A text field keeps its own undo.
+  if (
+    e.target instanceof Element &&
+    e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+  )
+    return null;
+  const key = e.key.toLowerCase();
+  if (key === 'z') return e.shiftKey ? 'redo' : 'undo';
+  if (key === 'y' && e.ctrlKey && !e.shiftKey) return 'redo';
+  return null;
+}
+
+/** "Delete Database", "Delete 2 components", "Delete connection". */
+function deleteLabel(nodes: ComponentNode[], edges: number) {
+  const [only] = nodes;
+  if (only && nodes.length === 1) return `Delete ${only.data.name}`;
+  if (nodes.length > 1) return `Delete ${nodes.length} components`;
+  return edges === 1 ? 'Delete connection' : `Delete ${edges} connections`;
+}
+
+/** Which field of a Component a patch edits, so typing in one field merges into one step. */
+function editedField(node: ComponentNode | undefined, patch: Partial<ComponentData>) {
+  if ('name' in patch) return 'name';
+  const before = node?.data.properties ?? {};
+  const after = patch.properties ?? {};
+  return Object.keys(after).find((k) => after[k] !== before[k]) ?? 'properties';
+}
+
 function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: CanvasProps) {
   const compact = sheet !== undefined;
   // The Proposal this canvas just accepted. The cached Conversation marks it accepted a render
   // later; until then it still arrives as pending and must not be previewed on top of its result.
   const [acceptedSeq, setAcceptedSeq] = useState<number | null>(null);
+  // Undo and redo for this visit: the canvas is keyed by Project, so a new one starts empty.
+  const [history] = useState(() => new History());
+  // Set while an undo or redo puts a step back, which mustn't record a step of its own.
+  const replaying = useRef(false);
   const proposal = pending?.seq === acceptedSeq ? undefined : pending;
   const [flow, setFlow] = useState(() => toFlow(initial.document));
   // Fit a saved architecture into view on load. An empty canvas must not fit: React Flow would wait
@@ -143,7 +190,8 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
   const [fitOnLoad] = useState(initial.document.components.length > 0);
   const latest = useRef(flow);
   const refreshKnowledge = useRefreshKnowledge(slug);
-  // A save can prune Decisions whose components are gone, so reload them after each one.
+  // A save changes which Decisions show (those whose items are off the canvas are hidden), so
+  // reload them after each one.
   const autosave = useAutosave(slug, initial.version, refreshKnowledge);
   const reactFlow = useReactFlow();
   const theme = useThemeChoice();
@@ -158,12 +206,22 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
   // Set while a Proposal is being accepted. The accept sends the canvas as it was when the User
   // clicked, so an edit made meanwhile would either be lost or, saved afterwards, undo the Proposal.
   const locked = useRef(false);
-  const update = (nodes: ComponentNode[], edges: ConnectionEdge[], changed: boolean) => {
-    if (changed && locked.current) return;
+  /** Every change to the canvas goes through here; an `edit` is saved and is one undo step. */
+  const update = (nodes: ComponentNode[], edges: ConnectionEdge[], edit: Edit | false) => {
+    if (edit && locked.current) return;
+    if (edit && !replaying.current) {
+      history.record(edit.before ?? latest.current, edit.label, edit.run);
+      setFlash(null);
+    }
     latest.current = { nodes, edges };
     setFlow(latest.current);
-    if (changed) autosave.schedule(fromFlow(nodes, edges));
+    if (edit) autosave.schedule(fromFlow(nodes, edges));
   };
+  const nameOf = (id: string) => latest.current.nodes.find((n) => n.id === id)?.data.name ?? id;
+  // The canvas when a drag began: the drag's moves show as they happen, but undo as one step.
+  const dragStart = useRef<Flow | null>(null);
+  // Backspace deletes in two batches, Connections then Components; both belong to this step.
+  const deleting = useRef<Edit | null>(null);
   const { nodes, edges } = flow;
   const review = useProposalReview({
     slug,
@@ -175,8 +233,68 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
     locked,
     autosave,
     update,
-    onAccepted: setAcceptedSeq,
+    onAccepted: (seq, before) => {
+      history.record(before, `Accept Proposal #${seq}`);
+      setAcceptedSeq(seq);
+    },
   });
+
+  // History stays put while an accept or reject is being sent, and once saving has stopped.
+  const blocked = Boolean(review.state?.busy) || autosave.status === 'conflict';
+  // What the last undo or redo changed, flashed with the Proposal preview's markers for a moment.
+  const [flash, setFlash] = useState<StepChanges | null>(null);
+  useEffect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => setFlash(null), FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [flash]);
+  const [announcement, setAnnouncement] = useState('');
+  // Set by an undo or redo: the Inspector stays shut until the User picks something themselves.
+  const [quiet, setQuiet] = useState(false);
+  // The item whose Inspector is open, if any (set during render, read by restore).
+  const inspecting = useRef<string | null>(null);
+  const [panTo, setPanTo] = useState<{ ids: string[] } | null>(null);
+  useShowItems(wrapper, panTo?.ids ?? null);
+
+  /** Undoes or redoes a step: saved like any edit, then selected, shown and announced. */
+  const restore = (direction: 'undo' | 'redo') => {
+    if (blocked || locked.current) return;
+    const current = latest.current;
+    const step = direction === 'undo' ? history.undo(current) : history.redo(current);
+    if (!step) return;
+    const changes = stepChanges(current, step.before);
+    const touched = new Set([...changes.added, ...changes.changed]);
+    replaying.current = true;
+    update(
+      step.before.nodes.map((n) => ({ ...n, selected: touched.has(n.id) })),
+      step.before.edges.map((e) => ({ ...e, selected: touched.has(e.id) })),
+      { label: step.label },
+    );
+    replaying.current = false;
+    setFlash(changes);
+    setAnnouncement(`${direction === 'undo' ? 'Undid' : 'Redid'} ${step.label}`);
+    if (touched.size > 0) setPanTo({ ids: [...touched] });
+    // Never open the Inspector; one already open on the only item changed stays open.
+    const open = inspecting.current;
+    if (!(open && touched.size === 1 && touched.has(open))) {
+      setOpened(null);
+      setClicked(null);
+      setQuiet(true);
+      if (sheet?.open) sheet.onOpenChange(false);
+    }
+  };
+  const shortcuts = useRef(restore);
+  shortcuts.current = restore;
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const direction = shortcut(e);
+      if (!direction) return;
+      e.preventDefault();
+      shortcuts.current(direction);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   useEffect(() => onNames?.(review.names), [onNames, review.names]);
 
   // Badge each component with its Decisions; flag it when one needs review.
@@ -191,7 +309,8 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
         };
   };
   // Dim everything the selection doesn't touch, counting the preview's connections.
-  const base = review.preview ?? flow;
+  // A Proposal's preview wins over the flash, so a review never loses sight of it.
+  const base = review.preview ?? (flash ? flashed(flow, flash) : flow);
   const shown = spotlight(base.nodes.map(decorate), base.edges);
 
   // Bring a new Proposal into view once its components have been measured.
@@ -217,11 +336,9 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
   const onConnect = ({ source, target }: Connection) => {
     const duplicate = latest.current.edges.some((e) => e.source === source && e.target === target);
     if (source === target || duplicate) return;
-    update(
-      latest.current.nodes,
-      [...latest.current.edges, newConnectionEdge(source, target)],
-      true,
-    );
+    update(latest.current.nodes, [...latest.current.edges, newConnectionEdge(source, target)], {
+      label: `Connect ${nameOf(source)} → ${nameOf(target)}`,
+    });
   };
 
   /** Adds a Component centred on `at` (a screen point), or in free space mid-view without one. */
@@ -239,6 +356,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
     const node = newComponentNode(type, position, latest.current.nodes);
     // A new component opens straight away, to be named: in the sheet on compact (so crossing to
     // desktop leaves it just selected), else in its window.
+    setQuiet(false);
     if (sheet) sheet.onOpenChange(true);
     else setOpened(node.id);
     update(
@@ -247,16 +365,19 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
         { ...node, selected: true },
       ],
       latest.current.edges.map((e) => ({ ...e, selected: false })),
-      true,
+      { label: `Add ${node.data.name}` },
     );
   };
 
-  const editComponent = (id: string, patch: Partial<ComponentData>) =>
+  // Typing in one field of one item is one step, until the field loses focus (history.endRun).
+  const editComponent = (id: string, patch: Partial<ComponentData>) => {
+    const node = latest.current.nodes.find((n) => n.id === id);
     update(
       latest.current.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)),
       latest.current.edges,
-      true,
+      { label: `Edit ${nameOf(id)}`, run: `${id}:${editedField(node, patch)}` },
     );
+  };
 
   const editConnection = (id: string, patch: Partial<ConnectionData>) =>
     update(
@@ -264,21 +385,51 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
       latest.current.edges.map((e) =>
         e.id === id ? { ...e, data: { ...(e.data as ConnectionData), ...patch } } : e,
       ),
-      true,
+      { label: 'Edit connection', run: 'label' in patch ? `${id}:label` : undefined },
     );
 
   /** Rearranges every component so connections flow left to right, then brings it all into view. */
   const tidyUp = () => {
-    update(tidy(latest.current.nodes, latest.current.edges), latest.current.edges, true);
+    update(tidy(latest.current.nodes, latest.current.edges), latest.current.edges, {
+      label: 'Tidy up',
+    });
     void reactFlow.fitView({ ...fit, duration: 300 });
   };
 
-  const remove = (id: string) =>
+  const remove = (id: string) => {
+    const node = latest.current.nodes.find((n) => n.id === id);
     update(
       latest.current.nodes.filter((n) => n.id !== id),
       latest.current.edges.filter((e) => e.id !== id && e.source !== id && e.target !== id),
-      true,
+      { label: deleteLabel(node ? [node] : [], node ? 0 : 1) },
     );
+  };
+
+  /** The undo step for React Flow's own changes to Components: a drag, a keyboard move or Backspace. */
+  const nodesEdit = (changes: NodeChange<ComponentNode>[]): Edit | false => {
+    if (changes.some((c) => c.type === 'position' && c.dragging))
+      dragStart.current ??= latest.current;
+    if (!changes.some(changesDocument)) return false;
+    const removed = changes.flatMap((c) => (c.type === 'remove' ? [c.id] : []));
+    if (removed.length > 0)
+      return (
+        deleting.current ?? {
+          label: deleteLabel(
+            latest.current.nodes.filter((n) => removed.includes(n.id)),
+            0,
+          ),
+        }
+      );
+    const moved = changes.flatMap((c) => (c.type === 'position' && !c.dragging ? [c.id] : []));
+    const before = dragStart.current ?? undefined;
+    dragStart.current = null;
+    const [one] = moved;
+    if (one === undefined) return { label: 'Edit canvas', before };
+    return {
+      label: moved.length === 1 ? `Move ${nameOf(one)}` : `Move ${moved.length} components`,
+      before,
+    };
+  };
 
   const deselect = () =>
     update(
@@ -300,6 +451,11 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
   const edgeAnchor = floatingEdge && clicked?.id === floatingEdge.id ? clicked : null;
   const single = selectedNodes.length + selectedEdges.length === 1;
   const sheetInspector = sheet?.open && single;
+  inspecting.current = compact
+    ? sheetInspector
+      ? (selectedNodes[0]?.id ?? selectedEdges[0]?.id ?? null)
+      : null
+    : (floating?.id ?? edgeAnchor?.id ?? null);
   // The sheet's Inspector edits one item; once nothing (or several) is selected, it closes.
   useEffect(() => {
     if (sheet?.open && !single) sheet.onOpenChange(false);
@@ -317,6 +473,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
       onEditComponent={editComponent}
       onEditConnection={editConnection}
       onRemove={remove}
+      onEditEnd={() => history.endRun()}
       // Closing keeps the selection, and the spotlight on it.
       onClose={() => sheet?.onOpenChange(false)}
       inSheet
@@ -325,12 +482,13 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
     <Inspector
       slug={slug}
       saved={autosave.status === 'saved'}
-      nodes={only && !floating ? [] : selectedNodes}
-      edges={selectedEdges}
+      nodes={quiet || (only && !floating) ? [] : selectedNodes}
+      edges={quiet && !edgeAnchor ? [] : selectedEdges}
       hint={only && !floating ? 'Click it again to edit it.' : undefined}
       onEditComponent={editComponent}
       onEditConnection={editConnection}
       onRemove={remove}
+      onEditEnd={() => history.endRun()}
       // Closing a component's window keeps it selected, and the spotlight on it.
       onClose={floating ? () => setOpened(null) : deselect}
     />
@@ -348,30 +506,42 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
           review.measureGhosts(all);
           const changes = all.filter((c) => !('id' in c) || editorIds.has(c.id));
           if (changes.length === 0) return;
-          update(
-            applyNodeChanges(changes, latest.current.nodes),
-            latest.current.edges,
-            changes.some(changesDocument),
-          );
+          const edit = nodesEdit(changes);
+          update(applyNodeChanges(changes, latest.current.nodes), latest.current.edges, edit);
         }}
         onEdgesChange={(all) => {
           const changes = all.filter((c) => !('id' in c) || editorEdgeIds.has(c.id));
           if (changes.length === 0) return;
-          update(
-            latest.current.nodes,
-            applyEdgeChanges(changes, latest.current.edges),
-            changes.some(changesDocument),
-          );
+          const removed = changes.filter((c) => c.type === 'remove').length;
+          const edit: Edit | false = !changes.some(changesDocument)
+            ? false
+            : (deleting.current ?? { label: deleteLabel([], removed) });
+          update(latest.current.nodes, applyEdgeChanges(changes, latest.current.edges), edit);
+        }}
+        // Backspace: one step for the Connections and Components it deletes, named after them.
+        onBeforeDelete={async ({ nodes: gone, edges: goneEdges }) => {
+          deleting.current = {
+            label: deleteLabel(gone, goneEdges.length),
+            run: `delete:${crypto.randomUUID()}`,
+          };
+          return true;
+        }}
+        onDelete={() => {
+          deleting.current = null;
         }}
         onConnect={onConnect}
         // Compact: one tap selects and opens the Inspector in the sheet. Desktop: a click selects,
         // a second click opens the window beside the component.
-        onNodeClick={(_, node) =>
-          compact
-            ? sheet.onOpenChange(true)
-            : setOpened(selectedBefore.current === node.id ? node.id : null)
-        }
-        onPaneClick={() => (compact ? sheet.onOpenChange(false) : setOpened(null))}
+        onNodeClick={(_, node) => {
+          setQuiet(false);
+          if (compact) sheet.onOpenChange(true);
+          else setOpened(selectedBefore.current === node.id ? node.id : null);
+        }}
+        onPaneClick={() => {
+          setQuiet(false);
+          if (compact) sheet.onOpenChange(false);
+          else setOpened(null);
+        }}
         // Esc closes the component's window, then clears the selection and with it the spotlight.
         onKeyDown={(e) => {
           if (e.key !== 'Escape') return;
@@ -379,14 +549,15 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
           else if (floating) setOpened(null);
           else deselect();
         }}
-        onEdgeClick={(e, edge) =>
-          compact
-            ? sheet.onOpenChange(true)
-            : setClicked({
-                id: edge.id,
-                ...reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY }),
-              })
-        }
+        onEdgeClick={(e, edge) => {
+          setQuiet(false);
+          if (compact) sheet.onOpenChange(true);
+          else
+            setClicked({
+              id: edge.id,
+              ...reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY }),
+            });
+        }}
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
           e.preventDefault();
@@ -424,6 +595,26 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
           fitViewOptions={fit}
         >
           <ControlButton
+            onClick={() => restore('undo')}
+            disabled={blocked || !history.undoLabel}
+            aria-label={history.undoLabel ? `Undo ${history.undoLabel}` : 'Undo'}
+            title={
+              history.undoLabel ? `Undo ${history.undoLabel} (${UNDO_KEYS})` : `Undo (${UNDO_KEYS})`
+            }
+          >
+            <Undo2 />
+          </ControlButton>
+          <ControlButton
+            onClick={() => restore('redo')}
+            disabled={blocked || !history.redoLabel}
+            aria-label={history.redoLabel ? `Redo ${history.redoLabel}` : 'Redo'}
+            title={
+              history.redoLabel ? `Redo ${history.redoLabel} (${REDO_KEYS})` : `Redo (${REDO_KEYS})`
+            }
+          >
+            <Redo2 />
+          </ControlButton>
+          <ControlButton
             onClick={tidyUp}
             // A pending Proposal's preview fixes where its new components go, so tidying under it
             // would leave them stranded.
@@ -436,6 +627,10 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
         </Controls>
         <Panel position="top-left">
           <SaveIndicator status={autosave.status} />
+          {/* Not a status: the canvas has exactly one, the save indicator. */}
+          <div aria-live="polite" {...stylex.props(styles.srOnly)}>
+            {announcement}
+          </div>
         </Panel>
         {compact ? (
           sheetInspector && sheet.host && createPortal(inspector, sheet.host)
@@ -507,33 +702,98 @@ const SHEET_SETTLE_MS = 250;
  * centre the item in the visible canvas if the sheet now covers it (or it is off screen).
  */
 function usePanIntoView(wrapper: { current: HTMLDivElement | null }, id: string | null) {
-  const reactFlow = useReactFlow<ComponentNode, ConnectionEdge>();
+  const show = useShow(wrapper);
   useEffect(() => {
     if (!id) return;
-    const timer = setTimeout(() => {
+    const timer = setTimeout(() => show([id]), SHEET_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [id, show]);
+}
+
+/** After an undo or redo: centres the changed items if none of them is in view. */
+function useShowItems(wrapper: { current: HTMLDivElement | null }, ids: string[] | null) {
+  const show = useShow(wrapper);
+  useEffect(() => {
+    if (ids) show(ids, { any: true });
+  }, [ids, show]);
+}
+
+/**
+ * Pans, without zooming, to centre Components and Connections (by id) in the canvas unless they
+ * are already all in view, or with `any`, unless one of them is.
+ */
+function useShow(wrapper: { current: HTMLDivElement | null }) {
+  const reactFlow = useReactFlow<ComponentNode, ConnectionEdge>();
+  return useCallback(
+    (ids: string[], { any = false } = {}) => {
       const box = wrapper.current?.getBoundingClientRect();
-      const edge = reactFlow.getEdge(id);
-      const ends = edge ? [edge.source, edge.target] : [id];
-      if (!box || ends.some((end) => !reactFlow.getInternalNode(end))) return;
-      const rect = reactFlow.getNodesBounds(ends);
-      const from = reactFlow.flowToScreenPosition({ x: rect.x, y: rect.y });
-      const to = reactFlow.flowToScreenPosition({
-        x: rect.x + rect.width,
-        y: rect.y + rect.height,
-      });
-      const visible =
-        from.x >= box.left && from.y >= box.top && to.x <= box.right && to.y <= box.bottom;
-      if (visible) return;
+      const ends = (id: string) => {
+        const edge = reactFlow.getEdge(id);
+        return edge ? [edge.source, edge.target] : [id];
+      };
+      const all = ids.flatMap(ends);
+      if (!box || all.length === 0 || all.some((end) => !reactFlow.getInternalNode(end))) return;
+      const inView = (items: string[]) => {
+        const rect = reactFlow.getNodesBounds(items);
+        const from = reactFlow.flowToScreenPosition({ x: rect.x, y: rect.y });
+        const to = reactFlow.flowToScreenPosition({
+          x: rect.x + rect.width,
+          y: rect.y + rect.height,
+        });
+        return from.x >= box.left && from.y >= box.top && to.x <= box.right && to.y <= box.bottom;
+      };
+      if (any ? ids.some((id) => inView(ends(id))) : inView(all)) return;
+      const rect = reactFlow.getNodesBounds(all);
       void reactFlow.setCenter(rect.x + rect.width / 2, rect.y + rect.height / 2, {
         zoom: reactFlow.getZoom(),
         duration: 200,
       });
-    }, SHEET_SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [id, reactFlow, wrapper]);
+    },
+    [reactFlow, wrapper],
+  );
 }
 
 type Flow = { nodes: ComponentNode[]; edges: ConnectionEdge[] };
+
+// How long an undo or redo flashes what it changed.
+const FLASH_MS = 1500;
+
+/**
+ * The canvas with an undo or redo's changes marked like a Proposal preview's: added and changed
+ * items outlined, and what it removed as faded ghosts that can't be selected, dragged or connected.
+ */
+function flashed(flow: Flow, changes: StepChanges): Flow {
+  const mark = (id: string): Diff | undefined =>
+    changes.added.has(id) ? 'added' : changes.changed.has(id) ? 'changed' : undefined;
+  return {
+    nodes: [
+      ...flow.nodes.map((n) => {
+        const diff = mark(n.id);
+        return diff ? { ...n, data: { ...n.data, diff } } : n;
+      }),
+      ...changes.removed.nodes.map((n) => ({
+        ...n,
+        selected: false,
+        selectable: false,
+        draggable: false,
+        connectable: false,
+        data: { ...n.data, diff: 'removed' as const },
+      })),
+    ],
+    edges: [
+      ...flow.edges.map((e) => {
+        const diff = mark(e.id);
+        return diff && e.data ? { ...e, data: { ...e.data, diff } } : e;
+      }),
+      ...changes.removed.edges.map((e) => ({
+        ...e,
+        selected: false,
+        selectable: false,
+        data: e.data && { ...e.data, diff: 'removed' as const },
+      })),
+    ],
+  };
+}
 type XY = { x: number; y: number };
 
 /**
@@ -561,9 +821,12 @@ function useProposalReview({
   latest: { current: Flow };
   locked: { current: boolean };
   autosave: ReturnType<typeof useAutosave>;
-  update: (nodes: ComponentNode[], edges: ConnectionEdge[], changed: boolean) => void;
-  /** Called with the Proposal's seq in the same render that puts its result on the canvas. */
-  onAccepted: (seq: number) => void;
+  update: (nodes: ComponentNode[], edges: ConnectionEdge[], edit: false) => void;
+  /**
+   * Called with the Proposal's seq, and the canvas it replaced, in the same render that puts its
+   * result on the canvas. Only a successful accept calls it.
+   */
+  onAccepted: (seq: number, before: Flow) => void;
 }) {
   const token = useToken();
   const setStatus = useSetProposalStatus(slug);
@@ -644,8 +907,10 @@ function useProposalReview({
         );
         return res.version;
       });
+      const before = latest.current;
+      // Already saved by the accept, so no autosave; the Editor records it as one undo step.
       update(n, e, false);
-      onAccepted(proposal.seq);
+      onAccepted(proposal.seq, before);
       setStatus(proposal.seq, 'accepted');
       void refreshKnowledge();
       setProgress({ busy: false, error: null });
@@ -808,6 +1073,14 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 
 const styles = stylex.create({
   wrapper: { flexGrow: 1, minHeight: 0, position: 'relative' },
+  srOnly: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    overflow: 'hidden',
+    clipPath: 'inset(50%)',
+    whiteSpace: 'nowrap',
+  },
   // Clear of the pointer, so the connection under it stays visible.
   edgeWindow: { transform: 'translate(12px, 12px)' },
   status: { fontSize: text['--text-xs'], color: color['--color-fg-muted'] },

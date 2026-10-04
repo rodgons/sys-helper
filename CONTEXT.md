@@ -61,7 +61,7 @@ How experienced the User says they are, recorded per Project: Beginner, Intermed
 _Avoid_: Skill level, persona
 
 **Decision**:
-A recorded design choice: a title, the rationale, the pattern it applies, the main alternative it rejected, and the Requirements it cites. It is attached to one or more Components or Connections, records whether the User or the AI wrote it, and is numbered D1, D2, … within its Project. It is deleted once none of the items it is attached to remain.
+A recorded design choice: a title, the rationale, the pattern it applies, the main alternative it rejected, and the Requirements it cites. It is attached to one or more Components or Connections, records whether the User or the AI wrote it, and is numbered D1, D2, … within its Project. It is hidden while none of the items it is attached to are on the canvas, and comes back if they return (for example by undo). It is deleted when the Project is next opened without them.
 _Avoid_: Rationale, note, explanation
 
 **Needs Review**:
@@ -72,4 +72,4 @@ A set of changes that the AI suggests: to the Architecture, and to the Requireme
 _Avoid_: Suggestion, patch, diff
 
 **Stale Proposal**:
-A pending Proposal that no longer applies because the User changed the Architecture after the AI made it. A Stale Proposal can't be accepted.
+A pending Proposal that doesn't apply to the Architecture as it is now, because items it refers to are missing. It can't be accepted while it is stale. It applies again if those items come back.

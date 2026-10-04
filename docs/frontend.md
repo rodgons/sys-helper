@@ -8,7 +8,7 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 | --- | --- |
 | `lib/` | API hooks per resource (`projects`, `architecture`, `conversation`, `knowledge`, `settings`, `me`), `api.ts` (`apiFetch`, `ApiError`), `auth.tsx`, `sse.ts` |
 | `pages/` | Route components. `RequireUser` gates signed-in pages. |
-| `architecture/` | Canvas (React Flow): `canvas.tsx` (Editor + Proposal review), `model.ts` (catalog, doc ↔ flow), `proposal.ts`, `autosave.ts`, `layout.ts` (dagre), `nodes.tsx`, `shapes.tsx`, `dock.tsx`, `inspector.tsx` |
+| `architecture/` | Canvas (React Flow): `canvas.tsx` (Editor + Proposal review), `model.ts` (catalog, doc ↔ flow), `history.ts` (undo and redo), `proposal.ts`, `autosave.ts`, `layout.ts` (dagre), `nodes.tsx`, `shapes.tsx`, `dock.tsx`, `inspector.tsx` |
 | `conversation/` | Chat pane, markdown, Proposal card |
 | `knowledge/` | Right-pane tabs (`side-panel.tsx`), Requirements, Decisions |
 | `projects/`, `account/` | Sidebar, title (and its rename and delete dialogs), new-project form, the compact workspace bar and Project drawer; the account menu; Settings dialog (default Experience Level, and Delete account behind a second confirmation, which signs out on success) |
@@ -31,7 +31,7 @@ Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` on
 | `['projects']`, `['project', suffix]` | `useProjects`, `useProject` | Mutations set the single project and invalidate the list |
 | `['architecture', suffix]` | `useArchitecture` | Read **once** per visit (`staleTime: ∞`, `gcTime: 0`). The canvas owns the document afterwards; never refetch it into an open canvas |
 | `['messages', suffix]` | `useMessages` | Updated by `setQueryData` (send, reply `done`, Proposal status, New Conversation), not refetches. `usePendingProposal` derives from it |
-| `['knowledge', suffix]` | `useKnowledge` | Invalidated after every knowledge edit, every canvas save (pruning) and every accept. Saving settings invalidates all `['knowledge']` |
+| `['knowledge', suffix]` | `useKnowledge` | Invalidated after every knowledge edit, every canvas save (a save changes which Decisions are shown: those whose items are off the canvas are hidden) and every accept. Saving settings invalidates all `['knowledge']` |
 | `['settings']`, `['me', token]` | `useSettings`, `useMe` | `useMe` keeps the previous profile while a refreshed token refetches; otherwise `RequireUser` would unmount the workspace (aborting a streaming reply) every hour |
 
 ## Workspace (`pages/workspace.tsx`)
@@ -64,6 +64,15 @@ Three panes on desktop: project sidebar, canvas, side panel (Conversation / Requ
 - Component window: a click selects a Component, and clicking it again while it is the only selection opens its Inspector beside it (`opened`). A Component added from the dock opens straight away. Closing the window, or the first Esc, keeps the selection and the spotlight. The next Esc clears both.
 - Component Types: `model.ts` `COMPONENT_TYPES` (labels, property fields) and `shapes.tsx` `LOOKS` (icon + outline). Both must match the Go catalog.
 
+- **Undo and redo** (`history.ts`, `History`): steps for one visit, in memory only. The Editor holds one `History` for its life, so a reload or a Project switch starts empty. Up to 100 steps (the oldest drops); a new step clears redo.
+  - **Steps** are snapshots of the canvas before an edit, plus a label from the call site that knows the intent: "Move Database", "Move 3 components", "Add Cache", "Delete Database", "Delete connection", "Connect API → Database", "Edit Database", "Edit connection", "Tidy up", "Accept Proposal #3". The arrays are replaced immutably, so snapshots share structure.
+  - **One recording point:** `update(nodes, edges, edit)` records every `edit` (an `Edit`: label, optional `run` and `before`) unless an undo or redo is replaying. Selection, measuring, panning, zooming and the Proposal preview pass `false` and never make a step.
+  - **Grouping:** a drag's moves show as they happen, but its step starts from the canvas when the drag began (`dragStart`). Backspace deletes in two React Flow batches (Connections, then Components); `onBeforeDelete` opens one step for both (`deleting`) and `onDelete` closes it. Typing in one Inspector field of one item merges into one step (`run` = item and field) until the field blurs (`onEditEnd` → `endRun`), another field or item is edited, or anything else records, undoes or redoes. No idle timer.
+  - **Undo/redo** puts the snapshot back through `update` as an edit, so autosave saves it, then selects what the step added or changed that still exists (or nothing), pans to centre it without zooming if none of it is in view (`useShow`, shared with `usePanIntoView`), and never opens the Inspector (one already open on the only item changed stays). It is disabled while a review is being sent or the canvas is locked for an accept, and once autosave is in `conflict`.
+  - **Controls:** Undo and Redo (lucide `Undo2`/`Redo2`) in React Flow's control group before Tidy up: the vertical stack on desktop, the compact row beside Fit and Tidy up at 44px. Tooltip "Undo Delete Database (⌘Z)" / "Redo … (⇧⌘Z)", Ctrl+Z and Ctrl+Y off macOS; accessible name "Undo Delete Database"; just "Undo (⌘Z)" with nothing to undo.
+  - **Shortcuts** (a `window` keydown listener for the Editor's life): ⌘Z/Ctrl+Z undo; ⇧⌘Z, Ctrl+Shift+Z or Ctrl+Y redo. Ignored when the target is inside an input, text area, select or content-editable element, which keeps its own undo (the Inspector, the chat composer, the Requirement and Decision editors).
+  - **Flash:** for 1.5s (`FLASH_MS`) after an undo or redo, the canvas shows the preview's markers for the step (`stepChanges` before → after, drawn by `flashed`): added and changed (moved or edited) items outlined with "· new"/"· changed", removed ones as faded struck-through ghosts that can't be selected, dragged or connected. Any edit ends it. A Proposal preview wins: while one is shown there is no flash.
+  - **Announcement:** "Undid …"/"Redid …" in a visually hidden `aria-live="polite"` div beside the save indicator. Not a second `status`: tests expect exactly one.
 - **Compact canvas** (`sheet` prop, a `CompactSheet`): the workspace passes it only in the compact layout.
   - Components aren't draggable, so one finger pans anywhere and two pinch; no multi-select or box selection (`multiSelectionKeyCode`/`selectionKeyCode` null). Taps still select.
   - One tap on a Component or Connection selects it and opens the Inspector (`sheet.onOpenChange(true)`), with no "click it again" hint. The canvas portals the Inspector (`inSheet`) into `sheet.host`, a box in the sheet under its tab row that replaces the (still mounted, hidden) tab content; never the node or edge toolbar. ✕, Esc or a tab tap close it and keep the selection; a tap on the pane closes it and clears the selection; once nothing (or several things) is selected it closes itself. Remove ("Delete component"/"Delete connection") is the delete path; Backspace and Esc still work with a keyboard.
@@ -75,15 +84,16 @@ Three panes on desktop: project sidebar, canvas, side panel (Conversation / Requ
 
 ### Autosave (`architecture/autosave.ts`)
 
+- Undo and redo save like any other edit.
 - Debounced 1s PUT with the base version. On 409 it enters `conflict` and stops for good; the User must reload. Other errors keep the edits pending.
 - Unmount flushes with `keepalive` when the body fits the browser's 64 KiB keepalive limit, and with a plain fetch otherwise; `beforeunload` warns while a save is pending.
 - `commit(document, send)` waits for the in-flight save, then sends through a different endpoint and adopts the version it returns. Accepting a Proposal uses it, so canvas saves and accepts never race.
 
 ### Proposal review (`useProposalReview` + `architecture/proposal.ts`)
 
-- `staleReason`: the Proposal references a component or connection that is no longer on the canvas → it can't be accepted.
+- `staleReason`: the Proposal references a component or connection that is no longer on the canvas → it can't be accepted. Staleness and the preview derive from the current canvas, so they follow undo and redo both ways: an undo can make a Proposal out of date, and a redo makes it acceptable again.
 - `previewProposal` draws the result with added/changed/removed markers. New components are placed by dagre relative to the existing layout (existing components never move). Positions are remembered per `seq`, so accepting lands them exactly where previewed.
-- Accept: `applyProposal` → `autosave.commit` → `POST …/accept` → `setProposalStatus` + refresh knowledge. A `not_pending` error refreshes messages. The canvas is locked for the whole accept (`locked` drops edits in `update`; React Flow dragging, connecting and deleting are off), because the accept sends the canvas as it was when the User clicked: an edit made meanwhile would be lost or, saved afterwards, undo the Proposal.
+- Accept: `applyProposal` → `autosave.commit` → `POST …/accept` → `setProposalStatus` + refresh knowledge. Only then is it recorded as one undo step, "Accept Proposal #N" (`onAccepted`); a failed accept records nothing. Undoing it is a canvas edit only: the Proposal stays Accepted, and its card, Requirements and Experience Level don't change. A `not_pending` error refreshes messages. The canvas is locked for the whole accept (`locked` drops edits in `update`; React Flow dragging, connecting and deleting are off), because the accept sends the canvas as it was when the User clicked: an edit made meanwhile would be lost or, saved afterwards, undo the Proposal.
 - Mirror of the server's ids: `p{seq}-{ref}` / `p{seq}-k{index}`. Keep it in sync with `proposal.ComponentID` / `ConnectionID`.
 
 ### Chat (`conversation/chat-pane.tsx`, `lib/conversation.ts`)
