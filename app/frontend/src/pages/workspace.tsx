@@ -15,6 +15,7 @@ import { usePanelWidth } from '../lib/panel-width';
 import { slugSuffix, useProject } from '../lib/projects';
 import { ProjectSidebar } from '../projects/project-sidebar';
 import { ProjectTitle } from '../projects/project-title';
+import { WorkspaceBar } from '../projects/workspace-bar';
 import { Section, Stack } from '../ui/layout';
 import { ArrowLink } from '../ui/link';
 import { Display, Text } from '../ui/typography';
@@ -75,81 +76,86 @@ function Workspace({ slug }: { slug: string }) {
   if (project.data.slug !== slug) return <Navigate to={`/p/${project.data.slug}`} replace />;
 
   return (
-    <main {...stylex.props(styles.workspace, resizing && styles.resizing)}>
-      <div
-        ref={panes}
-        {...stylex.props(
-          compact
-            ? styles.stack
-            : [
-                styles.panes,
-                sidebarOpen ? styles.withSidebar : styles.withLeftRail,
-                panelOpen ? styles.withPanel(`${panel.width}px`) : styles.withRightRail,
-              ],
-        )}
-      >
-        {compact ? null : (
-          <div {...stylex.props(styles.pane, styles.left)}>
-            <ProjectSidebar
-              currentSlug={slug}
-              open={sidebarOpen}
-              onToggle={() => setSidebarOpen((o) => !o)}
-            />
-          </div>
-        )}
-        <section
-          aria-label="Canvas"
-          {...stylex.props(styles.pane, styles.canvas, compact && styles.compactCanvas)}
-        >
-          <div {...stylex.props(styles.bar)}>
-            <ProjectTitle key={project.data.slug} project={project.data} />
-          </div>
-          <CanvasPane slug={project.data.slug} onReview={setReview} onNames={setNames} />
-        </section>
-        <aside
-          id="project-panel"
-          aria-label="Project panel"
+    <div {...stylex.props(styles.shell, compact && styles.compactShell)}>
+      {compact ? <WorkspaceBar key={project.data.slug} project={project.data} /> : null}
+      <main {...stylex.props(styles.workspace, resizing && styles.resizing)}>
+        <div
+          ref={panes}
           {...stylex.props(
-            styles.pane,
             compact
-              ? [
-                  styles.sheet,
-                  styles.sheetHeight(
-                    view.dragHeight === null ? SNAP_CSS[view.snap] : `${view.dragHeight}px`,
-                  ),
-                  view.dragHeight !== null && styles.dragging,
-                ]
-              : styles.right,
+              ? styles.stack
+              : [
+                  styles.panes,
+                  sidebarOpen ? styles.withSidebar : styles.withLeftRail,
+                  panelOpen ? styles.withPanel(`${panel.width}px`) : styles.withRightRail,
+                ],
           )}
         >
-          {compact ? (
-            <SheetHead
-              slug={project.data.slug}
-              snap={view.snap}
-              onSnap={view.setSnap}
-              onDrag={view.setDragHeight}
-              total={() => panes.current?.clientHeight ?? 0}
-              tab={view.tab}
-              onTab={view.setTab}
-              pending={Boolean(view.pending)}
-            />
-          ) : (
-            panelOpen && <PanelResizer panel={panel} onResizing={setResizing} />
+          {compact ? null : (
+            <div {...stylex.props(styles.pane, styles.left)}>
+              <ProjectSidebar
+                currentSlug={slug}
+                open={sidebarOpen}
+                onToggle={() => setSidebarOpen((o) => !o)}
+              />
+            </div>
           )}
-          <SidePanel
-            key={slugSuffix(slug)}
-            slug={project.data.slug}
-            names={names}
-            conversation={<ChatPane slug={project.data.slug} review={review} />}
-            open={compact || panelOpen}
-            onToggle={() => setPanelOpen((o) => !o)}
-            tab={view.tab}
-            onTabChange={view.setTab}
-            bare={compact}
-          />
-        </aside>
-      </div>
-    </main>
+          <section
+            aria-label="Canvas"
+            {...stylex.props(styles.pane, styles.canvas, compact && styles.compactCanvas)}
+          >
+            {compact ? null : (
+              <div {...stylex.props(styles.bar)}>
+                <ProjectTitle key={project.data.slug} project={project.data} />
+              </div>
+            )}
+            <CanvasPane slug={project.data.slug} onReview={setReview} onNames={setNames} />
+          </section>
+          <aside
+            id="project-panel"
+            aria-label="Project panel"
+            {...stylex.props(
+              styles.pane,
+              compact
+                ? [
+                    styles.sheet,
+                    styles.sheetHeight(
+                      view.dragHeight === null ? SNAP_CSS[view.snap] : `${view.dragHeight}px`,
+                    ),
+                    view.dragHeight !== null && styles.dragging,
+                  ]
+                : styles.right,
+            )}
+          >
+            {compact ? (
+              <SheetHead
+                slug={project.data.slug}
+                snap={view.snap}
+                onSnap={view.setSnap}
+                onDrag={view.setDragHeight}
+                total={() => panes.current?.clientHeight ?? 0}
+                tab={view.tab}
+                onTab={view.setTab}
+                pending={Boolean(view.pending)}
+              />
+            ) : (
+              panelOpen && <PanelResizer panel={panel} onResizing={setResizing} />
+            )}
+            <SidePanel
+              key={slugSuffix(slug)}
+              slug={project.data.slug}
+              names={names}
+              conversation={<ChatPane slug={project.data.slug} review={review} />}
+              open={compact || panelOpen}
+              onToggle={() => setPanelOpen((o) => !o)}
+              tab={view.tab}
+              onTabChange={view.setTab}
+              bare={compact}
+            />
+          </aside>
+        </div>
+      </main>
+    </div>
   );
 }
 
@@ -329,11 +335,14 @@ const styles = stylex.create({
     ':focus-visible::after': { backgroundColor: color['--color-accent'] },
     ':active::after': { backgroundColor: color['--color-accent'] },
   },
-  workspace: {
+  shell: {
     display: 'flex',
     flexDirection: 'column',
     height: `calc(100dvh - ${layout['--header-h']})`,
   },
+  // No site header on compact screens: the workspace bar is the only one.
+  compactShell: { height: '100dvh' },
+  workspace: { display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 },
   panes: {
     display: 'grid',
     gridTemplateColumns: 'var(--left-w) 1fr var(--right-w)',

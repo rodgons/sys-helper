@@ -14,9 +14,11 @@ const CHOICES = [
 export function ThemeMenu({
   choice,
   onChange,
+  placement,
 }: {
   choice: ThemeChoice;
   onChange: (choice: ThemeChoice) => void;
+  placement?: 'below' | 'above';
 }) {
   const Current = CHOICES.find((c) => c.value === choice)?.icon ?? Monitor;
   return (
@@ -24,6 +26,7 @@ export function ThemeMenu({
       label="Theme"
       trigger={<Current size={18} strokeWidth={1.75} aria-hidden="true" />}
       xstyle={styles.trigger}
+      placement={placement}
     >
       {CHOICES.map(({ value, label, icon }) => (
         <MenuItem

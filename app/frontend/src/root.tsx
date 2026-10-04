@@ -1,6 +1,7 @@
-import { Route, Routes, useLocation } from 'react-router';
+import { matchPath, Route, Routes, useLocation } from 'react-router';
 import { AccountMenu } from './account/account-menu';
 import { useAuth } from './lib/auth';
+import { useCompact } from './lib/compact';
 import { setThemeChoice, useThemeChoice } from './lib/theme';
 import { HomePage } from './pages/home';
 import { LoginPage } from './pages/login';
@@ -15,7 +16,10 @@ import { Toaster } from './ui/toaster';
 // The UI kit (`/ui-kit`) is a reference for developers, so it is reachable only by URL.
 const VISITOR_LINKS = [{ href: '/', label: 'Home' }];
 
-/** App shell: site header, the page for the current route and the toasts. Unknown paths fall back to the home page. */
+/**
+ * App shell: site header, the page for the current route and the toasts. Unknown paths fall back to
+ * the home page. The compact workspace has its own bar, so there the site header goes.
+ */
 export function Root() {
   const { pathname } = useLocation();
   const auth = useAuth();
@@ -23,15 +27,19 @@ export function Root() {
   const links = auth.status === 'signedIn' ? [] : VISITOR_LINKS;
   const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   const theme = useThemeChoice();
+  const compact = useCompact();
+  const ownHeader = compact && matchPath('/p/:slug', normalized) !== null;
 
   return (
     <>
-      <SiteHeader
-        links={links}
-        currentPath={normalized}
-        tools={<ThemeMenu choice={theme} onChange={setThemeChoice} />}
-        actions={normalized === '/login' ? null : <AuthAction />}
-      />
+      {ownHeader ? null : (
+        <SiteHeader
+          links={links}
+          currentPath={normalized}
+          tools={<ThemeMenu choice={theme} onChange={setThemeChoice} />}
+          actions={normalized === '/login' ? null : <AuthAction />}
+        />
+      )}
       <Routes>
         <Route path="/ui-kit" element={<UiKitPage />} />
         <Route path="/login" element={<LoginPage />} />

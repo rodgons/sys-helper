@@ -15,19 +15,21 @@ const CloseMenu = createContext<() => void>(() => {});
 
 /**
  * Dropdown menu behind a button (`trigger` is its visible content, `label` its accessible name).
- * It opens below the button, aligned right, focuses the checked item (else the first), and closes
- * on Escape, on a click outside or after an item runs.
+ * It opens below the button (or `above`, near the bottom of the screen), aligned right, focuses the
+ * checked item (else the first), and closes on Escape, on a click outside or after an item runs.
  */
 export function Menu({
   label,
   trigger,
   children,
   xstyle,
+  placement = 'below',
 }: {
   label: string;
   trigger: ReactNode;
   children: ReactNode;
   xstyle?: stylex.StyleXStyles;
+  placement?: 'below' | 'above';
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -76,7 +78,7 @@ export function Menu({
           aria-label={label}
           tabIndex={-1}
           onKeyDown={(e) => e.key === 'Escape' && close()}
-          {...stylex.props(styles.menu)}
+          {...stylex.props(styles.menu, placement === 'above' && styles.above)}
         >
           <CloseMenu.Provider value={close}>{children}</CloseMenu.Provider>
         </div>
@@ -171,6 +173,7 @@ const styles = stylex.create({
     borderRadius: radius['--radius-lg'],
     backgroundColor: color['--color-raised'],
   },
+  above: { top: 'auto', bottom: `calc(100% + ${space['--space-2']})` },
   item: {
     display: 'flex',
     alignItems: 'center',

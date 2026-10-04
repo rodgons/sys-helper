@@ -389,6 +389,156 @@ describe('Workspace on compact screens', () => {
     expect(snap()).toBe('Half');
   });
 
+  it('swaps the site header for a workspace bar, only in the workspace', async () => {
+    setCompact(true);
+    stubApi();
+    const { unmount } = renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'URL Shortener' }),
+    ).toBeInTheDocument();
+    // One banner: the workspace bar, without the site header's brand link.
+    const bar = within(screen.getByRole('banner'));
+    expect(bar.queryByRole('link', { name: /helper/ })).not.toBeInTheDocument();
+    expect(bar.getByRole('heading', { level: 1, name: 'URL Shortener' })).toBeInTheDocument();
+    expect(bar.getByRole('button', { name: 'Projects' })).toBeInTheDocument();
+    expect(bar.getByRole('button', { name: 'Project actions' })).toBeInTheDocument();
+    expect(await bar.findByRole('img', { name: 'octocat' })).toBeInTheDocument();
+    unmount();
+
+    renderAt('/projects');
+    expect(
+      within(screen.getByRole('banner')).getByRole('link', { name: /helper/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the Projects drawer from ☰ and switches Projects from it', async () => {
+    setCompact(true);
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.click(await screen.findByRole('button', { name: 'Projects' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Projects' });
+    expect(await within(drawer).findByRole('link', { name: 'URL Shortener' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(drawer).getByRole('link', { name: 'sys-helper' })).toHaveAttribute('href', '/');
+    expect(within(drawer).getByRole('button', { name: 'Theme' })).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('link', { name: 'Chat App' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/p/chat-app-a1b2c3d4e5'),
+    );
+    expect(screen.queryByRole('dialog', { name: 'Projects' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Chat App' })).toBeInTheDocument();
+  });
+
+  it('closes the drawer with ✕, Esc, a swipe left or picking the current Project', async () => {
+    setCompact(true);
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const open = async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Projects' }));
+      return screen.getByRole('dialog', { name: 'Projects' });
+    };
+    const closed = () => expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(within(await open()).getByRole('button', { name: 'Close' }));
+    closed();
+    fireEvent(await open(), new Event('cancel', { cancelable: true }));
+    closed();
+    const drawer = await open();
+    fireEvent.pointerDown(drawer, { clientX: 200, clientY: 300 });
+    fireEvent.pointerUp(drawer, { clientX: 80, clientY: 310 });
+    closed();
+    fireEvent.click(await within(await open()).findByRole('link', { name: 'URL Shortener' }));
+    closed();
+    expect(screen.getByTestId('location')).toHaveTextContent('/p/url-shortener-k3xa9q2m7p');
+  });
+
+  it('creates a Project from the drawer', async () => {
+    const created = { slug: 'search-q1w2e3r4t5', name: 'Search', updatedAt: at };
+    setCompact(true);
+    stubApi({
+      'POST /api/projects': { status: 201, body: created },
+      'GET /api/projects/search-q1w2e3r4t5': created,
+      'GET /api/projects/search-q1w2e3r4t5/architecture': emptyArchitecture,
+      'GET /api/projects/search-q1w2e3r4t5/messages': [],
+      'GET /api/projects/search-q1w2e3r4t5/knowledge': noKnowledge,
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.click(await screen.findByRole('button', { name: 'Projects' }));
+
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Projects' })).getByRole('button', {
+        name: 'New project',
+      }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    fireEvent.change(within(dialog).getByLabelText('Project name'), {
+      target: { value: 'Search' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Search' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('renames the Project from ⋯ in a dialog and follows the new slug', async () => {
+    const renamed = { ...shortener, slug: 'link-service-k3xa9q2m7p', name: 'Link Service' };
+    const rename = vi.fn(() => renamed);
+    setCompact(true);
+    stubApi({
+      'PATCH /api/projects/url-shortener-k3xa9q2m7p': rename,
+      'GET /api/projects/link-service-k3xa9q2m7p': renamed,
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Project actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+    const dialog = screen.getByRole('dialog', { name: 'Rename project' });
+    fireEvent.change(within(dialog).getByLabelText('Project name'), {
+      target: { value: 'Link Service' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/p/link-service-k3xa9q2m7p'),
+    );
+    expect(rename).toHaveBeenCalledWith(
+      expect.objectContaining({ json: { name: 'Link Service' } }),
+    );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('deletes the Project from ⋯ only after confirming', async () => {
+    const remove = vi.fn(() => ({ status: 204 }));
+    setCompact(true);
+    stubApi({ 'DELETE /api/projects/url-shortener-k3xa9q2m7p': remove });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Project actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    const dialog = screen.getByRole('dialog', { name: /delete “URL Shortener”/i });
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete project' }));
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/projects'));
+    expect(remove).toHaveBeenCalled();
+  });
+
+  it('opens the account menu from the avatar in the bar', async () => {
+    setCompact(true);
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
+  });
+
   it('keeps the draft, unsaved canvas edits and the tab across the breakpoint', async () => {
     stubApi({
       'PUT /api/projects/url-shortener-k3xa9q2m7p/architecture': ({
