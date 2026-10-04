@@ -21,6 +21,7 @@ import {
 } from '@xyflow/react';
 import { Workflow } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { color, radius, space, text } from '../design/tokens.stylex';
 import { ApiError, apiFetch } from '../lib/api';
 import type { VersionedArchitecture } from '../lib/architecture';
@@ -31,7 +32,7 @@ import { useThemeChoice } from '../lib/theme';
 import { Button } from '../ui/button';
 import { Label, Text } from '../ui/typography';
 import { type SaveStatus, useAutosave } from './autosave';
-import { ComponentDock, DRAG_TYPE } from './dock';
+import { ComponentDock, ComponentPicker, DRAG_TYPE } from './dock';
 import { Inspector } from './inspector';
 import { tidy } from './layout';
 import {
@@ -59,6 +60,19 @@ type CanvasProps = {
   onReview?: (review: Review | null) => void;
   /** Receives the current names of components and connections, by id, whenever they change. */
   onNames?: (names: Record<string, string>) => void;
+  /** The compact layout's bottom sheet. Given it, the canvas works by touch; see CompactSheet. */
+  sheet?: CompactSheet;
+};
+
+/**
+ * Where the compact canvas shows its Inspector: inside the bottom sheet (`host`), in place of the
+ * tab content, while `open`. The canvas asks to open it when one tap selects a Component or
+ * Connection, and to close it on ✕, Esc, a tap on the empty canvas or once nothing is selected.
+ */
+export type CompactSheet = {
+  host: HTMLElement | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 };
 
 /** The editable Architecture canvas. Every change is autosaved; see useAutosave. */
@@ -72,6 +86,8 @@ export function ArchitectureCanvas(props: CanvasProps) {
 
 // Width of the inspector (16rem) plus its margins.
 const INSPECTOR_SPACE = 300;
+// How far a compact canvas zooms out, so Fit frames even a large Architecture.
+const COMPACT_MIN_ZOOM = 0.25;
 
 /**
  * How to fit the Architecture into view. Panels float over the canvas (the controls bottom left, the
@@ -79,7 +95,24 @@ const INSPECTOR_SPACE = 300;
  * so the fit keeps clear of them rather than of the canvas edges. The inspector is only wide while
  * something is selected.
  */
-function fitOptions({ inspector, proposal }: { inspector: boolean; proposal: boolean }) {
+function fitOptions({
+  inspector,
+  proposal,
+  compact,
+}: {
+  inspector: boolean;
+  proposal: boolean;
+  compact: boolean;
+}) {
+  // Compact: the Inspector is in the sheet, under the canvas, so only the controls, the save status
+  // and the bottom bar (with the Proposal banner) float over it. Tune on a device.
+  if (compact) {
+    return {
+      maxZoom: 1,
+      minZoom: COMPACT_MIN_ZOOM,
+      padding: { top: '16px', left: '16px', right: '16px', bottom: proposal ? '104px' : '64px' },
+    } as const;
+  }
   return {
     maxZoom: 1,
     padding: {
@@ -98,7 +131,8 @@ const changesDocument = (c: NodeChange | EdgeChange) =>
   c.type === 'replace' ||
   (c.type === 'position' && !c.dragging);
 
-function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasProps) {
+function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: CanvasProps) {
+  const compact = sheet !== undefined;
   // The Proposal this canvas just accepted. The cached Conversation marks it accepted a render
   // later; until then it still arrives as pending and must not be previewed on top of its result.
   const [acceptedSeq, setAcceptedSeq] = useState<number | null>(null);
@@ -167,11 +201,15 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
   useEffect(() => {
     if (!proposal || !ghostsMeasured || fitted.current === proposal.seq) return;
     fitted.current = proposal.seq;
-    void reactFlow.fitView({ ...fitOptions({ inspector: false, proposal: true }), duration: 300 });
-  }, [proposal, ghostsMeasured, reactFlow]);
+    void reactFlow.fitView({
+      ...fitOptions({ inspector: false, proposal: true, compact }),
+      duration: 300,
+    });
+  }, [proposal, ghostsMeasured, reactFlow, compact]);
   const fit = fitOptions({
     inspector: nodes.some((n) => n.selected) || edges.some((e) => e.selected),
     proposal: Boolean(proposal),
+    compact,
   });
   const editorIds = new Set(nodes.map((n) => n.id));
   const editorEdgeIds = new Set(edges.map((e) => e.id));
@@ -192,15 +230,17 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
     const box = wrapper.current?.getBoundingClientRect();
     const center = reactFlow.screenToFlowPosition(
       at ?? {
-        x: (box?.left ?? 0) + Math.max((box?.width ?? 0) - INSPECTOR_SPACE, 0) / 2,
+        x: (box?.left ?? 0) + Math.max((box?.width ?? 0) - (compact ? 0 : INSPECTOR_SPACE), 0) / 2,
         y: (box?.top ?? 0) + (box?.height ?? 0) / 2,
       },
     );
     const wanted = { x: center.x - 90, y: center.y - 32 };
     const position = at ? wanted : freeSpot(wanted, latest.current.nodes);
     const node = newComponentNode(type, position, latest.current.nodes);
-    // A new component opens straight away, to be named.
-    setOpened(node.id);
+    // A new component opens straight away, to be named: in the sheet on compact (so crossing to
+    // desktop leaves it just selected), else in its window.
+    if (sheet) sheet.onOpenChange(true);
+    else setOpened(node.id);
     update(
       [
         ...latest.current.nodes.map((n) => ({ ...n, selected: false })),
@@ -258,7 +298,30 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
   const [floatingEdge] =
     selectedNodes.length === 0 && selectedEdges.length === 1 ? selectedEdges : [];
   const edgeAnchor = floatingEdge && clicked?.id === floatingEdge.id ? clicked : null;
-  const inspector = (
+  const single = selectedNodes.length + selectedEdges.length === 1;
+  const sheetInspector = sheet?.open && single;
+  // The sheet's Inspector edits one item; once nothing (or several) is selected, it closes.
+  useEffect(() => {
+    if (sheet?.open && !single) sheet.onOpenChange(false);
+  }, [sheet, single]);
+  usePanIntoView(
+    wrapper,
+    (sheetInspector && (selectedNodes[0]?.id ?? selectedEdges[0]?.id)) || null,
+  );
+  const inspector = compact ? (
+    <Inspector
+      slug={slug}
+      saved={autosave.status === 'saved'}
+      nodes={selectedNodes}
+      edges={selectedEdges}
+      onEditComponent={editComponent}
+      onEditConnection={editConnection}
+      onRemove={remove}
+      // Closing keeps the selection, and the spotlight on it.
+      onClose={() => sheet?.onOpenChange(false)}
+      inSheet
+    />
+  ) : (
     <Inspector
       slug={slug}
       saved={autosave.status === 'saved'}
@@ -301,19 +364,28 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
           );
         }}
         onConnect={onConnect}
-        onNodeClick={(_, node) => setOpened(selectedBefore.current === node.id ? node.id : null)}
-        onPaneClick={() => setOpened(null)}
+        // Compact: one tap selects and opens the Inspector in the sheet. Desktop: a click selects,
+        // a second click opens the window beside the component.
+        onNodeClick={(_, node) =>
+          compact
+            ? sheet.onOpenChange(true)
+            : setOpened(selectedBefore.current === node.id ? node.id : null)
+        }
+        onPaneClick={() => (compact ? sheet.onOpenChange(false) : setOpened(null))}
         // Esc closes the component's window, then clears the selection and with it the spotlight.
         onKeyDown={(e) => {
           if (e.key !== 'Escape') return;
-          if (floating) setOpened(null);
+          if (compact && sheet.open) sheet.onOpenChange(false);
+          else if (floating) setOpened(null);
           else deselect();
         }}
         onEdgeClick={(e, edge) =>
-          setClicked({
-            id: edge.id,
-            ...reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY }),
-          })
+          compact
+            ? sheet.onOpenChange(true)
+            : setClicked({
+                id: edge.id,
+                ...reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY }),
+              })
         }
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
@@ -328,7 +400,12 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
         }}
         connectionMode={ConnectionMode.Loose}
         // Read-only while a review is being sent; edits made then are dropped anyway (`locked`).
-        nodesDraggable={!review.state?.busy}
+        // Compact: Components don't move under a finger, so one finger pans anywhere and two
+        // pinch; there's no multi-select or box selection.
+        nodesDraggable={!review.state?.busy && !compact}
+        multiSelectionKeyCode={compact ? null : undefined}
+        selectionKeyCode={compact ? null : undefined}
+        minZoom={compact ? COMPACT_MIN_ZOOM : undefined}
         nodesConnectable={!review.state?.busy}
         deleteKeyCode={review.state?.busy ? null : 'Backspace'}
         defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
@@ -338,7 +415,14 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={24} />
-        <Controls showInteractive={false} fitViewOptions={fit}>
+        <Controls
+          className={compact ? 'compact-controls' : undefined}
+          showInteractive={false}
+          showZoom={!compact}
+          // Compact: one row beside "+ Add", clear of the Proposal banner above them.
+          orientation={compact ? 'horizontal' : 'vertical'}
+          fitViewOptions={fit}
+        >
           <ControlButton
             onClick={tidyUp}
             // A pending Proposal's preview fixes where its new components go, so tidying under it
@@ -353,7 +437,9 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
         <Panel position="top-left">
           <SaveIndicator status={autosave.status} />
         </Panel>
-        {floating ? (
+        {compact ? (
+          sheetInspector && sheet.host && createPortal(inspector, sheet.host)
+        ) : floating ? (
           <NodeToolbar
             nodeId={floating.id}
             isVisible
@@ -383,7 +469,12 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
         )}
         <Panel position="bottom-center">
           <div {...stylex.props(styles.bottom)}>
-            {proposal && <ProposalBar proposal={proposal} review={review.state} />}
+            {proposal &&
+              (compact ? (
+                <CompactProposalBar proposal={proposal} review={review.state} />
+              ) : (
+                <ProposalBar proposal={proposal} review={review.state} />
+              ))}
             {autosave.status === 'conflict' && (
               <div role="alert" {...stylex.props(styles.conflict)}>
                 <Text size="sm">
@@ -395,12 +486,51 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames }: CanvasP
                 </Button>
               </div>
             )}
-            <ComponentDock onAdd={(type) => addComponent(type)} />
+            {compact ? (
+              <ComponentPicker onAdd={(type) => addComponent(type)} />
+            ) : (
+              <ComponentDock onAdd={(type) => addComponent(type)} />
+            )}
           </div>
         </Panel>
       </ReactFlow>
     </div>
   );
+}
+
+// Long enough for the sheet to finish moving (its transition is `--duration`, 150ms) and the canvas
+// to resize.
+const SHEET_SETTLE_MS = 250;
+
+/**
+ * Compact: once the sheet has settled after the Inspector opened for item `id`, pans the view to
+ * centre the item in the visible canvas if the sheet now covers it (or it is off screen).
+ */
+function usePanIntoView(wrapper: { current: HTMLDivElement | null }, id: string | null) {
+  const reactFlow = useReactFlow<ComponentNode, ConnectionEdge>();
+  useEffect(() => {
+    if (!id) return;
+    const timer = setTimeout(() => {
+      const box = wrapper.current?.getBoundingClientRect();
+      const edge = reactFlow.getEdge(id);
+      const ends = edge ? [edge.source, edge.target] : [id];
+      if (!box || ends.some((end) => !reactFlow.getInternalNode(end))) return;
+      const rect = reactFlow.getNodesBounds(ends);
+      const from = reactFlow.flowToScreenPosition({ x: rect.x, y: rect.y });
+      const to = reactFlow.flowToScreenPosition({
+        x: rect.x + rect.width,
+        y: rect.y + rect.height,
+      });
+      const visible =
+        from.x >= box.left && from.y >= box.top && to.x <= box.right && to.y <= box.bottom;
+      if (visible) return;
+      void reactFlow.setCenter(rect.x + rect.width / 2, rect.y + rect.height / 2, {
+        zoom: reactFlow.getZoom(),
+        duration: 200,
+      });
+    }, SHEET_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [id, reactFlow, wrapper]);
 }
 
 type Flow = { nodes: ComponentNode[]; edges: ConnectionEdge[] };
@@ -618,6 +748,45 @@ function ProposalBar({ proposal, review }: { proposal: Proposal; review: Review 
   );
 }
 
+/**
+ * The compact canvas's Proposal banner: "Proposal #N · Accept · Reject" on one line, the summary
+ * clipped between, and a short second line when it is out of date or failed. The chat's Proposal
+ * card keeps the full summary.
+ */
+function CompactProposalBar({ proposal, review }: { proposal: Proposal; review: Review | null }) {
+  const note = review?.stale ? 'Out of date. Ask the AI to redo it.' : review?.error;
+  return (
+    <section aria-label="Proposal" {...stylex.props(styles.proposal, styles.compactProposal)}>
+      <div {...stylex.props(styles.compactLine)}>
+        <Label tone="accent" xstyle={styles.nowrap}>
+          Proposal #{proposal.seq}
+        </Label>
+        <span {...stylex.props(styles.compactSummary)}>{proposal.summary}</span>
+        <Button
+          size="sm"
+          disabled={!review || review.busy || review.stale !== null}
+          onClick={review?.accept}
+        >
+          Accept
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!review || review.busy}
+          onClick={review?.reject}
+        >
+          Reject
+        </Button>
+      </div>
+      {note && (
+        <Text size="sm" tone={review?.stale ? 'muted' : 'accent'}>
+          {note}
+        </Text>
+      )}
+    </section>
+  );
+}
+
 const STATUS_TEXT: Record<SaveStatus, string> = {
   saved: 'All changes saved',
   pending: 'Unsaved changes',
@@ -663,6 +832,25 @@ const styles = stylex.create({
     boxShadow: `0 4px 16px ${color['--color-accent-soft']}`,
   },
   proposalText: { display: 'flex', flexDirection: 'column', gap: space['--space-1'], minWidth: 0 },
+  compactProposal: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: space['--space-1'],
+    width: 'calc(100vw - 2rem)',
+    maxWidth: '36rem',
+    paddingBlock: space['--space-2'],
+  },
+  nowrap: { whiteSpace: 'nowrap', flexShrink: 0 },
+  compactLine: { display: 'flex', alignItems: 'center', gap: space['--space-2'], minWidth: 0 },
+  compactSummary: {
+    flexGrow: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: text['--text-sm'],
+    color: color['--color-fg-muted'],
+  },
   proposalActions: { display: 'flex', gap: space['--space-2'], flexShrink: 0 },
   conflict: {
     display: 'flex',

@@ -1,6 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { Monitor, Moon, Sun } from 'lucide-react';
-import { color, motion } from '../design/tokens.stylex';
+import { color, media, motion } from '../design/tokens.stylex';
 import type { ThemeChoice } from '../lib/theme';
 import { Menu, MenuItem } from './menu';
 
@@ -14,9 +14,11 @@ const CHOICES = [
 export function ThemeMenu({
   choice,
   onChange,
+  placement,
 }: {
   choice: ThemeChoice;
   onChange: (choice: ThemeChoice) => void;
+  placement?: 'below' | 'above';
 }) {
   const Current = CHOICES.find((c) => c.value === choice)?.icon ?? Monitor;
   return (
@@ -24,6 +26,7 @@ export function ThemeMenu({
       label="Theme"
       trigger={<Current size={18} strokeWidth={1.75} aria-hidden="true" />}
       xstyle={styles.trigger}
+      placement={placement}
     >
       {CHOICES.map(({ value, label, icon }) => (
         <MenuItem
@@ -42,8 +45,8 @@ export function ThemeMenu({
 const styles = stylex.create({
   // The size of the Avatar beside it in the header.
   trigger: {
-    width: 32,
-    height: 32,
+    width: { default: 32, [media.coarse]: 44 },
+    height: { default: 32, [media.coarse]: 44 },
     alignItems: 'center',
     justifyContent: 'center',
     color: { default: color['--color-fg-muted'], ':hover': color['--color-fg'] },

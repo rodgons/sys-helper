@@ -1,18 +1,22 @@
 import * as stylex from '@stylexjs/stylex';
 import { type KeyboardEvent, type PointerEvent, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router';
-import { ArchitectureCanvas } from '../architecture/canvas';
+import { ArchitectureCanvas, type CompactSheet } from '../architecture/canvas';
 import type { Review } from '../architecture/review';
 import { ChatPane } from '../conversation/chat-pane';
-import { color, layout, media, space } from '../design/tokens.stylex';
-import { SidePanel } from '../knowledge/side-panel';
+import { color, layout, motion, radius, space } from '../design/tokens.stylex';
+import { SheetHead, SNAP_CSS, type Snap } from '../knowledge/bottom-sheet';
+import { type PanelTab, SidePanel } from '../knowledge/side-panel';
 import { ApiError } from '../lib/api';
 import { useArchitecture } from '../lib/architecture';
+import { useCompact } from '../lib/compact';
 import { usePendingProposal } from '../lib/conversation';
+import { useKeyboardHeight } from '../lib/keyboard';
 import { usePanelWidth } from '../lib/panel-width';
 import { slugSuffix, useProject } from '../lib/projects';
 import { ProjectSidebar } from '../projects/project-sidebar';
 import { ProjectTitle } from '../projects/project-title';
+import { WorkspaceBar } from '../projects/workspace-bar';
 import { Section, Stack } from '../ui/layout';
 import { ArrowLink } from '../ui/link';
 import { Display, Text } from '../ui/typography';
@@ -22,7 +26,13 @@ import { RequireUser } from './require-user';
 const LEFT_OPEN_REM = 16;
 const LEFT_RAIL_REM = 3;
 
-/** `/p/:slug`: Projects on the left, the Architecture canvas in the middle, the Conversation on the right. */
+/**
+ * `/p/:slug`: Projects on the left, the Architecture canvas in the middle, the Conversation on the
+ * right. In the compact layout (below 64rem) the side panel docks under the canvas as a bottom sheet
+ * and the Project sidebar goes. Both layouts are one tree: the canvas and the side panel keep their
+ * place in it, so crossing the breakpoint never remounts them (a chat draft, a streaming reply and
+ * unsaved canvas edits survive).
+ */
 export function WorkspacePage() {
   const { slug = '' } = useParams();
   return <RequireUser>{() => <Workspace slug={slug} />}</RequireUser>;
@@ -30,6 +40,13 @@ export function WorkspacePage() {
 
 function Workspace({ slug }: { slug: string }) {
   const project = useProject(slug);
+  const compact = useCompact();
+  // On iOS the compact workspace follows the visual viewport above the keyboard.
+  const visibleHeight = useKeyboardHeight(compact);
+  const view = useWorkspaceView(slug, compact);
+  const panes = useRef<HTMLDivElement>(null);
+  // Where the compact canvas renders its Inspector: inside the sheet, under the tab row.
+  const [inspectorHost, setInspectorHost] = useState<HTMLDivElement | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
   const panel = usePanelWidth(sidebarOpen ? LEFT_OPEN_REM : LEFT_RAIL_REM);
@@ -64,48 +81,165 @@ function Workspace({ slug }: { slug: string }) {
   if (project.data.slug !== slug) return <Navigate to={`/p/${project.data.slug}`} replace />;
 
   return (
-    <main {...stylex.props(styles.workspace, resizing && styles.resizing)}>
-      <p {...stylex.props(styles.notice)}>
-        The workspace works best on a screen at least 1024px wide.
-      </p>
-      <div
-        {...stylex.props(
-          styles.panes,
-          sidebarOpen ? styles.withSidebar : styles.withLeftRail,
-          panelOpen ? styles.withPanel(`${panel.width}px`) : styles.withRightRail,
-        )}
-      >
-        <div {...stylex.props(styles.pane, styles.left)}>
-          <ProjectSidebar
-            currentSlug={slug}
-            open={sidebarOpen}
-            onToggle={() => setSidebarOpen((o) => !o)}
-          />
-        </div>
-        <section aria-label="Canvas" {...stylex.props(styles.pane, styles.canvas)}>
-          <div {...stylex.props(styles.bar)}>
-            <ProjectTitle key={project.data.slug} project={project.data} />
-          </div>
-          <CanvasPane slug={project.data.slug} onReview={setReview} onNames={setNames} />
-        </section>
-        <aside
-          id="project-panel"
-          aria-label="Project panel"
-          {...stylex.props(styles.pane, styles.right)}
+    <div
+      {...stylex.props(
+        styles.shell,
+        compact && styles.shellHeight(visibleHeight === null ? '100dvh' : `${visibleHeight}px`),
+      )}
+    >
+      {compact ? <WorkspaceBar key={project.data.slug} project={project.data} /> : null}
+      <main {...stylex.props(styles.workspace, resizing && styles.resizing)}>
+        <div
+          ref={panes}
+          {...stylex.props(
+            compact
+              ? styles.stack
+              : [
+                  styles.panes,
+                  sidebarOpen ? styles.withSidebar : styles.withLeftRail,
+                  panelOpen ? styles.withPanel(`${panel.width}px`) : styles.withRightRail,
+                ],
+          )}
         >
-          {panelOpen && <PanelResizer panel={panel} onResizing={setResizing} />}
-          <SidePanel
-            key={slugSuffix(slug)}
-            slug={project.data.slug}
-            names={names}
-            conversation={<ChatPane slug={project.data.slug} review={review} />}
-            open={panelOpen}
-            onToggle={() => setPanelOpen((o) => !o)}
-          />
-        </aside>
-      </div>
-    </main>
+          {compact ? null : (
+            <div {...stylex.props(styles.pane, styles.left)}>
+              <ProjectSidebar
+                currentSlug={slug}
+                open={sidebarOpen}
+                onToggle={() => setSidebarOpen((o) => !o)}
+              />
+            </div>
+          )}
+          <section
+            aria-label="Canvas"
+            {...stylex.props(styles.pane, styles.canvas, compact && styles.compactCanvas)}
+          >
+            {compact ? null : (
+              <div {...stylex.props(styles.bar)}>
+                <ProjectTitle key={project.data.slug} project={project.data} />
+              </div>
+            )}
+            <CanvasPane
+              slug={project.data.slug}
+              onReview={setReview}
+              onNames={setNames}
+              sheet={
+                compact
+                  ? {
+                      host: inspectorHost,
+                      open: view.inspectorOpen,
+                      onOpenChange: view.setInspectorOpen,
+                    }
+                  : undefined
+              }
+            />
+          </section>
+          <aside
+            id="project-panel"
+            aria-label="Project panel"
+            {...stylex.props(
+              styles.pane,
+              compact
+                ? [
+                    styles.sheet,
+                    styles.sheetHeight(
+                      view.dragHeight === null ? SNAP_CSS[view.snap] : `${view.dragHeight}px`,
+                    ),
+                    view.dragHeight !== null && styles.dragging,
+                  ]
+                : styles.right,
+            )}
+          >
+            {compact ? (
+              <SheetHead
+                slug={project.data.slug}
+                snap={view.snap}
+                onSnap={view.setSnap}
+                onDrag={view.setDragHeight}
+                total={() => panes.current?.clientHeight ?? 0}
+                tab={view.tab}
+                onTab={(tab) => {
+                  view.setTab(tab);
+                  view.setInspectorOpen(false); // keeps the selection
+                }}
+                pending={Boolean(view.pending)}
+              />
+            ) : (
+              panelOpen && <PanelResizer panel={panel} onResizing={setResizing} />
+            )}
+            <SidePanel
+              key={slugSuffix(slug)}
+              slug={project.data.slug}
+              names={names}
+              conversation={<ChatPane slug={project.data.slug} review={review} />}
+              open={compact ? !view.inspectorOpen : panelOpen}
+              onToggle={() => setPanelOpen((o) => !o)}
+              tab={view.tab}
+              onTabChange={view.setTab}
+              bare={compact}
+            />
+            {compact ? (
+              <div
+                ref={setInspectorHost}
+                hidden={!view.inspectorOpen}
+                {...stylex.props(styles.inspectorHost)}
+              />
+            ) : null}
+          </aside>
+        </div>
+      </main>
+    </div>
   );
+}
+
+/**
+ * What the User looks at in this Project, beyond what the panes own: the side panel's tab and, in
+ * the compact layout, the bottom sheet's snap (or its height mid-drag) and whether the canvas's
+ * Inspector fills it. Opening a Project starts on the Conversation with the sheet at half; so does
+ * crossing the breakpoint, keeping the tab (an open Inspector becomes the desktop's selection). A
+ * Proposal arriving while the sheet is full drops it to half, so its preview shows on the canvas.
+ * Opening the Inspector brings the sheet to half, so both it and the item show; closing leaves it.
+ */
+function useWorkspaceView(slug: string, compact: boolean) {
+  const suffix = slugSuffix(slug);
+  const pending = usePendingProposal(slug);
+  const [state, setState] = useState({
+    suffix,
+    compact,
+    seq: pending?.seq,
+    tab: 'conversation' as PanelTab,
+    snap: 'half' as Snap,
+    inspectorOpen: false,
+  });
+  const [dragHeight, setDragHeight] = useState<number | null>(null);
+  let next = state;
+  if (next.suffix !== suffix) {
+    next = { ...next, suffix, tab: 'conversation', snap: 'half', inspectorOpen: false };
+  }
+  if (next.compact !== compact) next = { ...next, compact, snap: 'half', inspectorOpen: false };
+  if (next.seq !== pending?.seq) {
+    next = {
+      ...next,
+      seq: pending?.seq,
+      snap: pending && next.snap === 'full' ? 'half' : next.snap,
+    };
+  }
+  if (next !== state) setState(next);
+
+  return {
+    tab: next.tab,
+    setTab: (tab: PanelTab) => setState((s) => ({ ...s, tab })),
+    snap: next.snap,
+    setSnap: (snap: Snap) => setState((s) => ({ ...s, snap })),
+    inspectorOpen: next.inspectorOpen,
+    setInspectorOpen: (open: boolean) =>
+      setState((s) =>
+        s.inspectorOpen === open ? s : { ...s, inspectorOpen: open, snap: open ? 'half' : s.snap },
+      ),
+    dragHeight,
+    setDragHeight,
+    pending,
+  };
 }
 
 /**
@@ -188,10 +322,12 @@ function CanvasPane({
   slug,
   onReview,
   onNames,
+  sheet,
 }: {
   slug: string;
   onReview: (review: Review | null) => void;
   onNames: (names: Record<string, string>) => void;
+  sheet?: CompactSheet;
 }) {
   const proposal = usePendingProposal(slug);
   const architecture = useArchitecture(slug);
@@ -212,6 +348,7 @@ function CanvasPane({
       proposal={proposal}
       onReview={onReview}
       onNames={onNames}
+      sheet={sheet}
     />
   );
 }
@@ -244,19 +381,15 @@ const styles = stylex.create({
     ':focus-visible::after': { backgroundColor: color['--color-accent'] },
     ':active::after': { backgroundColor: color['--color-accent'] },
   },
-  workspace: {
+  shell: {
     display: 'flex',
     flexDirection: 'column',
     height: `calc(100dvh - ${layout['--header-h']})`,
   },
-  notice: {
-    display: { default: 'block', [media.lg]: 'none' },
-    margin: 0,
-    padding: space['--space-3'],
-    textAlign: 'center',
-    backgroundColor: color['--color-accent-soft'],
-    color: color['--color-fg'],
-  },
+  // No site header on compact screens: the workspace bar is the only one, and the workspace fills
+  // what is visible (`dvh` follows the keyboard on Android; useKeyboardHeight on iOS).
+  shellHeight: (height: string) => ({ height }),
+  workspace: { display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 },
   panes: {
     display: 'grid',
     gridTemplateColumns: 'var(--left-w) 1fr var(--right-w)',
@@ -271,6 +404,32 @@ const styles = stylex.create({
   withPanel: (width: string) => ({ '--right-w': width }),
   withRightRail: { '--right-w': '3rem' },
   pane: { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 },
+  // Compact: the canvas above, shrinking to fit, and the side panel docked under it as a sheet.
+  // Never an overlay, and never a scrolling or transformed box around the canvas (React Flow's
+  // handles would land in the wrong place).
+  stack: { display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 },
+  compactCanvas: { flexGrow: 1 },
+  sheet: {
+    flexShrink: 0,
+    overflow: 'hidden',
+    borderTopWidth: 1,
+    borderTopStyle: 'solid',
+    borderTopColor: color['--color-line'],
+    borderRadius: `${radius['--radius-xl']} ${radius['--radius-xl']} 0 0`,
+    backgroundColor: color['--color-canvas'],
+    boxShadow: '0 -4px 16px rgb(0 0 0 / 0.08)',
+    transitionProperty: 'height',
+    transitionDuration: motion['--duration'],
+    transitionTimingFunction: motion['--ease-out'],
+  },
+  sheetHeight: (height: string) => ({ height }),
+  inspectorHost: {
+    display: { default: 'flex', ':is([hidden])': 'none' },
+    flexDirection: 'column',
+    flexGrow: 1,
+    minHeight: 0,
+  },
+  dragging: { transitionProperty: 'none' },
   left: {
     borderRightWidth: 1,
     borderRightStyle: 'solid',

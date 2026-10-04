@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
-import { color, font, radius } from '../design/tokens.stylex';
+import { color, font, media, radius } from '../design/tokens.stylex';
 
 /**
  * Collapses or expands a workspace pane. `side` is the window edge the pane sits on, so the arrow
@@ -34,8 +34,8 @@ export function PaneToggle({
 
 const styles = stylex.create({
   toggle: {
-    width: 28,
-    height: 28,
+    width: { default: 28, [media.coarse]: 44 },
+    height: { default: 28, [media.coarse]: 44 },
     flexShrink: 0,
     borderWidth: 1,
     borderStyle: 'solid',

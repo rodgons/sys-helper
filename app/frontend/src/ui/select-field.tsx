@@ -1,6 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { type ComponentProps, useId } from 'react';
-import { color, font, radius, space, text } from '../design/tokens.stylex';
+import { color, font, media, radius, space, text } from '../design/tokens.stylex';
 
 /** Labelled native select, styled like TextField. */
 export function SelectField({
@@ -60,7 +60,7 @@ const styles = stylex.create({
     },
     borderRadius: radius['--radius-sm'],
     backgroundColor: color['--color-surface'],
-    fontSize: text['--text-sm'],
+    fontSize: { default: text['--text-sm'], [media.coarse]: text['--text-md'] },
     outline: 'none',
     cursor: 'pointer',
   },

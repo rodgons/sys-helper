@@ -1,27 +1,25 @@
-import { LogOut, Settings } from 'lucide-react';
-import { useState } from 'react';
-import { Route, Routes, useLocation } from 'react-router';
-import { SettingsDialog } from './account/settings-dialog';
+import { matchPath, Route, Routes, useLocation } from 'react-router';
+import { AccountMenu } from './account/account-menu';
 import { useAuth } from './lib/auth';
-import { useMe } from './lib/me';
+import { useCompact } from './lib/compact';
 import { setThemeChoice, useThemeChoice } from './lib/theme';
 import { HomePage } from './pages/home';
 import { LoginPage } from './pages/login';
 import { ProjectsPage } from './pages/projects';
 import { UiKitPage } from './pages/ui-kit';
 import { WorkspacePage } from './pages/workspace';
-import { Avatar } from './ui/avatar';
 import { ButtonRouteLink } from './ui/button';
-import { Menu, MenuHeader, MenuItem, MenuSeparator } from './ui/menu';
 import { SiteHeader } from './ui/site-header';
 import { ThemeMenu } from './ui/theme-menu';
 import { Toaster } from './ui/toaster';
-import { Text } from './ui/typography';
 
 // The UI kit (`/ui-kit`) is a reference for developers, so it is reachable only by URL.
 const VISITOR_LINKS = [{ href: '/', label: 'Home' }];
 
-/** App shell: site header, the page for the current route and the toasts. Unknown paths fall back to the home page. */
+/**
+ * App shell: site header, the page for the current route and the toasts. Unknown paths fall back to
+ * the home page. The compact workspace has its own bar, so there the site header goes.
+ */
 export function Root() {
   const { pathname } = useLocation();
   const auth = useAuth();
@@ -29,15 +27,19 @@ export function Root() {
   const links = auth.status === 'signedIn' ? [] : VISITOR_LINKS;
   const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   const theme = useThemeChoice();
+  const compact = useCompact();
+  const ownHeader = compact && matchPath('/p/:slug', normalized) !== null;
 
   return (
     <>
-      <SiteHeader
-        links={links}
-        currentPath={normalized}
-        tools={<ThemeMenu choice={theme} onChange={setThemeChoice} />}
-        actions={normalized === '/login' ? null : <AuthAction />}
-      />
+      {ownHeader ? null : (
+        <SiteHeader
+          links={links}
+          currentPath={normalized}
+          tools={<ThemeMenu choice={theme} onChange={setThemeChoice} />}
+          actions={normalized === '/login' ? null : <AuthAction />}
+        />
+      )}
       <Routes>
         <Route path="/ui-kit" element={<UiKitPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -54,44 +56,10 @@ function AuthAction() {
   const auth = useAuth();
   if (auth.status === 'loading') return null;
   return auth.status === 'signedIn' ? (
-    <AccountMenu onSignOut={auth.signOut} />
+    <AccountMenu />
   ) : (
     <ButtonRouteLink to="/login" size="sm" variant="secondary">
       Sign in
     </ButtonRouteLink>
-  );
-}
-
-/** The User's avatar, opening a menu of account actions. */
-function AccountMenu({ onSignOut }: { onSignOut: () => void }) {
-  const me = useMe();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  return (
-    <>
-      <Menu
-        label="Account"
-        trigger={<Avatar name={me.data?.displayName ?? ''} src={me.data?.avatarUrl} />}
-      >
-        {me.data && (
-          <>
-            <MenuHeader>
-              <Text size="sm" tone="muted">
-                Signed in as
-              </Text>
-              {me.data.displayName}
-            </MenuHeader>
-            <MenuSeparator />
-          </>
-        )}
-        <MenuItem icon={Settings} onSelect={() => setSettingsOpen(true)}>
-          Settings
-        </MenuItem>
-        <MenuSeparator />
-        <MenuItem icon={LogOut} onSelect={onSignOut}>
-          Sign out
-        </MenuItem>
-      </Menu>
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
-    </>
   );
 }

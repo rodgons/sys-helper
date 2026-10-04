@@ -11,7 +11,7 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 | `architecture/` | Canvas (React Flow): `canvas.tsx` (Editor + Proposal review), `model.ts` (catalog, doc ↔ flow), `proposal.ts`, `autosave.ts`, `layout.ts` (dagre), `nodes.tsx`, `shapes.tsx`, `dock.tsx`, `inspector.tsx` |
 | `conversation/` | Chat pane, markdown, Proposal card |
 | `knowledge/` | Right-pane tabs (`side-panel.tsx`), Requirements, Decisions |
-| `projects/`, `account/` | Sidebar, title, new-project form; Settings dialog (default Experience Level, and Delete account behind a second confirmation, which signs out on success) |
+| `projects/`, `account/` | Sidebar, title (and its rename and delete dialogs), new-project form, the compact workspace bar and Project drawer; the account menu; Settings dialog (default Experience Level, and Delete account behind a second confirmation, which signs out on success) |
 | `ui/`, `design/` | Base components and StyleX tokens (the "design system") |
 
 ## Sign-in
@@ -19,6 +19,7 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 - `AuthProvider` (`lib/auth.tsx`) tracks the Supabase session. `signIn('github' | 'google')` starts that provider's OAuth and returns to `/projects`. The client uses the PKCE flow (`lib/supabase.ts`): the redirect carries a one-time `?code=`, never tokens in the URL.
 - Sign-in lives on its own page, `/login` (`pages/login.tsx`): **Continue with GitHub** and **Continue with Google** as two equal outline buttons (neither is primary). The home page's **Get started** and the header's **Sign in** (hidden on `/login`) link to it with `ButtonRouteLink` (`ui/button.tsx`, a Button-styled router `Link`). Signed-in Users visiting `/login` go to `/projects`. Say "Google", never "Gmail".
 - `RequireUser` (`pages/require-user.tsx`) explains the API's refusals. `identity_required`: "Sign in with GitHub or Google to continue". `not_allowed`: reads the identities from the error body (`refusedIdentities` in `lib/me.ts`, via `ApiError.body`) and tells a GitHub User to ask with their username and a Google User to send their Google id, which it shows in a `CopyValue` (`ui/copy-value.tsx`). A linked User sees both.
+- The site header (`ui/site-header.tsx`, filled in by `root.tsx`) shows the theme menu and then the account menu (`account/account-menu.tsx`: the avatar, with Settings and Sign out) or, for visitors, **Sign in**, at every width. Below `md` the page links move into the **Menu**, which holds only page links: visitors get Home, signed-in Users (no links) get no Menu.
 - `useMe()` returns `{displayName, avatarUrl}`. Avatars may come from GitHub or Google, so the production CSP (`Dockerfile`) admits `avatars.githubusercontent.com` and `lh3.googleusercontent.com`.
 
 ## Server state (TanStack Query)
@@ -35,9 +36,20 @@ Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` on
 
 ## Workspace (`pages/workspace.tsx`)
 
-Three panes: project sidebar, canvas, side panel (Conversation / Requirements / Decisions tabs; all stay mounted). Canvas-related components are keyed by slug suffix, so switching Projects remounts them with fresh state. The canvas publishes two things upward that the chat and the knowledge tabs consume:
+Three panes on desktop: project sidebar, canvas, side panel (Conversation / Requirements / Decisions tabs; all stay mounted). Compact screens get one column instead (below). Canvas-related components are keyed by slug suffix, so switching Projects remounts them with fresh state. The canvas publishes two things upward that the chat and the knowledge tabs consume:
 - `Review`: the pending Proposal's accept/reject actions, staleness and progress.
 - `names`: canvas id → display name.
+
+### Compact layout (below 64rem)
+
+- **One tier:** everything below `media.lg` (phones and portrait tablets) is compact; 64rem and up is desktop. `COMPACT_QUERY` (`design/breakpoints.ts`, `(max-width: 63.99rem)`) names it in JS, and a test ties it to `media.lg`. `useCompact()` (`lib/compact.ts`) reads it through `matchMedia` and `useSyncExternalStore`, so every consumer flips together.
+- **`useCompact()` drives behaviour and tier-only chrome** (canvas props, where the Inspector renders, the sheet or the resizer and rails, the sidebar). Tier-only chrome holds no important state. Sizing and placement stay in StyleX media keys.
+- **One tree:** the canvas and the side panel keep their place in the React tree on both tiers (chrome that only one tier has renders `null` in its slot), so crossing the breakpoint never remounts them: the chat draft, a streaming reply (the reply hook aborts on unmount) and unsaved canvas edits survive. Never render a second workspace tree.
+- **Bottom sheet** (`knowledge/bottom-sheet.tsx`): the side panel docks under the canvas, which shrinks to fit above it. It is never an overlay, and the canvas is never in a scrolling or CSS-transformed box (React Flow's handle offsets break). Its handle is a horizontal window splitter (`separator` "Resize panel", `aria-valuetext` Peek/Half/Full): dragging snaps to the nearest of **peek** (76px: handle and tab row), **half** (50%) and **full** (all but 56px); a tap or Enter toggles peek and half; the arrow keys, Home and End step. The sheet draws its own tab row (`PanelTabs`, with the counts, the Needs Review dot and a pending-Proposal dot) and renders `SidePanel` `bare` with a controlled `tab`; a tab tapped at peek opens half.
+- **Workspace bar** (`projects/workspace-bar.tsx`): on `/p/:slug` in the compact layout, Root leaves out the site header and the workspace fills `100dvh` under one 56px bar (the page's banner): ☰ "Projects" opens the drawer; the Project name is the `h1`, on one line with an ellipsis; a ⋯ "Project actions" menu opens `RenameProjectDialog` (follows the new slug) and `DeleteProjectDialog` (confirms, then goes to Projects with a toast), both from `projects/project-title.tsx`, in place of the inline rename form; then the account menu. Every other page keeps the site header.
+- **Project drawer** (`projects/project-drawer.tsx`): a modal native `<dialog>` named Projects (focus trap, Esc), anchored left, `min(20rem, 85vw)` wide and full height, sliding in. It lists the Projects (rows at least 48px, the current one `aria-current`), New project (closes the drawer and opens the new-project dialog) and a footer with the logo (a link home) and the theme menu (`placement="above"`), clear of the bottom safe area. It closes on ✕, a backdrop tap, Esc, a swipe left, picking any Project (the current one too) and any navigation.
+- **Keyboard and viewport:** the viewport meta (`index.html`) has `interactive-widget=resizes-content`, so on Android `dvh` shrinks with the on-screen keyboard and the sheet's composer stays above it with no JS. iOS Safari supports neither that nor the VirtualKeyboard API and pans the visual viewport instead, so on compact `useKeyboardHeight` (`lib/keyboard.ts`) sizes the workspace shell to `visualViewport.height` and undoes the pan by scrolling the window back to the top (translating the shell by `offsetTop` is the alternative, if a real iPhone prefers it). It does nothing without `visualViewport` or while the page is pinch-zoomed. Playwright can't open a virtual keyboard, so check this on devices. Never add `maximum-scale`/`user-scalable=no`: 16px fields (see Styling) are what stop the focus-zoom.
+- **What resets** (`useWorkspaceView` in `workspace.tsx`): opening a Project starts on the Conversation with the sheet at half (not remembered); crossing the breakpoint puts the sheet at half and keeps the tab (the drawer, being compact-only chrome, simply goes); a Proposal arriving while the sheet is full drops it to half, so its preview shows. The side-panel width keeps its own storage.
 
 ### Side panel width (`lib/panel-width.ts`)
 
@@ -51,6 +63,15 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 - Spotlight (`model.ts` `spotlight`): while anything is selected, everything it doesn't touch is `dimmed`. That means the selection, a selected Component's Connections and their other ends, and a selected Connection's two ends. It runs on what is shown, so a Proposal preview's new and removed Connections count. Dimmed items stay fully interactive.
 - Component window: a click selects a Component, and clicking it again while it is the only selection opens its Inspector beside it (`opened`). A Component added from the dock opens straight away. Closing the window, or the first Esc, keeps the selection and the spotlight. The next Esc clears both.
 - Component Types: `model.ts` `COMPONENT_TYPES` (labels, property fields) and `shapes.tsx` `LOOKS` (icon + outline). Both must match the Go catalog.
+
+- **Compact canvas** (`sheet` prop, a `CompactSheet`): the workspace passes it only in the compact layout.
+  - Components aren't draggable, so one finger pans anywhere and two pinch; no multi-select or box selection (`multiSelectionKeyCode`/`selectionKeyCode` null). Taps still select.
+  - One tap on a Component or Connection selects it and opens the Inspector (`sheet.onOpenChange(true)`), with no "click it again" hint. The canvas portals the Inspector (`inSheet`) into `sheet.host`, a box in the sheet under its tab row that replaces the (still mounted, hidden) tab content; never the node or edge toolbar. ✕, Esc or a tab tap close it and keep the selection; a tap on the pane closes it and clears the selection; once nothing (or several things) is selected it closes itself. Remove ("Delete component"/"Delete connection") is the delete path; Backspace and Esc still work with a keyboard.
+  - Opening the Inspector moves the sheet from peek or full to half (`useWorkspaceView`); closing leaves it. Once the sheet settles, `usePanIntoView` centres the selected item if the sheet now covers it.
+  - The controls drop zoom in/out and keep Fit and Tidy up. Fit has no Inspector space: 16px at the sides and top, 64px at the bottom (104px with the Proposal bar), `minZoom` 0.25. Tune on a device.
+  - **"+ Add"** (`ComponentPicker` in `dock.tsx`) replaces the dock's icon row: one button opening a grid (`dialog` "Add component", three columns of icon and label) above it, closing on a pick, a backdrop tap or Esc. A pick adds the Component at the centre of the view, selects it and opens its Inspector in the sheet without focusing a field, so the keyboard stays down. The desktop dock (drag and tap) is unchanged.
+  - **Proposal banner** (`CompactProposalBar`): one line, "Proposal #N", the summary clipped, Accept and Reject; a short second line when it is out of date ("Out of date. Ask the AI to redo it.", Accept disabled) or the review failed. The chat's Proposal card keeps the full summary.
+  - Tap-to-connect (React Flow's default) is the best-effort way to draw Connections. On `pointer: coarse` the handles grow to 24px. The control buttons are 44px on the compact canvas (`compact-controls`) and on `pointer: coarse` (`global.css`, since StyleX can't reach React Flow's own buttons).
 
 ### Autosave (`architecture/autosave.ts`)
 
@@ -76,6 +97,7 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 ## Styling
 
 - StyleX only (`stylex.create`, compiled; no runtime fallback). Use token roles from `design/tokens.stylex.ts` (`color['--color-fg']`, `space[…]`, `media.lg`), never raw values.
+- **Touch sizing** (`media.coarse`, `@media (pointer: coarse)`, at every width, iPads in landscape included): the shared `TextField`, `TextArea`, `SelectField` and the chat composer use `--text-md` (16px), so iOS doesn't zoom on focus; icon buttons (theme, ✕, pane toggles, the header Menu, any `Menu` trigger such as the avatar), `sm` Buttons and menu items are at least 44×44. Links inside running text are exempt, and the 11px eyebrow labels and 10px chat metadata don't change. Mouse users keep 14px fields and the smaller controls. Write it as `{ default: …, [media.coarse]: … }`.
 - New base components go in `src/ui/` and must be shown on `/ui-kit` (`pages/ui-kit.tsx`).
 - Icons: `lucide-react`. Toasts: `react-toastify` via `ui/toaster.tsx`.
 
@@ -88,6 +110,8 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 
 ## Tests
 
+- `setCompact(true | false)` (`src/test/render.tsx`) puts a test in the compact or desktop layout by stubbing `matchMedia` (the test DOM evaluates no media queries); calling it mid-test crosses the breakpoint. `setup.ts` resets it to desktop before each test.
 - Vitest + Testing Library: `renderWithQuery(ui, { route, auth: signedIn() })`, `mockApi({ 'GET /api/…': body | {status, body} | fn })` (unmatched requests throw), `sseResponse(...)` for replies, `<LocationProbe />` for navigation. All in `src/test/render.tsx`.
 - E2E in `e2e/*.spec.ts`, using `test` from `e2e/fixtures.ts` (`signIn({ provider, page })`, default GitHub, returns the identity's display `name` and provider `id`), against the real API with `AI_FAKE=1`. Playwright builds and runs its own API and Vite on dedicated ports (`e2e/servers.ts`: 18080/15173), so it never reuses a `make dev` server that would call the real model. A second API on 18081 admits nobody; not-allowed tests reroute their API calls to it with `page.route`.
+- Playwright has two projects. `chromium` (desktop) runs every spec except `*.mobile.spec.ts`; `mobile` (Chromium at 390×844 with `hasTouch` and `isMobile`, so `pointer: coarse` matches and the compact layout applies) runs only `*.mobile.spec.ts`. The test DOM evaluates no media queries, so touch sizes (16px fields, 44×44 targets) are measured there (`e2e/touch-sizing.mobile.spec.ts`).
 - `demo/workspace.capture.ts` (`make demo-screenshots`) regenerates the home page screenshots. It is not a test suite.

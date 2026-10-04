@@ -71,4 +71,16 @@ describe('Menu', () => {
 
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
+
+  it('opens above its button when asked, with the same items', () => {
+    render(
+      <Menu label="Theme" trigger="Open" placement="above">
+        <MenuItem onSelect={vi.fn()}>Dark</MenuItem>
+      </Menu>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Theme' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Dark' })).toHaveFocus();
+  });
 });

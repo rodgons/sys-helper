@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { vi } from 'vitest';
+import { COMPACT_QUERY } from '../design/breakpoints';
 import { AuthContext, type AuthContextValue } from '../lib/auth';
 
 export const signedOut = (): AuthContextValue => ({
@@ -74,4 +75,34 @@ export function sseResponse(...events: [event: string, data: unknown][]) {
 /** Renders the current router path, so tests can assert on navigation. */
 export function LocationProbe() {
   return <output data-testid="location">{useLocation().pathname}</output>;
+}
+
+let compact = false;
+const compactListeners = new Set<() => void>();
+
+/**
+ * Puts the window in the compact layout (`true`) or the desktop one (`false`), the way `useCompact()`
+ * reads it. The test DOM evaluates no media queries, so this stubs `matchMedia`; any other query
+ * doesn't match. Calling it mid-test re-renders the subscribers, as crossing the breakpoint does.
+ * `setup.ts` resets it to desktop before every test.
+ */
+export function setCompact(value: boolean) {
+  window.matchMedia = (query: string) =>
+    ({
+      media: query,
+      get matches() {
+        return query === COMPACT_QUERY && compact;
+      },
+      onchange: null,
+      addEventListener: (_: string, listener: () => void) => compactListeners.add(listener),
+      removeEventListener: (_: string, listener: () => void) => compactListeners.delete(listener),
+      addListener: (listener: () => void) => compactListeners.add(listener),
+      removeListener: (listener: () => void) => compactListeners.delete(listener),
+      dispatchEvent: () => true,
+    }) as unknown as MediaQueryList;
+  if (compact === value) return;
+  compact = value;
+  act(() => {
+    for (const listener of [...compactListeners]) listener();
+  });
 }

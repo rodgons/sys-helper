@@ -1,7 +1,15 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useNavigate } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Root } from '../root';
-import { LocationProbe, mockApi, renderWithQuery, signedIn } from '../test/render';
+import {
+  LocationProbe,
+  mockApi,
+  renderWithQuery,
+  setCompact,
+  signedIn,
+  sseResponse,
+} from '../test/render';
 
 const me = { displayName: 'octocat', avatarUrl: '' };
 const shortener = {
@@ -12,6 +20,16 @@ const shortener = {
 const noKnowledge = { experienceLevel: '', requirements: [], decisions: [] };
 const emptyArchitecture = { version: 0, document: { components: [], connections: [] } };
 const chat = { slug: 'chat-app-a1b2c3d4e5', name: 'Chat App', updatedAt: '2026-09-29T00:00:00Z' };
+
+/** A button that navigates within the app, as a link elsewhere on the page would. */
+function GoTo({ path }: { path: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(path)}>
+      Go
+    </button>
+  );
+}
 
 function renderAt(route: string) {
   return renderWithQuery(
@@ -249,12 +267,533 @@ describe('Workspace', () => {
     expect(screen.queryByText('Order Cache')).not.toBeInTheDocument();
     expect(screen.queryByText('Here is a cache.')).not.toBeInTheDocument();
   });
+});
 
-  it('tells small screens the workspace is built for desktop', async () => {
+describe('Workspace on compact screens', () => {
+  const at = '2026-09-30T00:00:00Z';
+  const proposal = {
+    seq: 1,
+    summary: 'Add a cache',
+    status: 'pending',
+    baseVersion: 0,
+    changes: [{ op: 'add_component', ref: 'cache', type: 'cache', name: 'Order Cache' }],
+  };
+  const handle = () => screen.getByRole('separator', { name: 'Resize panel' });
+  const snap = () => handle().getAttribute('aria-valuetext');
+
+  it('docks the side panel under the canvas, with no project list, resizer or notice', async () => {
+    setCompact(true);
     stubApi();
     renderAt('/p/url-shortener-k3xa9q2m7p');
 
-    expect(await screen.findByText(/best on a screen at least 1024px wide/i)).toBeInTheDocument();
+    expect(await screen.findByRole('tab', { name: 'Conversation', selected: true })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Canvas' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Projects' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Hide (projects|chat)/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/best on a screen/i)).not.toBeInTheDocument();
+    expect(handle()).toHaveAttribute('aria-orientation', 'horizontal');
+    expect(screen.getAllByRole('tablist')).toHaveLength(1);
+  });
+
+  it('shows the counts, the Needs Review dot and the pending-Proposal dot on its tabs', async () => {
+    setCompact(true);
+    stubApi({
+      'GET /api/projects/url-shortener-k3xa9q2m7p/knowledge': {
+        experienceLevel: '',
+        requirements: [{ id: 'R1', category: 'scale', statement: '10k redirects per second' }],
+        decisions: [
+          {
+            id: 'D1',
+            title: 'Cache redirects',
+            rationale: 'Reads dominate.',
+            pattern: '',
+            alternative: '',
+            requirements: [],
+            targets: [],
+            author: 'ai',
+            needsReview: true,
+          },
+        ],
+      },
+      'GET /api/projects/url-shortener-k3xa9q2m7p/messages': [
+        { role: 'assistant', body: 'Here is a cache.', createdAt: at, proposal },
+      ],
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    expect(await screen.findByRole('tab', { name: /Requirements 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Decisions 1 1 need review/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole('tab', { name: /Conversation Proposal to review/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('opens at half, toggles peek and half from the handle, and opens half from a tab', async () => {
+    setCompact(true);
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'Half-typed' } });
+    expect(snap()).toBe('Half');
+
+    fireEvent.click(handle());
+    expect(snap()).toBe('Peek');
+    fireEvent.click(handle());
+    expect(snap()).toBe('Half');
+    fireEvent.keyDown(handle(), { key: 'Home' });
+    fireEvent.click(screen.getByRole('tab', { name: /Requirements/ }));
+
+    expect(snap()).toBe('Half');
+    expect(screen.getByRole('tab', { name: /Requirements/, selected: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Conversation' }));
+    expect(screen.getByLabelText('Message')).toHaveValue('Half-typed');
+  });
+
+  it('opens at half on every Project open', async () => {
+    setCompact(true);
+    stubApi();
+    renderWithQuery(
+      <>
+        <Root />
+        <GoTo path="/p/chat-app-a1b2c3d4e5" />
+      </>,
+      { route: '/p/url-shortener-k3xa9q2m7p', auth: signedIn() },
+    );
+    await screen.findByLabelText('Message');
+    fireEvent.keyDown(handle(), { key: 'End' });
+    expect(snap()).toBe('Full');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Chat App' })).toBeInTheDocument();
+    expect(snap()).toBe('Half');
+  });
+
+  it('drops from full to half when a Proposal arrives', async () => {
+    setCompact(true);
+    stubApi({
+      'POST /api/projects/url-shortener-k3xa9q2m7p/messages': ({ json }: { json?: unknown }) => ({
+        status: 201,
+        body: { role: 'user', body: (json as { body: string }).body, createdAt: at },
+      }),
+      'POST /api/projects/url-shortener-k3xa9q2m7p/reply': () =>
+        sseResponse(['done', { role: 'assistant', body: 'A cache.', createdAt: at, proposal }]),
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'Speed it up' } });
+    fireEvent.keyDown(handle(), { key: 'End' });
+    expect(snap()).toBe('Full');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByRole('region', { name: 'Proposal' })).toBeInTheDocument();
+    expect(snap()).toBe('Half');
+  });
+
+  it('swaps the site header for a workspace bar, only in the workspace', async () => {
+    setCompact(true);
+    stubApi();
+    const { unmount } = renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'URL Shortener' }),
+    ).toBeInTheDocument();
+    // One banner: the workspace bar, without the site header's brand link.
+    const bar = within(screen.getByRole('banner'));
+    expect(bar.queryByRole('link', { name: /helper/ })).not.toBeInTheDocument();
+    expect(bar.getByRole('heading', { level: 1, name: 'URL Shortener' })).toBeInTheDocument();
+    expect(bar.getByRole('button', { name: 'Projects' })).toBeInTheDocument();
+    expect(bar.getByRole('button', { name: 'Project actions' })).toBeInTheDocument();
+    expect(await bar.findByRole('img', { name: 'octocat' })).toBeInTheDocument();
+    unmount();
+
+    renderAt('/projects');
+    expect(
+      within(screen.getByRole('banner')).getByRole('link', { name: /helper/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the Projects drawer from ☰ and switches Projects from it', async () => {
+    setCompact(true);
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.click(await screen.findByRole('button', { name: 'Projects' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Projects' });
+    expect(await within(drawer).findByRole('link', { name: 'URL Shortener' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(drawer).getByRole('link', { name: 'sys-helper' })).toHaveAttribute('href', '/');
+    expect(within(drawer).getByRole('button', { name: 'Theme' })).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('link', { name: 'Chat App' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/p/chat-app-a1b2c3d4e5'),
+    );
+    expect(screen.queryByRole('dialog', { name: 'Projects' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Chat App' })).toBeInTheDocument();
+  });
+
+  it('closes the drawer with ✕, Esc, a swipe left or picking the current Project', async () => {
+    setCompact(true);
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    const open = async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Projects' }));
+      return screen.getByRole('dialog', { name: 'Projects' });
+    };
+    const closed = () => expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(within(await open()).getByRole('button', { name: 'Close' }));
+    closed();
+    fireEvent(await open(), new Event('cancel', { cancelable: true }));
+    closed();
+    const drawer = await open();
+    fireEvent.pointerDown(drawer, { clientX: 200, clientY: 300 });
+    fireEvent.pointerUp(drawer, { clientX: 80, clientY: 310 });
+    closed();
+    fireEvent.click(await within(await open()).findByRole('link', { name: 'URL Shortener' }));
+    closed();
+    expect(screen.getByTestId('location')).toHaveTextContent('/p/url-shortener-k3xa9q2m7p');
+  });
+
+  it('creates a Project from the drawer', async () => {
+    const created = { slug: 'search-q1w2e3r4t5', name: 'Search', updatedAt: at };
+    setCompact(true);
+    stubApi({
+      'POST /api/projects': { status: 201, body: created },
+      'GET /api/projects/search-q1w2e3r4t5': created,
+      'GET /api/projects/search-q1w2e3r4t5/architecture': emptyArchitecture,
+      'GET /api/projects/search-q1w2e3r4t5/messages': [],
+      'GET /api/projects/search-q1w2e3r4t5/knowledge': noKnowledge,
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.click(await screen.findByRole('button', { name: 'Projects' }));
+
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Projects' })).getByRole('button', {
+        name: 'New project',
+      }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    fireEvent.change(within(dialog).getByLabelText('Project name'), {
+      target: { value: 'Search' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Search' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('renames the Project from ⋯ in a dialog and follows the new slug', async () => {
+    const renamed = { ...shortener, slug: 'link-service-k3xa9q2m7p', name: 'Link Service' };
+    const rename = vi.fn(() => renamed);
+    setCompact(true);
+    stubApi({
+      'PATCH /api/projects/url-shortener-k3xa9q2m7p': rename,
+      'GET /api/projects/link-service-k3xa9q2m7p': renamed,
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Project actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+    const dialog = screen.getByRole('dialog', { name: 'Rename project' });
+    fireEvent.change(within(dialog).getByLabelText('Project name'), {
+      target: { value: 'Link Service' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/p/link-service-k3xa9q2m7p'),
+    );
+    expect(rename).toHaveBeenCalledWith(
+      expect.objectContaining({ json: { name: 'Link Service' } }),
+    );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('deletes the Project from ⋯ only after confirming', async () => {
+    const remove = vi.fn(() => ({ status: 204 }));
+    setCompact(true);
+    stubApi({ 'DELETE /api/projects/url-shortener-k3xa9q2m7p': remove });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Project actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    const dialog = screen.getByRole('dialog', { name: /delete “URL Shortener”/i });
+    expect(remove).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete project' }));
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/projects'));
+    expect(remove).toHaveBeenCalled();
+  });
+
+  it('opens the account menu from the avatar in the bar', async () => {
+    setCompact(true);
+    stubApi();
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
+  });
+
+  it('keeps the draft, unsaved canvas edits and the tab across the breakpoint', async () => {
+    stubApi({
+      'PUT /api/projects/url-shortener-k3xa9q2m7p/architecture': ({
+        json,
+      }: {
+        json?: unknown;
+      }) => ({
+        version: (json as { version: number }).version + 1,
+      }),
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    fireEvent.change(await screen.findByLabelText('Message'), { target: { value: 'Half-typed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Cache' }));
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /Requirements/ }));
+
+    setCompact(true);
+
+    expect(screen.getByRole('separator', { name: 'Resize panel' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Requirements/, selected: true })).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toHaveValue('Half-typed');
+    expect(document.querySelector('.react-flow__node')).toHaveTextContent('Cache');
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+    setCompact(false);
+
+    expect(screen.getByRole('button', { name: 'Hide chat' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Requirements/, selected: true })).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toHaveValue('Half-typed');
+    expect(document.querySelector('.react-flow__node')).toHaveTextContent('Cache');
+  });
+});
+
+describe('Canvas on compact screens', () => {
+  const architecture = {
+    version: 3,
+    document: {
+      components: [
+        { id: 'api', type: 'service', name: 'Links API', position: { x: 0, y: 0 } },
+        { id: 'db', type: 'database', name: 'Links DB', position: { x: 300, y: 0 } },
+      ],
+      connections: [{ id: 'c1', source: 'api', target: 'db', kind: 'sync' }],
+    },
+  };
+  const API = '/api/projects/url-shortener-k3xa9q2m7p';
+
+  function setup() {
+    setCompact(true);
+    const save = vi.fn(({ json }: { json?: unknown }) => ({
+      version: (json as { version: number }).version + 1,
+    }));
+    stubApi({ [`GET ${API}/architecture`]: architecture, [`PUT ${API}/architecture`]: save });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    return save;
+  }
+  const sheet = () => within(screen.getByRole('complementary', { name: 'Project panel' }));
+  const snap = () =>
+    screen.getByRole('separator', { name: 'Resize panel' }).getAttribute('aria-valuetext');
+  const selected = () => document.querySelector('.react-flow__node.selected');
+  function savedNames(save: ReturnType<typeof setup>) {
+    const call = save.mock.calls.at(-1);
+    if (!call) throw new Error('nothing was saved');
+    const { document } = call[0].json as { document: { components: { name: string }[] } };
+    return document.components.map((c) => c.name);
+  }
+
+  it('opens the Inspector in the sheet on one tap, under the tabs', async () => {
+    setup();
+
+    fireEvent.click(await screen.findByText('Links API'));
+
+    const inspector = within(sheet().getByRole('region', { name: 'Inspector' }));
+    expect(inspector.getByText('Service')).toBeInTheDocument();
+    expect(inspector.getByLabelText('Name')).toHaveValue('Links API');
+    expect(sheet().getByRole('tab', { name: 'Conversation' })).toBeVisible();
+    expect(screen.getByLabelText('Message')).not.toBeVisible();
+    expect(screen.queryByText(/Click it again/)).not.toBeInTheDocument();
+  });
+
+  it('closes the Inspector from a tab, keeping the selection, and clears it from the pane', async () => {
+    setup();
+    fireEvent.click(await screen.findByText('Links API'));
+
+    fireEvent.click(sheet().getByRole('tab', { name: /Requirements/ }));
+
+    expect(screen.queryByRole('region', { name: 'Inspector' })).not.toBeInTheDocument();
+    expect(selected()).toHaveTextContent('Links API');
+    expect(screen.getByRole('tab', { name: /Requirements/, selected: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Links API'));
+    expect(screen.getByRole('region', { name: 'Inspector' })).toBeInTheDocument();
+
+    fireEvent.click(document.querySelector('.react-flow__pane') as Element);
+
+    expect(screen.queryByRole('region', { name: 'Inspector' })).not.toBeInTheDocument();
+    expect(selected()).toBeNull();
+  });
+
+  it('brings the sheet to half from peek or full when the Inspector opens', async () => {
+    setup();
+    await screen.findByText('Links API');
+    const handle = screen.getByRole('separator', { name: 'Resize panel' });
+
+    fireEvent.keyDown(handle, { key: 'Home' });
+    fireEvent.click(screen.getByText('Links API'));
+    expect(snap()).toBe('Half');
+
+    fireEvent.click(sheet().getByRole('button', { name: 'Close' }));
+    expect(selected()).toHaveTextContent('Links API');
+    fireEvent.keyDown(handle, { key: 'End' });
+    fireEvent.click(screen.getByText('Links DB'));
+    expect(snap()).toBe('Half');
+  });
+
+  it('renames a Component in the sheet and autosaves it', async () => {
+    const save = setup();
+    fireEvent.click(await screen.findByText('Links API'));
+
+    fireEvent.change(sheet().getByLabelText('Name'), { target: { value: 'Redirects' } });
+
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 2000 });
+    expect(savedNames(save)).toEqual(['Redirects', 'Links DB']);
+  });
+
+  it('removes a Component from the sheet and autosaves it', async () => {
+    const save = setup();
+    fireEvent.click(await screen.findByText('Links API'));
+
+    fireEvent.click(sheet().getByRole('button', { name: 'Delete component' }));
+
+    expect(screen.queryByText('Links API')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Inspector' })).not.toBeInTheDocument();
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 2000 });
+    expect(savedNames(save)).toEqual(['Links DB']);
+  });
+
+  it('adds from a "+ Add" grid of every Component Type, opening its Inspector unfocused', async () => {
+    const save = setup();
+    await screen.findByText('Links API');
+    expect(screen.queryByRole('toolbar', { name: 'Add component' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    const grid = within(screen.getByRole('dialog', { name: 'Add component' }));
+    expect(grid.getAllByRole('button')).toHaveLength(13);
+    fireEvent.click(grid.getByRole('button', { name: 'Cache' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Add component' })).not.toBeInTheDocument();
+    expect(selected()).toHaveTextContent('Cache');
+    expect(sheet().getByLabelText('Name')).toHaveValue('Cache');
+    expect(sheet().getByLabelText('Name')).not.toHaveFocus();
+    expect(document.activeElement?.tagName).not.toBe('INPUT');
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 2000 });
+    expect(savedNames(save)).toEqual(['Links API', 'Links DB', 'Cache']);
+  });
+
+  it('leaves a Component added on compact just selected after crossing to desktop', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Add component' })).getByRole('button', {
+        name: 'Cache',
+      }),
+    );
+
+    setCompact(false);
+
+    expect(selected()).toHaveTextContent('Cache');
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Inspector' })).toHaveTextContent(/Click it again/);
+  });
+
+  it('closes the "+ Add" grid on Esc and on a tap outside it', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Add component' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close the component grid' }));
+    expect(screen.queryByRole('dialog', { name: 'Add component' })).not.toBeInTheDocument();
+    expect(screen.getByText('Links API')).toBeInTheDocument();
+  });
+
+  it("doesn't let Components be dragged, and keeps only Fit and Tidy up", async () => {
+    setup();
+    await screen.findByText('Links API');
+
+    expect(document.querySelector('.react-flow__node.draggable')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Zoom In' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Zoom Out' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fit View' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tidy up' })).toBeInTheDocument();
+  });
+});
+
+describe('Proposal banner on compact screens', () => {
+  const at = '2026-09-30T00:00:00Z';
+  const API = '/api/projects/url-shortener-k3xa9q2m7p';
+  const addCache = {
+    seq: 1,
+    summary: 'Add a cache in front of the database so that redirects stay fast under load',
+    status: 'pending',
+    baseVersion: 0,
+    changes: [{ op: 'add_component', ref: 'cache', type: 'cache', name: 'Order Cache' }],
+  };
+
+  function setup(proposal: unknown, extra: Parameters<typeof mockApi>[0] = {}) {
+    setCompact(true);
+    stubApi({
+      [`GET ${API}/messages`]: [
+        { role: 'assistant', body: 'Here is a cache.', createdAt: at, proposal },
+      ],
+      [`POST ${API}/reply`]: () =>
+        sseResponse(['done', { role: 'assistant', body: 'Noted.', createdAt: at }]),
+      ...extra,
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+  }
+  const banner = async () => within(await screen.findByRole('region', { name: 'Proposal' }));
+
+  it('shows the Proposal number with Accept and Reject, and accepts onto the canvas', async () => {
+    const accept = vi.fn(() => ({ version: 1 }));
+    setup(addCache, { [`POST ${API}/proposals/1/accept`]: accept });
+    const bar = await banner();
+    expect(bar.getByText('Proposal #1')).toBeInTheDocument();
+    expect(bar.getByText(addCache.summary)).toBeInTheDocument();
+
+    fireEvent.click(bar.getByRole('button', { name: 'Accept' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Proposal' })).not.toBeInTheDocument(),
+    );
+    expect(accept).toHaveBeenCalled();
+    expect(document.querySelector('.react-flow__node')).toHaveTextContent('Order Cache');
+    expect(document.querySelector('.react-flow__node')).not.toHaveTextContent('new');
+  });
+
+  it('rejects from the banner', async () => {
+    const reject = vi.fn(() => ({ status: 204 }));
+    setup(addCache, { [`POST ${API}/proposals/1/reject`]: reject });
+
+    fireEvent.click((await banner()).getByRole('button', { name: 'Reject' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Proposal' })).not.toBeInTheDocument(),
+    );
+    expect(reject).toHaveBeenCalled();
+    expect(document.querySelector('.react-flow__node')).toBeNull();
+  });
+
+  it('says on a second line when it is out of date, and disables Accept', async () => {
+    setup({ ...addCache, changes: [{ op: 'remove_component', id: 'gone' }] });
+    const bar = await banner();
+
+    expect(bar.getByText('Out of date. Ask the AI to redo it.')).toBeInTheDocument();
+    expect(bar.getByRole('button', { name: 'Accept' })).toBeDisabled();
   });
 });
 

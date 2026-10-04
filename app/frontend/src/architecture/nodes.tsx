@@ -207,9 +207,10 @@ const styles = stylex.create({
     overflowWrap: 'anywhere',
   },
   summary: { position: 'relative', fontSize: text['--text-xs'], color: color['--color-fg-muted'] },
+  // Larger on touch screens, for tapping a source handle and then a target (best-effort connecting).
   handle: {
-    width: 8,
-    height: 8,
+    width: { default: 8, [media.coarse]: 24 },
+    height: { default: 8, [media.coarse]: 24 },
     backgroundColor: color['--color-surface'],
     borderColor: color['--color-line-strong'],
   },

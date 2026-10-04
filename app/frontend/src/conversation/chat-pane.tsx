@@ -2,7 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import { MessageSquarePlus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Review } from '../architecture/review';
-import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
+import { color, font, media, motion, radius, space, text } from '../design/tokens.stylex';
 import { isBusy, isLimit } from '../lib/api';
 import { useMessages, useNewConversation, useReply, useSendMessage } from '../lib/conversation';
 import { Button } from '../ui/button';
@@ -272,7 +272,7 @@ const styles = stylex.create({
     borderBottomStyle: 'solid',
     borderBottomColor: color['--color-line'],
   },
-  iconButton: { width: 32, paddingInline: 0 },
+  iconButton: { width: { default: 32, [media.coarse]: 44 }, paddingInline: 0 },
   list: {
     display: 'flex',
     flexDirection: 'column',
@@ -350,7 +350,7 @@ const styles = stylex.create({
     },
     borderRadius: radius['--radius-sm'],
     backgroundColor: color['--color-surface'],
-    fontSize: text['--text-sm'],
+    fontSize: { default: text['--text-sm'], [media.coarse]: text['--text-md'] },
     lineHeight: 1.5,
     outline: 'none',
     boxShadow: { default: 'none', ':focus-visible': `0 0 0 3px ${color['--color-accent-soft']}` },

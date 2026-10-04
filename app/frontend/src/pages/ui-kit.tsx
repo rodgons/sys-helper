@@ -337,6 +337,7 @@ export function UiKitPage() {
           </Menu>
           {/* Wired to the real theme, so the whole kit can be checked in both schemes. */}
           <ThemeMenu choice={theme} onChange={setThemeChoice} />
+          <ThemeMenu choice={theme} onChange={setThemeChoice} placement="above" />
         </Cluster>
       </DocSection>
 

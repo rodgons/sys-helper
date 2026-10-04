@@ -1,7 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
 import type { ComponentProps, ReactNode } from 'react';
 import { Link, type LinkProps } from 'react-router';
-import { color, motion, radius, space, text } from '../design/tokens.stylex';
+import { color, media, motion, radius, space, text } from '../design/tokens.stylex';
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'ghost';
 type Size = 'sm' | 'md' | 'lg';
@@ -150,7 +150,7 @@ const variants = stylex.create({
 
 const sizes = stylex.create({
   sm: {
-    height: 32,
+    height: { default: 32, [media.coarse]: 44 },
     paddingInline: space['--space-3'],
     fontSize: text['--text-sm'],
   },
