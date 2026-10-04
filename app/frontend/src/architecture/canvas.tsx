@@ -32,7 +32,7 @@ import { useThemeChoice } from '../lib/theme';
 import { Button } from '../ui/button';
 import { Label, Text } from '../ui/typography';
 import { type SaveStatus, useAutosave } from './autosave';
-import { ComponentDock, DRAG_TYPE } from './dock';
+import { ComponentDock, ComponentPicker, DRAG_TYPE } from './dock';
 import { Inspector } from './inspector';
 import { tidy } from './layout';
 import {
@@ -461,7 +461,12 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
         )}
         <Panel position="bottom-center">
           <div {...stylex.props(styles.bottom)}>
-            {proposal && <ProposalBar proposal={proposal} review={review.state} />}
+            {proposal &&
+              (compact ? (
+                <CompactProposalBar proposal={proposal} review={review.state} />
+              ) : (
+                <ProposalBar proposal={proposal} review={review.state} />
+              ))}
             {autosave.status === 'conflict' && (
               <div role="alert" {...stylex.props(styles.conflict)}>
                 <Text size="sm">
@@ -473,7 +478,11 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
                 </Button>
               </div>
             )}
-            <ComponentDock onAdd={(type) => addComponent(type)} />
+            {compact ? (
+              <ComponentPicker onAdd={(type) => addComponent(type)} />
+            ) : (
+              <ComponentDock onAdd={(type) => addComponent(type)} />
+            )}
           </div>
         </Panel>
       </ReactFlow>
@@ -730,6 +739,43 @@ function ProposalBar({ proposal, review }: { proposal: Proposal; review: Review 
   );
 }
 
+/**
+ * The compact canvas's Proposal banner: "Proposal #N · Accept · Reject" on one line, the summary
+ * clipped between, and a short second line when it is out of date or failed. The chat's Proposal
+ * card keeps the full summary.
+ */
+function CompactProposalBar({ proposal, review }: { proposal: Proposal; review: Review | null }) {
+  const note = review?.stale ? 'Out of date. Ask the AI to redo it.' : review?.error;
+  return (
+    <section aria-label="Proposal" {...stylex.props(styles.proposal, styles.compactProposal)}>
+      <div {...stylex.props(styles.compactLine)}>
+        <Label tone="accent">Proposal #{proposal.seq}</Label>
+        <span {...stylex.props(styles.compactSummary)}>{proposal.summary}</span>
+        <Button
+          size="sm"
+          disabled={!review || review.busy || review.stale !== null}
+          onClick={review?.accept}
+        >
+          Accept
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!review || review.busy}
+          onClick={review?.reject}
+        >
+          Reject
+        </Button>
+      </div>
+      {note && (
+        <Text size="sm" tone={review?.stale ? 'muted' : 'accent'}>
+          {note}
+        </Text>
+      )}
+    </section>
+  );
+}
+
 const STATUS_TEXT: Record<SaveStatus, string> = {
   saved: 'All changes saved',
   pending: 'Unsaved changes',
@@ -775,6 +821,24 @@ const styles = stylex.create({
     boxShadow: `0 4px 16px ${color['--color-accent-soft']}`,
   },
   proposalText: { display: 'flex', flexDirection: 'column', gap: space['--space-1'], minWidth: 0 },
+  compactProposal: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: space['--space-1'],
+    width: 'calc(100vw - 2rem)',
+    maxWidth: '36rem',
+    paddingBlock: space['--space-2'],
+  },
+  compactLine: { display: 'flex', alignItems: 'center', gap: space['--space-2'], minWidth: 0 },
+  compactSummary: {
+    flexGrow: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: text['--text-sm'],
+    color: color['--color-fg-muted'],
+  },
   proposalActions: { display: 'flex', gap: space['--space-2'], flexShrink: 0 },
   conflict: {
     display: 'flex',

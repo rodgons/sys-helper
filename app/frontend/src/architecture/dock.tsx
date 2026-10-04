@@ -1,5 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
-import { color, motion, radius, space } from '../design/tokens.stylex';
+import { Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { color, motion, radius, space, text } from '../design/tokens.stylex';
 import { COMPONENT_TYPES } from './model';
 import { lookOf } from './shapes';
 
@@ -37,7 +39,116 @@ export function ComponentDock({ onAdd }: { onAdd: (type: string) => void }) {
   );
 }
 
+/**
+ * The compact canvas's dock: one "+ Add" button opening a grid of every Component Type (icon and
+ * label, three columns) above it. A pick adds that Component; a pick, a tap on the backdrop or Esc
+ * closes the grid. No hover tooltips or dragging, which touch screens lack.
+ */
+export function ComponentPicker({ onAdd }: { onAdd: (type: string) => void }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
+  return (
+    <div {...stylex.props(styles.picker)}>
+      {open && (
+        <>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard way out is Esc. */}
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: the keyboard way out is Esc. */}
+          <div
+            data-testid="add-backdrop"
+            aria-hidden="true"
+            onClick={() => setOpen(false)}
+            {...stylex.props(styles.backdrop)}
+          />
+          <div role="dialog" aria-label="Add component" {...stylex.props(styles.grid)}>
+            {COMPONENT_TYPES.map((t) => {
+              const Icon = lookOf(t.type).icon;
+              return (
+                <button
+                  key={t.type}
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onAdd(t.type);
+                  }}
+                  {...stylex.props(styles.choice)}
+                >
+                  <Icon size={22} strokeWidth={1.75} aria-hidden="true" />
+                  <span {...stylex.props(styles.choiceLabel)}>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        {...stylex.props(styles.dock, styles.add)}
+      >
+        <Plus size={18} aria-hidden="true" />
+        Add
+      </button>
+    </div>
+  );
+}
+
 const styles = stylex.create({
+  picker: { position: 'relative', display: 'flex', justifyContent: 'center' },
+  add: {
+    alignItems: 'center',
+    gap: space['--space-1'],
+    minHeight: 44,
+    paddingInline: space['--space-4'],
+    color: color['--color-fg'],
+    fontSize: text['--text-sm'],
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  backdrop: { position: 'fixed', inset: 0, zIndex: 1 },
+  grid: {
+    position: 'absolute',
+    bottom: `calc(100% + ${space['--space-2']})`,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 2,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: space['--space-1'],
+    width: 'min(22rem, calc(100vw - 2rem))',
+    maxHeight: '60dvh',
+    overflowY: 'auto',
+    padding: space['--space-2'],
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: color['--color-line'],
+    borderRadius: radius['--radius-lg'],
+    backgroundColor: color['--color-raised'],
+    boxShadow: '0 8px 24px rgb(0 0 0 / 0.16)',
+  },
+  choice: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space['--space-1'],
+    minHeight: 64,
+    padding: space['--space-2'],
+    borderWidth: 0,
+    borderRadius: radius['--radius-md'],
+    backgroundColor: { default: 'transparent', ':active': color['--color-accent-soft'] },
+    color: color['--color-fg'],
+    cursor: 'pointer',
+  },
+  choiceLabel: { fontSize: text['--text-xs'], textAlign: 'center', lineHeight: 1.2 },
   dock: {
     display: 'flex',
     gap: 2,

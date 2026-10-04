@@ -598,10 +598,12 @@ describe('Canvas on compact screens', () => {
   const snap = () =>
     screen.getByRole('separator', { name: 'Resize panel' }).getAttribute('aria-valuetext');
   const selected = () => document.querySelector('.react-flow__node.selected');
-  const savedNames = (save: ReturnType<typeof setup>) =>
-    (
-      save.mock.calls.at(-1)?.[0].json as { document: { components: { name: string }[] } }
-    ).document.components.map((c) => c.name);
+  function savedNames(save: ReturnType<typeof setup>) {
+    const call = save.mock.calls.at(-1);
+    if (!call) throw new Error('nothing was saved');
+    const { document } = call[0].json as { document: { components: { name: string }[] } };
+    return document.components.map((c) => c.name);
+  }
 
   it('opens the Inspector in the sheet on one tap, under the tabs', async () => {
     setup();
@@ -672,6 +674,37 @@ describe('Canvas on compact screens', () => {
     expect(savedNames(save)).toEqual(['Links DB']);
   });
 
+  it('adds from a "+ Add" grid of every Component Type, opening its Inspector unfocused', async () => {
+    const save = setup();
+    await screen.findByText('Links API');
+    expect(screen.queryByRole('toolbar', { name: 'Add component' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    const grid = within(screen.getByRole('dialog', { name: 'Add component' }));
+    expect(grid.getAllByRole('button')).toHaveLength(13);
+    fireEvent.click(grid.getByRole('button', { name: 'Cache' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Add component' })).not.toBeInTheDocument();
+    expect(selected()).toHaveTextContent('Cache');
+    expect(sheet().getByLabelText('Name')).toHaveValue('Cache');
+    expect(sheet().getByLabelText('Name')).not.toHaveFocus();
+    expect(document.activeElement?.tagName).not.toBe('INPUT');
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 2000 });
+    expect(savedNames(save)).toEqual(['Links API', 'Links DB', 'Cache']);
+  });
+
+  it('closes the "+ Add" grid on Esc and on a tap outside it', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Add component' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByTestId('add-backdrop'));
+    expect(screen.queryByRole('dialog', { name: 'Add component' })).not.toBeInTheDocument();
+    expect(screen.getByText('Links API')).toBeInTheDocument();
+  });
+
   it("doesn't let Components be dragged, and keeps only Fit and Tidy up", async () => {
     setup();
     await screen.findByText('Links API');
@@ -681,6 +714,70 @@ describe('Canvas on compact screens', () => {
     expect(screen.queryByRole('button', { name: 'Zoom Out' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fit View' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tidy up' })).toBeInTheDocument();
+  });
+});
+
+describe('Proposal banner on compact screens', () => {
+  const at = '2026-09-30T00:00:00Z';
+  const API = '/api/projects/url-shortener-k3xa9q2m7p';
+  const addCache = {
+    seq: 1,
+    summary: 'Add a cache in front of the database so that redirects stay fast under load',
+    status: 'pending',
+    baseVersion: 0,
+    changes: [{ op: 'add_component', ref: 'cache', type: 'cache', name: 'Order Cache' }],
+  };
+
+  function setup(proposal: unknown, extra: Parameters<typeof mockApi>[0] = {}) {
+    setCompact(true);
+    stubApi({
+      [`GET ${API}/messages`]: [
+        { role: 'assistant', body: 'Here is a cache.', createdAt: at, proposal },
+      ],
+      [`POST ${API}/reply`]: () =>
+        sseResponse(['done', { role: 'assistant', body: 'Noted.', createdAt: at }]),
+      ...extra,
+    });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+  }
+  const banner = async () => within(await screen.findByRole('region', { name: 'Proposal' }));
+
+  it('shows the Proposal number with Accept and Reject, and accepts onto the canvas', async () => {
+    const accept = vi.fn(() => ({ version: 1 }));
+    setup(addCache, { [`POST ${API}/proposals/1/accept`]: accept });
+    const bar = await banner();
+    expect(bar.getByText('Proposal #1')).toBeInTheDocument();
+    expect(bar.getByText(addCache.summary)).toBeInTheDocument();
+
+    fireEvent.click(bar.getByRole('button', { name: 'Accept' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Proposal' })).not.toBeInTheDocument(),
+    );
+    expect(accept).toHaveBeenCalled();
+    expect(document.querySelector('.react-flow__node')).toHaveTextContent('Order Cache');
+    expect(document.querySelector('.react-flow__node')).not.toHaveTextContent('new');
+  });
+
+  it('rejects from the banner', async () => {
+    const reject = vi.fn(() => ({ status: 204 }));
+    setup(addCache, { [`POST ${API}/proposals/1/reject`]: reject });
+
+    fireEvent.click((await banner()).getByRole('button', { name: 'Reject' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Proposal' })).not.toBeInTheDocument(),
+    );
+    expect(reject).toHaveBeenCalled();
+    expect(document.querySelector('.react-flow__node')).toBeNull();
+  });
+
+  it('says on a second line when it is out of date, and disables Accept', async () => {
+    setup({ ...addCache, changes: [{ op: 'remove_component', id: 'gone' }] });
+    const bar = await banner();
+
+    expect(bar.getByText('Out of date. Ask the AI to redo it.')).toBeInTheDocument();
+    expect(bar.getByRole('button', { name: 'Accept' })).toBeDisabled();
   });
 });
 
