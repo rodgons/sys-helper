@@ -693,6 +693,22 @@ describe('Canvas on compact screens', () => {
     expect(savedNames(save)).toEqual(['Links API', 'Links DB', 'Cache']);
   });
 
+  it('leaves a Component added on compact just selected after crossing to desktop', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Add component' })).getByRole('button', {
+        name: 'Cache',
+      }),
+    );
+
+    setCompact(false);
+
+    expect(selected()).toHaveTextContent('Cache');
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Inspector' })).toHaveTextContent(/Click it again/);
+  });
+
   it('closes the "+ Add" grid on Esc and on a tap outside it', async () => {
     setup();
     fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
@@ -700,7 +716,7 @@ describe('Canvas on compact screens', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Add component' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-    fireEvent.click(screen.getByTestId('add-backdrop'));
+    fireEvent.click(screen.getByRole('button', { name: 'Close the component grid' }));
     expect(screen.queryByRole('dialog', { name: 'Add component' })).not.toBeInTheDocument();
     expect(screen.getByText('Links API')).toBeInTheDocument();
   });

@@ -11,7 +11,7 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 | `architecture/` | Canvas (React Flow): `canvas.tsx` (Editor + Proposal review), `model.ts` (catalog, doc ↔ flow), `proposal.ts`, `autosave.ts`, `layout.ts` (dagre), `nodes.tsx`, `shapes.tsx`, `dock.tsx`, `inspector.tsx` |
 | `conversation/` | Chat pane, markdown, Proposal card |
 | `knowledge/` | Right-pane tabs (`side-panel.tsx`), Requirements, Decisions |
-| `projects/`, `account/` | Sidebar, title, new-project form; Settings dialog (default Experience Level, and Delete account behind a second confirmation, which signs out on success) |
+| `projects/`, `account/` | Sidebar, title (and its rename and delete dialogs), new-project form, the compact workspace bar and Project drawer; the account menu; Settings dialog (default Experience Level, and Delete account behind a second confirmation, which signs out on success) |
 | `ui/`, `design/` | Base components and StyleX tokens (the "design system") |
 
 ## Sign-in
@@ -71,7 +71,7 @@ Three panes on desktop: project sidebar, canvas, side panel (Conversation / Requ
   - The controls drop zoom in/out and keep Fit and Tidy up. Fit has no Inspector space: 16px at the sides and top, 64px at the bottom (104px with the Proposal bar), `minZoom` 0.25. Tune on a device.
   - **"+ Add"** (`ComponentPicker` in `dock.tsx`) replaces the dock's icon row: one button opening a grid (`dialog` "Add component", three columns of icon and label) above it, closing on a pick, a backdrop tap or Esc. A pick adds the Component at the centre of the view, selects it and opens its Inspector in the sheet without focusing a field, so the keyboard stays down. The desktop dock (drag and tap) is unchanged.
   - **Proposal banner** (`CompactProposalBar`): one line, "Proposal #N", the summary clipped, Accept and Reject; a short second line when it is out of date ("Out of date. Ask the AI to redo it.", Accept disabled) or the review failed. The chat's Proposal card keeps the full summary.
-  - Tap-to-connect (React Flow's default) is the best-effort way to draw Connections. On `pointer: coarse` the handles grow to 24px and the control buttons to 44px (`global.css`, since StyleX can't reach React Flow's own buttons).
+  - Tap-to-connect (React Flow's default) is the best-effort way to draw Connections. On `pointer: coarse` the handles grow to 24px. The control buttons are 44px on the compact canvas (`compact-controls`) and on `pointer: coarse` (`global.css`, since StyleX can't reach React Flow's own buttons).
 
 ### Autosave (`architecture/autosave.ts`)
 

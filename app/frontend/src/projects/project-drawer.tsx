@@ -148,8 +148,10 @@ const styles = stylex.create({
     borderInlineEndColor: color['--color-line'],
     backgroundColor: color['--color-raised'],
     color: color['--color-fg'],
+    // Vertical scrolling stays the browser's; a horizontal swipe reaches the pointer handlers.
+    touchAction: 'pan-y',
     animationName: { default: slideIn, [media.reducedMotion]: 'none' },
-    animationDuration: '200ms',
+    animationDuration: motion['--duration'],
     animationTimingFunction: motion['--ease-out'],
     '::backdrop': { backgroundColor: 'rgb(13 11 18 / 0.5)' },
   },

@@ -65,11 +65,11 @@ export function ComponentPicker({ onAdd }: { onAdd: (type: string) => void }) {
     <div ref={root} {...stylex.props(styles.picker)}>
       {open && (
         <>
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard way out is Esc. */}
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents: the keyboard way out is Esc. */}
-          <div
-            data-testid="add-backdrop"
-            aria-hidden="true"
+          {/* A tap outside the grid closes it; keyboards use Esc, so it is out of the tab order. */}
+          <button
+            type="button"
+            aria-label="Close the component grid"
+            tabIndex={-1}
             onClick={() => setOpen(false)}
             {...stylex.props(styles.backdrop)}
           />
@@ -124,7 +124,15 @@ const styles = stylex.create({
     fontWeight: 600,
     cursor: 'pointer',
   },
-  backdrop: { position: 'fixed', inset: 0, zIndex: 1 },
+  backdrop: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 1,
+    padding: 0,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    cursor: 'default',
+  },
   grid: {
     position: 'absolute',
     bottom: `calc(100% + ${space['--space-2']})`,

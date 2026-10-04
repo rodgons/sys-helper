@@ -419,7 +419,7 @@ const styles = stylex.create({
     backgroundColor: color['--color-canvas'],
     boxShadow: '0 -4px 16px rgb(0 0 0 / 0.08)',
     transitionProperty: 'height',
-    transitionDuration: '200ms',
+    transitionDuration: motion['--duration'],
     transitionTimingFunction: motion['--ease-out'],
   },
   sheetHeight: (height: string) => ({ height }),

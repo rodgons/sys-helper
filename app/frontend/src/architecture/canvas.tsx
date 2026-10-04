@@ -237,9 +237,10 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
     const wanted = { x: center.x - 90, y: center.y - 32 };
     const position = at ? wanted : freeSpot(wanted, latest.current.nodes);
     const node = newComponentNode(type, position, latest.current.nodes);
-    // A new component opens straight away, to be named.
-    setOpened(node.id);
-    sheet?.onOpenChange(true);
+    // A new component opens straight away, to be named: in the sheet on compact (so crossing to
+    // desktop leaves it just selected), else in its window.
+    if (sheet) sheet.onOpenChange(true);
+    else setOpened(node.id);
     update(
       [
         ...latest.current.nodes.map((n) => ({ ...n, selected: false })),
@@ -415,6 +416,7 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
       >
         <Background gap={24} />
         <Controls
+          className={compact ? 'compact-controls' : undefined}
           showInteractive={false}
           showZoom={!compact}
           // Compact: one row beside "+ Add", clear of the Proposal banner above them.
@@ -496,7 +498,8 @@ function Editor({ slug, initial, proposal: pending, onReview, onNames, sheet }: 
   );
 }
 
-// Long enough for the sheet to finish moving (its transition is 200ms) and the canvas to resize.
+// Long enough for the sheet to finish moving (its transition is `--duration`, 150ms) and the canvas
+// to resize.
 const SHEET_SETTLE_MS = 250;
 
 /**
