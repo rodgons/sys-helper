@@ -1,6 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { Monitor, Moon, Sun } from 'lucide-react';
-import { color, motion } from '../design/tokens.stylex';
+import { color, media, motion } from '../design/tokens.stylex';
 import type { ThemeChoice } from '../lib/theme';
 import { Menu, MenuItem } from './menu';
 
@@ -42,8 +42,8 @@ export function ThemeMenu({
 const styles = stylex.create({
   // The size of the Avatar beside it in the header.
   trigger: {
-    width: 32,
-    height: 32,
+    width: { default: 32, [media.coarse]: 44 },
+    height: { default: 32, [media.coarse]: 44 },
     alignItems: 'center',
     justifyContent: 'center',
     color: { default: color['--color-fg-muted'], ':hover': color['--color-fg'] },

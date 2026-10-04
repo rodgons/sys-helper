@@ -1,6 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { type ComponentProps, useId } from 'react';
-import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
+import { color, font, media, motion, radius, space, text } from '../design/tokens.stylex';
 
 /** Labelled single-line input. The label sits above as a mono caption, or is visually hidden. */
 export function TextField({
@@ -51,7 +51,7 @@ const styles = stylex.create({
     },
     borderRadius: radius['--radius-sm'],
     backgroundColor: color['--color-surface'],
-    fontSize: text['--text-sm'],
+    fontSize: { default: text['--text-sm'], [media.coarse]: text['--text-md'] },
     outline: 'none',
     boxShadow: { default: 'none', ':focus-visible': `0 0 0 3px ${color['--color-accent-soft']}` },
     transitionProperty: 'border-color, box-shadow',

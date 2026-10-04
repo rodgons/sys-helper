@@ -159,7 +159,8 @@ const styles = stylex.create({
   },
   menuButton: {
     display: { default: 'inline-flex', [media.md]: 'none' },
-    height: 36,
+    height: { default: 36, [media.coarse]: 44 },
+    minWidth: { default: null, [media.coarse]: 44 },
     paddingInline: space['--space-3'],
     borderWidth: 1,
     borderStyle: 'solid',

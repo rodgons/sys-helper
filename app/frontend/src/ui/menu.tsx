@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { color, motion, radius, space, text } from '../design/tokens.stylex';
+import { color, media, motion, radius, space, text } from '../design/tokens.stylex';
 
 const CloseMenu = createContext<() => void>(() => {});
 
@@ -142,8 +142,13 @@ export function MenuSeparator() {
 
 const styles = stylex.create({
   root: { position: 'relative', display: 'inline-flex' },
+  // On touch screens the hit area grows to 44×44 around the trigger's content (e.g. the avatar).
   trigger: {
     display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: { default: null, [media.coarse]: 44 },
+    minHeight: { default: null, [media.coarse]: 44 },
     padding: 0,
     borderWidth: 0,
     borderRadius: radius['--radius-full'],
@@ -169,6 +174,7 @@ const styles = stylex.create({
   item: {
     display: 'flex',
     alignItems: 'center',
+    minHeight: { default: null, [media.coarse]: 44 },
     gap: space['--space-2'],
     paddingInline: space['--space-3'],
     paddingBlock: space['--space-2'],

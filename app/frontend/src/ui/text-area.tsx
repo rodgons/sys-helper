@@ -1,6 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { type ComponentProps, useId } from 'react';
-import { color, font, motion, radius, space, text } from '../design/tokens.stylex';
+import { color, font, media, motion, radius, space, text } from '../design/tokens.stylex';
 
 /** Labelled multi-line input, styled like TextField. */
 export function TextArea({
@@ -51,7 +51,7 @@ const styles = stylex.create({
     },
     borderRadius: radius['--radius-sm'],
     backgroundColor: color['--color-surface'],
-    fontSize: text['--text-sm'],
+    fontSize: { default: text['--text-sm'], [media.coarse]: text['--text-md'] },
     lineHeight: 1.5,
     outline: 'none',
     boxShadow: { default: 'none', ':focus-visible': `0 0 0 3px ${color['--color-accent-soft']}` },

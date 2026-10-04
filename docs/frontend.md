@@ -77,6 +77,7 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 ## Styling
 
 - StyleX only (`stylex.create`, compiled; no runtime fallback). Use token roles from `design/tokens.stylex.ts` (`color['--color-fg']`, `space[…]`, `media.lg`), never raw values.
+- **Touch sizing** (`media.coarse`, `@media (pointer: coarse)`, at every width, iPads in landscape included): the shared `TextField`, `TextArea`, `SelectField` and the chat composer use `--text-md` (16px), so iOS doesn't zoom on focus; icon buttons (theme, ✕, pane toggles, the header Menu, any `Menu` trigger such as the avatar), `sm` Buttons and menu items are at least 44×44. Links inside running text are exempt, and the 11px eyebrow labels and 10px chat metadata don't change. Mouse users keep 14px fields and the smaller controls. Write it as `{ default: …, [media.coarse]: … }`.
 - New base components go in `src/ui/` and must be shown on `/ui-kit` (`pages/ui-kit.tsx`).
 - Icons: `lucide-react`. Toasts: `react-toastify` via `ui/toaster.tsx`.
 
@@ -91,4 +92,5 @@ Three panes: project sidebar, canvas, side panel (Conversation / Requirements / 
 
 - Vitest + Testing Library: `renderWithQuery(ui, { route, auth: signedIn() })`, `mockApi({ 'GET /api/…': body | {status, body} | fn })` (unmatched requests throw), `sseResponse(...)` for replies, `<LocationProbe />` for navigation. All in `src/test/render.tsx`.
 - E2E in `e2e/*.spec.ts`, using `test` from `e2e/fixtures.ts` (`signIn({ provider, page })`, default GitHub, returns the identity's display `name` and provider `id`), against the real API with `AI_FAKE=1`. Playwright builds and runs its own API and Vite on dedicated ports (`e2e/servers.ts`: 18080/15173), so it never reuses a `make dev` server that would call the real model. A second API on 18081 admits nobody; not-allowed tests reroute their API calls to it with `page.route`.
+- Playwright has two projects. `chromium` (desktop) runs every spec except `*.mobile.spec.ts`; `mobile` (Chromium at 390×844 with `hasTouch` and `isMobile`, so `pointer: coarse` matches and the compact layout applies) runs only `*.mobile.spec.ts`. The test DOM evaluates no media queries, so touch sizes (16px fields, 44×44 targets) are measured there (`e2e/touch-sizing.mobile.spec.ts`).
 - `demo/workspace.capture.ts` (`make demo-screenshots`) regenerates the home page screenshots. It is not a test suite.

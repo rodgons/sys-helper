@@ -1,7 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
 import { X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { color, motion, radius, space } from '../design/tokens.stylex';
+import { color, media, motion, radius, space } from '../design/tokens.stylex';
 import { DecisionCard, DecisionForm } from '../knowledge/decisions';
 import { isLimit } from '../lib/api';
 import { useKnowledge, useKnowledgeActions } from '../lib/knowledge';
@@ -193,8 +193,8 @@ const styles = stylex.create({
   close: {
     display: 'grid',
     placeItems: 'center',
-    width: 28,
-    height: 28,
+    width: { default: 28, [media.coarse]: 44 },
+    height: { default: 28, [media.coarse]: 44 },
     // Pull the icon into the corner without shrinking its hit area.
     marginBlock: `calc(-1 * ${space['--space-1']})`,
     marginInlineEnd: `calc(-1 * ${space['--space-2']})`,

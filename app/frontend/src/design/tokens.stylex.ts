@@ -92,10 +92,15 @@ export const motion = stylex.defineVars({
   '--duration': '150ms',
 });
 
-/** Mobile-first breakpoints, used as `{ default: …, [media.md]: … }` keys. */
+/**
+ * Mobile-first breakpoints, used as `{ default: …, [media.md]: … }` keys. Below `lg` is the compact
+ * layout (`design/breakpoints.ts`). `coarse` is a touch screen at any width: fields there use 16px
+ * text (so iOS doesn't zoom on focus) and controls are at least 44×44.
+ */
 export const media = stylex.defineConsts({
   sm: '@media (min-width: 40rem)',
   md: '@media (min-width: 48rem)',
   lg: '@media (min-width: 64rem)',
+  coarse: '@media (pointer: coarse)',
   reducedMotion: '@media (prefers-reduced-motion: reduce)',
 });

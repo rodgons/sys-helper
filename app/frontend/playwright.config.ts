@@ -14,7 +14,21 @@ export default defineConfig({
     baseURL: webUrl,
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', testIgnore: /\.mobile\.spec\.ts$/, use: { ...devices['Desktop Chrome'] } },
+    {
+      // A phone: compact layout, touch and `pointer: coarse`. Runs only the `*.mobile.spec.ts` specs.
+      name: 'mobile',
+      testMatch: /\.mobile\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 3,
+        hasTouch: true,
+        isMobile: true,
+      },
+    },
+  ],
   webServer: [
     {
       // Build, then exec the binary so Playwright's signal reaches the server (`go run` would leave
