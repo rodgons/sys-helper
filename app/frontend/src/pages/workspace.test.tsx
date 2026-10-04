@@ -572,6 +572,118 @@ describe('Workspace on compact screens', () => {
   });
 });
 
+describe('Canvas on compact screens', () => {
+  const architecture = {
+    version: 3,
+    document: {
+      components: [
+        { id: 'api', type: 'service', name: 'Links API', position: { x: 0, y: 0 } },
+        { id: 'db', type: 'database', name: 'Links DB', position: { x: 300, y: 0 } },
+      ],
+      connections: [{ id: 'c1', source: 'api', target: 'db', kind: 'sync' }],
+    },
+  };
+  const API = '/api/projects/url-shortener-k3xa9q2m7p';
+
+  function setup() {
+    setCompact(true);
+    const save = vi.fn(({ json }: { json?: unknown }) => ({
+      version: (json as { version: number }).version + 1,
+    }));
+    stubApi({ [`GET ${API}/architecture`]: architecture, [`PUT ${API}/architecture`]: save });
+    renderAt('/p/url-shortener-k3xa9q2m7p');
+    return save;
+  }
+  const sheet = () => within(screen.getByRole('complementary', { name: 'Project panel' }));
+  const snap = () =>
+    screen.getByRole('separator', { name: 'Resize panel' }).getAttribute('aria-valuetext');
+  const selected = () => document.querySelector('.react-flow__node.selected');
+  const savedNames = (save: ReturnType<typeof setup>) =>
+    (
+      save.mock.calls.at(-1)?.[0].json as { document: { components: { name: string }[] } }
+    ).document.components.map((c) => c.name);
+
+  it('opens the Inspector in the sheet on one tap, under the tabs', async () => {
+    setup();
+
+    fireEvent.click(await screen.findByText('Links API'));
+
+    const inspector = within(sheet().getByRole('region', { name: 'Inspector' }));
+    expect(inspector.getByText('Service')).toBeInTheDocument();
+    expect(inspector.getByLabelText('Name')).toHaveValue('Links API');
+    expect(sheet().getByRole('tab', { name: 'Conversation' })).toBeVisible();
+    expect(screen.getByLabelText('Message')).not.toBeVisible();
+    expect(screen.queryByText(/Click it again/)).not.toBeInTheDocument();
+  });
+
+  it('closes the Inspector from a tab, keeping the selection, and clears it from the pane', async () => {
+    setup();
+    fireEvent.click(await screen.findByText('Links API'));
+
+    fireEvent.click(sheet().getByRole('tab', { name: /Requirements/ }));
+
+    expect(screen.queryByRole('region', { name: 'Inspector' })).not.toBeInTheDocument();
+    expect(selected()).toHaveTextContent('Links API');
+    expect(screen.getByRole('tab', { name: /Requirements/, selected: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Links API'));
+    expect(screen.getByRole('region', { name: 'Inspector' })).toBeInTheDocument();
+
+    fireEvent.click(document.querySelector('.react-flow__pane') as Element);
+
+    expect(screen.queryByRole('region', { name: 'Inspector' })).not.toBeInTheDocument();
+    expect(selected()).toBeNull();
+  });
+
+  it('brings the sheet to half from peek or full when the Inspector opens', async () => {
+    setup();
+    await screen.findByText('Links API');
+    const handle = screen.getByRole('separator', { name: 'Resize panel' });
+
+    fireEvent.keyDown(handle, { key: 'Home' });
+    fireEvent.click(screen.getByText('Links API'));
+    expect(snap()).toBe('Half');
+
+    fireEvent.click(sheet().getByRole('button', { name: 'Close' }));
+    expect(selected()).toHaveTextContent('Links API');
+    fireEvent.keyDown(handle, { key: 'End' });
+    fireEvent.click(screen.getByText('Links DB'));
+    expect(snap()).toBe('Half');
+  });
+
+  it('renames a Component in the sheet and autosaves it', async () => {
+    const save = setup();
+    fireEvent.click(await screen.findByText('Links API'));
+
+    fireEvent.change(sheet().getByLabelText('Name'), { target: { value: 'Redirects' } });
+
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 2000 });
+    expect(savedNames(save)).toEqual(['Redirects', 'Links DB']);
+  });
+
+  it('removes a Component from the sheet and autosaves it', async () => {
+    const save = setup();
+    fireEvent.click(await screen.findByText('Links API'));
+
+    fireEvent.click(sheet().getByRole('button', { name: 'Delete component' }));
+
+    expect(screen.queryByText('Links API')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Inspector' })).not.toBeInTheDocument();
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 2000 });
+    expect(savedNames(save)).toEqual(['Links DB']);
+  });
+
+  it("doesn't let Components be dragged, and keeps only Fit and Tidy up", async () => {
+    setup();
+    await screen.findByText('Links API');
+
+    expect(document.querySelector('.react-flow__node.draggable')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Zoom In' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Zoom Out' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fit View' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tidy up' })).toBeInTheDocument();
+  });
+});
+
 // Widths in px with a 16px rem: min 20rem, default 24rem, and the canvas keeps at least 32rem
 // beside the left pane (16rem open, 3rem collapsed).
 describe('Workspace side panel width', () => {

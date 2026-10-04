@@ -63,6 +63,13 @@ Three panes on desktop: project sidebar, canvas, side panel (Conversation / Requ
 - Component window: a click selects a Component, and clicking it again while it is the only selection opens its Inspector beside it (`opened`). A Component added from the dock opens straight away. Closing the window, or the first Esc, keeps the selection and the spotlight. The next Esc clears both.
 - Component Types: `model.ts` `COMPONENT_TYPES` (labels, property fields) and `shapes.tsx` `LOOKS` (icon + outline). Both must match the Go catalog.
 
+- **Compact canvas** (`sheet` prop, a `CompactSheet`): the workspace passes it only in the compact layout.
+  - Components aren't draggable, so one finger pans anywhere and two pinch; no multi-select or box selection (`multiSelectionKeyCode`/`selectionKeyCode` null). Taps still select.
+  - One tap on a Component or Connection selects it and opens the Inspector (`sheet.onOpenChange(true)`), with no "click it again" hint. The canvas portals the Inspector (`inSheet`) into `sheet.host`, a box in the sheet under its tab row that replaces the (still mounted, hidden) tab content; never the node or edge toolbar. ✕, Esc or a tab tap close it and keep the selection; a tap on the pane closes it and clears the selection; once nothing (or several things) is selected it closes itself. Remove ("Delete component"/"Delete connection") is the delete path; Backspace and Esc still work with a keyboard.
+  - Opening the Inspector moves the sheet from peek or full to half (`useWorkspaceView`); closing leaves it. Once the sheet settles, `usePanIntoView` centres the selected item if the sheet now covers it.
+  - The controls drop zoom in/out and keep Fit and Tidy up. Fit has no Inspector space: 16px at the sides and top, 64px at the bottom (104px with the Proposal bar), `minZoom` 0.25. Tune on a device.
+  - Tap-to-connect (React Flow's default) is the best-effort way to draw Connections. On `pointer: coarse` the handles grow to 24px and the control buttons to 44px (`global.css`, since StyleX can't reach React Flow's own buttons).
+
 ### Autosave (`architecture/autosave.ts`)
 
 - Debounced 1s PUT with the base version. On 409 it enters `conflict` and stops for good; the User must reload. Other errors keep the edits pending.

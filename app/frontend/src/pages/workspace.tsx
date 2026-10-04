@@ -1,7 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
 import { type KeyboardEvent, type PointerEvent, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router';
-import { ArchitectureCanvas } from '../architecture/canvas';
+import { ArchitectureCanvas, type CompactSheet } from '../architecture/canvas';
 import type { Review } from '../architecture/review';
 import { ChatPane } from '../conversation/chat-pane';
 import { color, layout, motion, radius, space } from '../design/tokens.stylex';
@@ -42,6 +42,8 @@ function Workspace({ slug }: { slug: string }) {
   const compact = useCompact();
   const view = useWorkspaceView(slug, compact);
   const panes = useRef<HTMLDivElement>(null);
+  // Where the compact canvas renders its Inspector: inside the sheet, under the tab row.
+  const [inspectorHost, setInspectorHost] = useState<HTMLDivElement | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
   const panel = usePanelWidth(sidebarOpen ? LEFT_OPEN_REM : LEFT_RAIL_REM);
@@ -109,7 +111,20 @@ function Workspace({ slug }: { slug: string }) {
                 <ProjectTitle key={project.data.slug} project={project.data} />
               </div>
             )}
-            <CanvasPane slug={project.data.slug} onReview={setReview} onNames={setNames} />
+            <CanvasPane
+              slug={project.data.slug}
+              onReview={setReview}
+              onNames={setNames}
+              sheet={
+                compact
+                  ? {
+                      host: inspectorHost,
+                      open: view.inspectorOpen,
+                      onOpenChange: view.setInspectorOpen,
+                    }
+                  : undefined
+              }
+            />
           </section>
           <aside
             id="project-panel"
@@ -135,7 +150,10 @@ function Workspace({ slug }: { slug: string }) {
                 onDrag={view.setDragHeight}
                 total={() => panes.current?.clientHeight ?? 0}
                 tab={view.tab}
-                onTab={view.setTab}
+                onTab={(tab) => {
+                  view.setTab(tab);
+                  view.setInspectorOpen(false); // keeps the selection
+                }}
                 pending={Boolean(view.pending)}
               />
             ) : (
@@ -146,12 +164,19 @@ function Workspace({ slug }: { slug: string }) {
               slug={project.data.slug}
               names={names}
               conversation={<ChatPane slug={project.data.slug} review={review} />}
-              open={compact || panelOpen}
+              open={compact ? !view.inspectorOpen : panelOpen}
               onToggle={() => setPanelOpen((o) => !o)}
               tab={view.tab}
               onTabChange={view.setTab}
               bare={compact}
             />
+            {compact ? (
+              <div
+                ref={setInspectorHost}
+                hidden={!view.inspectorOpen}
+                {...stylex.props(styles.inspectorHost)}
+              />
+            ) : null}
           </aside>
         </div>
       </main>
@@ -161,9 +186,11 @@ function Workspace({ slug }: { slug: string }) {
 
 /**
  * What the User looks at in this Project, beyond what the panes own: the side panel's tab and, in
- * the compact layout, the bottom sheet's snap (or its height mid-drag). Opening a Project starts on
- * the Conversation with the sheet at half; so does crossing the breakpoint, keeping the tab. A
+ * the compact layout, the bottom sheet's snap (or its height mid-drag) and whether the canvas's
+ * Inspector fills it. Opening a Project starts on the Conversation with the sheet at half; so does
+ * crossing the breakpoint, keeping the tab (an open Inspector becomes the desktop's selection). A
  * Proposal arriving while the sheet is full drops it to half, so its preview shows on the canvas.
+ * Opening the Inspector brings the sheet to half, so both it and the item show; closing leaves it.
  */
 function useWorkspaceView(slug: string, compact: boolean) {
   const suffix = slugSuffix(slug);
@@ -174,11 +201,14 @@ function useWorkspaceView(slug: string, compact: boolean) {
     seq: pending?.seq,
     tab: 'conversation' as PanelTab,
     snap: 'half' as Snap,
+    inspectorOpen: false,
   });
   const [dragHeight, setDragHeight] = useState<number | null>(null);
   let next = state;
-  if (next.suffix !== suffix) next = { ...next, suffix, tab: 'conversation', snap: 'half' };
-  if (next.compact !== compact) next = { ...next, compact, snap: 'half' };
+  if (next.suffix !== suffix) {
+    next = { ...next, suffix, tab: 'conversation', snap: 'half', inspectorOpen: false };
+  }
+  if (next.compact !== compact) next = { ...next, compact, snap: 'half', inspectorOpen: false };
   if (next.seq !== pending?.seq) {
     next = {
       ...next,
@@ -193,6 +223,11 @@ function useWorkspaceView(slug: string, compact: boolean) {
     setTab: (tab: PanelTab) => setState((s) => ({ ...s, tab })),
     snap: next.snap,
     setSnap: (snap: Snap) => setState((s) => ({ ...s, snap })),
+    inspectorOpen: next.inspectorOpen,
+    setInspectorOpen: (open: boolean) =>
+      setState((s) =>
+        s.inspectorOpen === open ? s : { ...s, inspectorOpen: open, snap: open ? 'half' : s.snap },
+      ),
     dragHeight,
     setDragHeight,
     pending,
@@ -279,10 +314,12 @@ function CanvasPane({
   slug,
   onReview,
   onNames,
+  sheet,
 }: {
   slug: string;
   onReview: (review: Review | null) => void;
   onNames: (names: Record<string, string>) => void;
+  sheet?: CompactSheet;
 }) {
   const proposal = usePendingProposal(slug);
   const architecture = useArchitecture(slug);
@@ -303,6 +340,7 @@ function CanvasPane({
       proposal={proposal}
       onReview={onReview}
       onNames={onNames}
+      sheet={sheet}
     />
   );
 }
@@ -376,6 +414,12 @@ const styles = stylex.create({
     transitionTimingFunction: motion['--ease-out'],
   },
   sheetHeight: (height: string) => ({ height }),
+  inspectorHost: {
+    display: { default: 'flex', ':is([hidden])': 'none' },
+    flexDirection: 'column',
+    flexGrow: 1,
+    minHeight: 0,
+  },
   dragging: { transitionProperty: 'none' },
   left: {
     borderRightWidth: 1,

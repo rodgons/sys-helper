@@ -135,3 +135,16 @@ samp {
   }
 }
 /* biome-ignore-end lint/complexity/noImportantStyles: see above */
+
+/* React Flow's own control buttons, which StyleX can't reach: touch-sized on coarse pointers. */
+@media (pointer: coarse) {
+  .react-flow .react-flow__controls-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .react-flow .react-flow__controls-button svg {
+    max-width: 20px;
+    max-height: 20px;
+  }
+}

@@ -21,7 +21,8 @@ import {
 
 /**
  * Edits the one selected Component or Connection; otherwise explains how to use the canvas. The
- * canvas floats it next to an opened Component (see ArchitectureCanvas).
+ * canvas floats it next to an opened Component (see ArchitectureCanvas), or with `inSheet` it fills
+ * the compact layout's bottom sheet.
  */
 export function Inspector({
   slug,
@@ -33,6 +34,7 @@ export function Inspector({
   onRemove,
   onClose,
   hint = 'Select something to edit it.',
+  inSheet = false,
 }: {
   slug: string;
   /** Whether the canvas is saved: Decisions can only be attached to saved items. */
@@ -45,13 +47,17 @@ export function Inspector({
   onClose: () => void;
   /** What to say when there is nothing to edit. */
   hint?: string;
+  inSheet?: boolean;
 }) {
   const [node] = nodes;
   const [edge] = edges;
   const single = nodes.length + edges.length === 1;
 
   return (
-    <section aria-label="Inspector" {...stylex.props(styles.panel, !single && styles.hint)}>
+    <section
+      aria-label="Inspector"
+      {...stylex.props(styles.panel, !single && styles.hint, inSheet && styles.inSheet)}
+    >
       {single && node ? (
         <>
           <Header onClose={onClose}>{typeDef(node.data.type).label}</Header>
@@ -229,6 +235,16 @@ const styles = stylex.create({
     borderColor: color['--color-line'],
     borderRadius: radius['--radius-md'],
     backgroundColor: color['--color-surface'],
+  },
+  // Filling the bottom sheet under its tab row: no card, and it scrolls within the sheet.
+  inSheet: {
+    flexGrow: 1,
+    minHeight: 0,
+    width: 'auto',
+    maxWidth: 'none',
+    maxHeight: 'none',
+    borderWidth: 0,
+    borderRadius: 0,
   },
   // With nothing to edit, shrink to a one-line hint so the canvas stays visible.
   hint: {
