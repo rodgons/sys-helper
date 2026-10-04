@@ -302,15 +302,19 @@ describe('Undo and redo on the canvas', () => {
     expect(onCanvas()).toHaveLength(3);
   });
 
-  it('keeps the last 100 steps', () => {
-    stubSave();
-    render({ initial: { version: 3, document: { components: [], connections: [] } } });
+  it('keeps the last 100 steps', async () => {
+    const save = stubSave();
+    // One Component nudged 101 times keeps the canvas small, so the test stays fast.
+    const [api] = initial.document.components;
+    render({ initial: { version: 3, document: { components: [api], connections: [] } } as never });
+    fireEvent.click(screen.getByText('Orders API'));
 
-    for (let i = 0; i < 101; i++) fireEvent.click(screen.getByRole('button', { name: 'Add DNS' }));
+    for (let i = 0; i < 101; i++) fireEvent.keyDown(node('api'), { key: 'ArrowRight' });
     for (let i = 0; i < 100; i++) fireEvent.click(undoButton());
 
     expect(undoButton()).toBeDisabled();
-    expect(onCanvas()).toHaveLength(1);
+    await settle();
+    expect(saved(save).components[0]?.position).toEqual({ x: 5, y: 0 });
   });
 
   it('selects what an undo restored, without opening the Inspector', () => {
