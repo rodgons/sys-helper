@@ -54,7 +54,9 @@ func run() error {
 	projectStore.OnCreate = conversation.AddWelcome // every Conversation opens with the Welcome Message
 	conversations := conversation.NewStore(db)
 	architectures := architecture.NewStore(db)
-	architectures.AfterSave = knowledge.PruneDecisions // Decisions follow the items they explain
+	// Saves only hide Decisions whose items are gone (knowledge.Load), so an undo can bring them
+	// back; they are deleted when the Project is next opened.
+	architectures.OnOpen = knowledge.PruneDecisions
 	knowledgeStore := knowledge.NewStore(db)
 	go usage.RunPruner(ctx, db) // the daily caps only need recent rows
 	ai := &assistant.Assistant{

@@ -64,3 +64,44 @@ test('rejecting a proposal leaves the canvas as it was', async ({ page, signIn }
   ).toBeVisible();
   await expect(page.locator('.react-flow__node')).toHaveCount(0);
 });
+
+test('undoing and redoing an accept takes its Decision with it', async ({ page, signIn }) => {
+  await signIn();
+  await askForProposal(page, 'Undo me');
+  const decision = page.getByRole('article', { name: 'D1 Cache reads in Redis' });
+  const saved = page.getByText('All changes saved');
+  await page
+    .getByRole('region', { name: 'Proposal' })
+    .getByRole('button', { name: 'Accept' })
+    .click();
+  await expect(node(page, 'Fake Cache')).toBeVisible();
+  await page.getByRole('tab', { name: /Decisions/ }).click();
+  await expect(decision).toBeVisible();
+
+  await page.getByRole('button', { name: 'Undo Accept Proposal #1' }).click();
+  await expect(node(page, 'Fake Cache')).toHaveCount(0, { timeout: 3000 });
+  await expect(saved).toBeVisible();
+  await expect(decision).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Redo Accept Proposal #1' }).click();
+  await expect(node(page, 'Fake Cache')).toBeVisible();
+  await expect(saved).toBeVisible();
+  await expect(decision).toBeVisible();
+
+  // A Connection kind change is a step of its own.
+  // Its label covers the middle of the path, where Playwright would click.
+  await page.locator('.react-flow__edge').dispatchEvent('click');
+  await page.getByLabel('Kind').selectOption('async');
+  const labels = page.locator('.react-flow__edgelabel-renderer');
+  await expect(labels).toContainText('async');
+  await page.getByRole('button', { name: 'Undo Edit connection' }).click();
+  await expect(labels).toContainText('reads');
+  await expect(labels).not.toContainText('async');
+  await expect(saved).toBeVisible();
+
+  await page.reload();
+  await expect(node(page, 'Fake Cache')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  await page.getByRole('tab', { name: /Decisions/ }).click();
+  await expect(decision).toBeVisible();
+});

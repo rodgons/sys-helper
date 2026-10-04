@@ -6,7 +6,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 
 | Package | Owns |
 | --- | --- |
-| `cmd/server` | The only place real dependencies are built and hooks are wired (`OnCreate`, `AfterSave`). |
+| `cmd/server` | The only place real dependencies are built and hooks are wired (`OnCreate`, `OnOpen`). |
 | `internal/config` | `.env` → `Config`, through an injected `getenv`. |
 | `internal/auth` | JWKS token check (`verifier.go`), the live-session check (`sessions.go`), the User's identities from `auth.identities` (`identities.go`), the beta `Allowlist` (zero value admits nobody). See Auth below. |
 | `internal/httpapi` | Routes (`router.go`), handlers, the store interfaces they need (declared next to each handler), error mapping. |
@@ -33,7 +33,8 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 - **Locking:** any write whose correctness depends on per-Project state (versions, `seq`, `num`, "one pending Proposal") runs in a transaction that first does `SELECT … FROM projects … FOR UPDATE`. Reuse `knowledge.Store.inProject` or the same pattern.
 - **Hooks run inside the caller's transaction** (`func(ctx, tx pgx.Tx, projectID …) error`); an error rolls everything back:
   - `projects.Store.OnCreate` = `conversation.AddWelcome`.
-  - `architecture.Store.AfterSave` = `knowledge.PruneDecisions` (drops vanished targets, deletes Decisions left with none).
+  - `architecture.Store.OnOpen` = `knowledge.PruneDecisions` (drops vanished targets, deletes Decisions left with none). It runs in `Open`, which only `GET …/architecture` calls: the canvas reads it once per visit, so the prune happens at the start of a visit. `Get` (the assistant's read before every reply) never prunes.
+- **Decisions are hidden, not deleted, by a save.** Saving the Architecture never touches Decisions, so an undo can bring one back whole (same number, text, targets and Needs Review flag). `knowledge.Load` projects them against the stored Architecture: each one's targets are narrowed to the ids on the canvas, and one left with none is omitted. Everything reads Decisions through it (the knowledge endpoint, the assistant's prompt), so they all agree. Editing a Decision never changes its stored targets. The per-Project Decision cap counts hidden rows until the next `Open`.
   - `architecture.Store.SaveWith(…, also)`: `also` runs after the version check. Accepting a Proposal passes `conversation.Accept(seq)`.
 - **Versioned Architecture:** `architectures.version` starts at 0 (no row). A save carries its base version; a mismatch returns `architecture.ErrConflict` (→ 409 `conflict`) and saves nothing.
 - **IDs:** new rows use UUIDv7 generated in Go (`uuid.NewV7()`), which also orders Messages. Requirements and Decisions are numbered per Project (`num`), shown as `R1`/`D1` (`knowledge.RequirementID`, `ParseRequirementID`). Numbers come from the forward-only counters `projects.next_requirement_num` / `next_decision_num`, so a deleted item's number is never reused (anything seeding these tables directly must advance them too). Proposal numbers (`seq`) work the same way through `projects.next_proposal_seq`, because accepted items' canvas ids (`p{seq}-{ref}`) and the Decisions targeting them derive from it, and Proposals are deleted with their Messages.
