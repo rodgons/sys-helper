@@ -37,7 +37,7 @@ Checklists of every place a change must reach. Several lists are duplicated acro
 
 1. `make db-migration name=create_x`: RLS enabled with no policies, `on delete cascade` to `projects`/`auth.users`, `check` constraints mirroring Go validation (`docs/backend.md`).
 2. Store in the owning package: queries scoped by `user_id` + `slug_suffix`, the Project row lock for per-Project counters or invariants, UUIDv7 ids.
-3. If it must change atomically with the canvas, run it as a `SaveWith`/`AfterSave` hook instead of a separate transaction.
+3. If it must change atomically with the canvas, run it as a `SaveWith` hook instead of a separate transaction.
 4. `make db-reset`, then `make test-integration`.
 
 ## UI component

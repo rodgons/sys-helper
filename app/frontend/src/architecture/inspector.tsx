@@ -32,6 +32,7 @@ export function Inspector({
   onEditComponent,
   onEditConnection,
   onRemove,
+  onEditEnd,
   onClose,
   hint = 'Select something to edit it.',
   inSheet = false,
@@ -44,6 +45,8 @@ export function Inspector({
   onEditComponent: (id: string, patch: Partial<ComponentData>) => void;
   onEditConnection: (id: string, patch: Partial<ConnectionData>) => void;
   onRemove: (id: string) => void;
+  /** A field lost focus: the next edit to it is a new undo step. */
+  onEditEnd?: () => void;
   onClose: () => void;
   /** What to say when there is nothing to edit. */
   hint?: string;
@@ -56,6 +59,7 @@ export function Inspector({
   return (
     <section
       aria-label="Inspector"
+      onBlur={onEditEnd}
       {...stylex.props(styles.panel, !single && styles.hint, inSheet && styles.inSheet)}
     >
       {single && node ? (

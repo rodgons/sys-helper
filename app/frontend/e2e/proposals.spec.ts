@@ -64,3 +64,58 @@ test('rejecting a proposal leaves the canvas as it was', async ({ page, signIn }
   ).toBeVisible();
   await expect(page.locator('.react-flow__node')).toHaveCount(0);
 });
+
+test('undoing and redoing an accept takes its Decision with it', async ({ page, signIn }) => {
+  await signIn();
+  await askForProposal(page, 'Undo me');
+  const decision = page.getByRole('article', { name: 'D1 Cache reads in Redis' });
+  const saved = page.getByText('All changes saved');
+  await page
+    .getByRole('region', { name: 'Proposal' })
+    .getByRole('button', { name: 'Accept' })
+    .click();
+  await expect(node(page, 'Fake Cache')).toBeVisible();
+  await page.getByRole('tab', { name: /Decisions/ }).click();
+  await expect(decision).toBeVisible();
+
+  await page.getByRole('button', { name: 'Undo Accept Proposal #1' }).click();
+  await expect(node(page, 'Fake Cache')).toHaveCount(0, { timeout: 3000 });
+  await expect(saved).toBeVisible();
+  await expect(decision).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Redo Accept Proposal #1' }).click();
+  await expect(node(page, 'Fake Cache')).toBeVisible();
+  await expect(saved).toBeVisible();
+  await expect(decision).toBeVisible();
+
+  // A Connection kind change is a step of its own.
+  // Its label covers the middle of the path, where Playwright would click.
+  await page.locator('.react-flow__edge').dispatchEvent('click');
+  await page.getByLabel('Kind').selectOption('async');
+  const labels = page.locator('.react-flow__edgelabel-renderer');
+  await expect(labels).toContainText('async');
+  await page.getByRole('button', { name: 'Undo Edit connection' }).click();
+  await expect(labels).toContainText('reads');
+  await expect(labels).not.toContainText('async');
+  await expect(saved).toBeVisible();
+
+  // A drag is one step, back to where the drag began.
+  const cache = node(page, 'Fake Cache');
+  const start = await cache.boundingBox();
+  if (!start) throw new Error('Fake Cache has no box');
+  await page.mouse.move(start.x + 20, start.y + 10);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(start.x + 20 + i * 30, start.y + 10 + i * 20);
+  await page.mouse.up();
+  await expect(page.getByRole('button', { name: 'Undo Move Fake Cache' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Undo Move Fake Cache' }).click();
+  await expect.poll(async () => (await cache.boundingBox())?.x).toBeCloseTo(start.x, 0);
+  await expect(page.getByRole('button', { name: 'Undo Accept Proposal #1' })).toBeEnabled();
+  await expect(saved).toBeVisible();
+
+  await page.reload();
+  await expect(node(page, 'Fake Cache')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  await page.getByRole('tab', { name: /Decisions/ }).click();
+  await expect(decision).toBeVisible();
+});

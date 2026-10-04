@@ -23,32 +23,70 @@ type Versioned struct {
 // Store keeps each Project's Architecture, scoped to the Project's owner like projects.Store.
 type Store struct {
 	db *pgxpool.Pool
-	// AfterSave, if set, runs in every save's transaction once the new document is stored (main
-	// uses it to keep Decisions attached to items that still exist).
-	AfterSave func(ctx context.Context, tx pgx.Tx, projectID string, doc Document) error
+	// OnOpen, if set, runs in Open's transaction with the document Open returns (main uses it to
+	// delete Decisions whose items stayed off the canvas).
+	OnOpen func(ctx context.Context, tx pgx.Tx, projectID string, doc Document) error
 }
 
 func NewStore(db *pgxpool.Pool) *Store { return &Store{db: db} }
 
 func (s *Store) Get(ctx context.Context, userID, suffix string) (Versioned, error) {
+	_, v, err := read(ctx, s.db, userID, suffix, "")
+	if err != nil && !errors.Is(err, projects.ErrNotFound) {
+		return Versioned{}, fmt.Errorf("get architecture: %w", err)
+	}
+	return v, err
+}
+
+// Open is Get for the start of a visit to the Project: it also runs OnOpen against the document,
+// in one transaction holding the Project's row lock, so no save slips in between. Only the handler
+// the canvas loads from may call it; reads mid-visit use Get, which never changes anything.
+func (s *Store) Open(ctx context.Context, userID, suffix string) (Versioned, error) {
 	var v Versioned
-	var doc *Document
-	err := s.db.QueryRow(ctx, `
-		SELECT a.document, coalesce(a.version, 0)
-		FROM projects p LEFT JOIN architectures a ON a.project_id = p.id
-		WHERE p.user_id = $1 AND p.slug_suffix = $2`, userID, suffix).Scan(&doc, &v.Version)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Versioned{}, projects.ErrNotFound
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		projectID, got, err := read(ctx, tx, userID, suffix, "FOR UPDATE OF p")
+		if err != nil {
+			return err
+		}
+		v = got
+		if s.OnOpen != nil {
+			return s.OnOpen(ctx, tx, projectID, v.Document)
+		}
+		return nil
+	})
+	if errors.Is(err, projects.ErrNotFound) {
+		return Versioned{}, err
 	}
 	if err != nil {
-		return Versioned{}, fmt.Errorf("get architecture: %w", err)
+		return Versioned{}, fmt.Errorf("open architecture: %w", err)
+	}
+	return v, nil
+}
+
+// read loads the User's Project's id and Architecture (an empty one if never saved), appending
+// `lock` to the query; it returns projects.ErrNotFound for a Project that isn't theirs.
+func read(ctx context.Context, db interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}, userID, suffix, lock string) (string, Versioned, error) {
+	var projectID string
+	var v Versioned
+	var doc *Document
+	err := db.QueryRow(ctx, `
+		SELECT p.id, a.document, coalesce(a.version, 0)
+		FROM projects p LEFT JOIN architectures a ON a.project_id = p.id
+		WHERE p.user_id = $1 AND p.slug_suffix = $2 `+lock, userID, suffix).Scan(&projectID, &doc, &v.Version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", Versioned{}, projects.ErrNotFound
+	}
+	if err != nil {
+		return "", Versioned{}, err
 	}
 	v.Document = Empty()
 	if doc != nil {
 		v.Document = *doc
 	}
 	v.Document.normalize()
-	return v, nil
+	return projectID, v, nil
 }
 
 // Save stores doc as the next version if base is still the current version, and returns the new
@@ -96,9 +134,6 @@ func (s *Store) SaveWith(ctx context.Context, userID, suffix string, base int, d
 		}
 		if _, err := tx.Exec(ctx, `UPDATE projects SET updated_at = now() WHERE id = $1`, projectID); err != nil {
 			return err
-		}
-		if s.AfterSave != nil {
-			return s.AfterSave(ctx, tx, projectID, doc)
 		}
 		return nil
 	})

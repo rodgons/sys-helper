@@ -5,8 +5,11 @@ package knowledge_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/knowledge"
@@ -19,7 +22,7 @@ func TestStore(t *testing.T) {
 	ctx := context.Background()
 	store := knowledge.NewStore(pool)
 	architectures := architecture.NewStore(pool)
-	architectures.AfterSave = knowledge.PruneDecisions
+	architectures.OnOpen = knowledge.PruneDecisions
 	ptr := func(s string) *string { return &s }
 
 	// newProject has components api and db and connection k1 on its canvas.
@@ -179,20 +182,129 @@ func TestStore(t *testing.T) {
 		}
 	})
 
-	t.Run("saving the canvas detaches decisions from removed items and deletes orphans", func(t *testing.T) {
+	// save puts only the given components (and no connections) on the project's canvas.
+	save := func(t *testing.T, user, suffix string, components ...string) {
+		t.Helper()
+		current, err := architectures.Get(ctx, user, suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc := architecture.Empty()
+		for _, id := range components {
+			doc.Components = append(doc.Components, architecture.Component{ID: id, Type: "service", Name: id})
+		}
+		if _, err := architectures.Save(ctx, user, suffix, current.Version, doc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// stored reads a decision's row as stored, hidden or not.
+	stored := func(t *testing.T, suffix string, num int) (targets []string, found bool) {
+		t.Helper()
+		err := pool.QueryRow(ctx, `
+			SELECT d.targets FROM decisions d JOIN projects p ON p.id = d.project_id
+			WHERE p.slug_suffix = $1 AND d.num = $2`, suffix, num).Scan(&targets)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return targets, true
+	}
+	loaded := func(t *testing.T, user, suffix string) map[int]knowledge.Decision {
+		t.Helper()
+		k, err := store.Get(ctx, user, suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byNum := map[int]knowledge.Decision{}
+		for _, d := range k.Decisions {
+			byNum[d.Num] = d
+		}
+		return byNum
+	}
+
+	t.Run("hides a decision while its items are off the canvas, and brings it back whole", func(t *testing.T) {
+		user, suffix := newProject(t)
+		r1, _ := store.AddRequirement(ctx, user, suffix, "scale", "10k rps")
+		d, _ := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "DB", Rationale: "R", Requirements: []int{r1.Num}, Targets: []string{"db"}})
+		_, _ = store.UpdateRequirement(ctx, user, suffix, r1.Num, nil, ptr("20k rps")) // flags it
+
+		save(t, user, suffix, "api")
+		if _, ok := loaded(t, user, suffix)[d.Num]; ok {
+			t.Errorf("decision %d shown while db is off the canvas", d.Num)
+		}
+		if _, ok := stored(t, suffix, d.Num); !ok {
+			t.Fatalf("decision %d deleted by a save", d.Num)
+		}
+
+		save(t, user, suffix, "api", "db")
+		back, ok := loaded(t, user, suffix)[d.Num]
+		if !ok || back.Title != "DB" || !back.NeedsReview || !slices.Equal(back.Targets, []string{"db"}) {
+			t.Errorf("restored decision = %+v (found %v)", back, ok)
+		}
+	})
+
+	t.Run("narrows a decision's targets to the items on the canvas", func(t *testing.T) {
 		user, suffix := newProject(t)
 		both, _ := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "Both", Rationale: "R", Targets: []string{"api", "db"}})
-		dbOnly, _ := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "DB", Rationale: "R", Targets: []string{"db", "k1"}})
 
-		doc := architecture.Empty()
-		doc.Components = []architecture.Component{{ID: "api", Type: "service", Name: "API"}}
-		if _, err := architectures.Save(ctx, user, suffix, 1, doc); err != nil {
+		save(t, user, suffix, "api")
+		if got := loaded(t, user, suffix)[both.Num].Targets; !slices.Equal(got, []string{"api"}) {
+			t.Errorf("targets with db gone = %v, want [api]", got)
+		}
+
+		save(t, user, suffix, "api", "db")
+		if got := loaded(t, user, suffix)[both.Num].Targets; !slices.Equal(got, []string{"api", "db"}) {
+			t.Errorf("targets with db back = %v, want [api db]", got)
+		}
+	})
+
+	t.Run("editing a partly hidden decision keeps its hidden targets", func(t *testing.T) {
+		user, suffix := newProject(t)
+		both, _ := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "Both", Rationale: "R", Targets: []string{"api", "db"}})
+		save(t, user, suffix, "api")
+
+		if _, err := store.UpdateDecision(ctx, user, suffix, both.Num, knowledge.DecisionPatch{Title: ptr("Both, revisited")}); err != nil {
 			t.Fatal(err)
 		}
 
-		k, _ := store.Get(ctx, user, suffix)
-		if len(k.Decisions) != 1 || k.Decisions[0].Num != both.Num || len(k.Decisions[0].Targets) != 1 || k.Decisions[0].Targets[0] != "api" {
-			t.Errorf("decisions = %+v (orphan %d should be gone)", k.Decisions, dbOnly.Num)
+		if targets, _ := stored(t, suffix, both.Num); !slices.Equal(targets, []string{"api", "db"}) {
+			t.Errorf("stored targets = %v, want [api db]", targets)
+		}
+	})
+
+	t.Run("opening the architecture deletes decisions with no target left and narrows the rest", func(t *testing.T) {
+		user, suffix := newProject(t)
+		both, _ := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "Both", Rationale: "R", Targets: []string{"api", "db"}})
+		dbOnly, _ := store.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "DB", Rationale: "R", Targets: []string{"db", "k1"}})
+		save(t, user, suffix, "api")
+
+		if _, err := architectures.Get(ctx, user, suffix); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := stored(t, suffix, dbOnly.Num); !ok {
+			t.Fatalf("Get pruned decision %d", dbOnly.Num)
+		}
+
+		v, err := architectures.Open(ctx, user, suffix)
+		if err != nil || len(v.Document.Components) != 1 || v.Version != 2 {
+			t.Fatalf("Open = %+v, %v", v, err)
+		}
+		if _, ok := stored(t, suffix, dbOnly.Num); ok {
+			t.Errorf("decision %d with no target left survived Open", dbOnly.Num)
+		}
+		if targets, _ := stored(t, suffix, both.Num); !slices.Equal(targets, []string{"api"}) {
+			t.Errorf("stored targets after Open = %v, want [api]", targets)
+		}
+	})
+
+	t.Run("opening hides other users' architectures", func(t *testing.T) {
+		_, suffix := newProject(t)
+		intruder := testdb.User(t, pool, "intruder")
+
+		if _, err := architectures.Open(ctx, intruder, suffix); !errors.Is(err, projects.ErrNotFound) {
+			t.Errorf("Open: err = %v, want ErrNotFound", err)
 		}
 	})
 

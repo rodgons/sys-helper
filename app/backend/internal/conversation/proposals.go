@@ -128,7 +128,8 @@ func Accept(seq int) func(ctx context.Context, tx pgx.Tx, projectID string) erro
 
 // applyKnowledge applies a Proposal's non-canvas changes. It is lenient where the User moved on
 // since the Proposal was made: a Requirement they deleted is skipped, and Decisions on items no
-// longer on the canvas are pruned when the canvas is saved (architecture.Store.AfterSave).
+// longer on the canvas are hidden (knowledge.Load) and deleted when the Project is next opened
+// (architecture.Store.Open).
 func applyKnowledge(ctx context.Context, tx pgx.Tx, projectID string, seq int, changes []proposal.Change) error {
 	itemIDs := map[string]string{} // refs of new components and connections → their ids
 	for i, c := range changes {

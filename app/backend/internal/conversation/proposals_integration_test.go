@@ -360,9 +360,6 @@ func TestProposals(t *testing.T) {
 		}
 		doc := architecture.Empty()
 		doc.Components = append(doc.Components, architecture.Component{ID: proposal.ComponentID(m.Proposal.Seq, "cache"), Type: "cache", Name: "Cache"})
-		architectures.AfterSave = knowledge.PruneDecisions
-		defer func() { architectures.AfterSave = nil }()
-
 		if _, err := architectures.SaveWith(ctx, user, suffix, 0, doc, conversation.Accept(m.Proposal.Seq)); err != nil {
 			t.Fatalf("accept: %v", err)
 		}
@@ -380,6 +377,43 @@ func TestProposals(t *testing.T) {
 		d := k.Decisions[0]
 		if d.Author != knowledge.AuthorAI || d.Targets[0] != "p1-cache" || len(d.Requirements) != 1 || d.Requirements[0] != k.Requirements[0].Num {
 			t.Errorf("decision = %+v", d)
+		}
+	})
+
+	t.Run("accepting keeps decisions hidden by an earlier save", func(t *testing.T) {
+		user, suffix := newProject(t)
+		doc := architecture.Empty()
+		doc.Components = []architecture.Component{{ID: "db", Type: "database", Name: "DB"}}
+		if _, err := architectures.Save(ctx, user, suffix, 0, doc); err != nil {
+			t.Fatal(err)
+		}
+		knowledgeStore := knowledge.NewStore(pool)
+		d, err := knowledgeStore.AddDecision(ctx, user, suffix, knowledge.Decision{Title: "Postgres", Rationale: "R", Targets: []string{"db"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// An undo takes db off the canvas, then the User accepts a Proposal.
+		if _, err := architectures.Save(ctx, user, suffix, 1, architecture.Empty()); err != nil {
+			t.Fatal(err)
+		}
+		m := reply(t, user, suffix)
+		accepted := architecture.Empty()
+		accepted.Components = []architecture.Component{{ID: proposal.ComponentID(m.Proposal.Seq, "cache"), Type: "cache", Name: name}}
+		if _, err := architectures.SaveWith(ctx, user, suffix, 2, accepted, conversation.Accept(m.Proposal.Seq)); err != nil {
+			t.Fatalf("accept: %v", err)
+		}
+
+		// A redo of the earlier step brings db back, and its Decision with it.
+		accepted.Components = append(accepted.Components, doc.Components...)
+		if _, err := architectures.Save(ctx, user, suffix, 3, accepted); err != nil {
+			t.Fatal(err)
+		}
+		k, err := knowledgeStore.Get(ctx, user, suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(k.Decisions) != 1 || k.Decisions[0].Num != d.Num || !slices.Equal(k.Decisions[0].Targets, []string{"db"}) {
+			t.Errorf("decisions = %+v, want D%d on db", k.Decisions, d.Num)
 		}
 	})
 }

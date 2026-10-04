@@ -177,6 +177,10 @@ func (s *Store) inProject(ctx context.Context, userID, suffix string, fn func(tx
 
 // Load reads a Project's knowledge, Requirements and Decisions in number order. A Project that
 // hasn't recorded an Experience Level gets its owner's default.
+//
+// Decisions are projected against the stored Architecture: each one shows only its targets on the
+// canvas, and one with none there is left out. It stays stored, whole, so it comes back if its
+// items do (an undo or redo); PruneDecisions deletes it when the Project is next opened.
 func Load(ctx context.Context, db DB, projectID string) (Knowledge, error) {
 	k := Knowledge{Requirements: []Requirement{}, Decisions: []Decision{}}
 	var level *string
@@ -204,11 +208,40 @@ func Load(ctx context.Context, db DB, projectID string) (Knowledge, error) {
 	if err != nil {
 		return Knowledge{}, err
 	}
-	k.Decisions, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Decision, error) { return scanDecision(row) })
+	decisions, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Decision, error) { return scanDecision(row) })
 	if err != nil {
 		return Knowledge{}, fmt.Errorf("load decisions: %w", err)
 	}
+	onCanvas, err := canvasItems(ctx, db, projectID)
+	if err != nil {
+		return Knowledge{}, err
+	}
+	for _, d := range decisions {
+		d.Targets = slices.DeleteFunc(d.Targets, func(t string) bool { return !onCanvas[t] })
+		if len(d.Targets) > 0 {
+			k.Decisions = append(k.Decisions, d)
+		}
+	}
 	return k, nil
+}
+
+// canvasItems is the set of Component and Connection ids on the Project's stored Architecture.
+func canvasItems(ctx context.Context, db DB, projectID string) (map[string]bool, error) {
+	var doc *architecture.Document
+	err := db.QueryRow(ctx, `SELECT document FROM architectures WHERE project_id = $1`, projectID).Scan(&doc)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("load architecture: %w", err)
+	}
+	onCanvas := map[string]bool{}
+	if doc != nil {
+		for _, c := range doc.Components {
+			onCanvas[c.ID] = true
+		}
+		for _, c := range doc.Connections {
+			onCanvas[c.ID] = true
+		}
+	}
+	return onCanvas, nil
 }
 
 func AddRequirement(ctx context.Context, db DB, projectID, category, statement string) (Requirement, error) {
@@ -363,8 +396,9 @@ func SetExperienceLevel(ctx context.Context, db DB, projectID, level string) err
 	return err
 }
 
-// PruneDecisions keeps Decisions in step with a just-saved Architecture: targets that are gone are
-// dropped, and a Decision with none left is deleted. It is architecture.Store's AfterSave hook.
+// PruneDecisions brings the stored Decisions in step with the Architecture a visit starts from:
+// targets that are gone are dropped, and a Decision with none left is deleted. It is
+// architecture.Store's OnOpen hook. Saves never prune, so an undo within a visit loses nothing.
 func PruneDecisions(ctx context.Context, tx pgx.Tx, projectID string, doc architecture.Document) error {
 	ids := make([]string, 0, len(doc.Components)+len(doc.Connections))
 	for _, c := range doc.Components {
@@ -388,19 +422,9 @@ func PruneDecisions(ctx context.Context, tx pgx.Tx, projectID string, doc archit
 // checkReferences verifies targets are on the Project's canvas and requirement numbers exist.
 func checkReferences(ctx context.Context, db DB, projectID string, targets []string, requirements []int) error {
 	if len(targets) > 0 {
-		var doc *architecture.Document
-		err := db.QueryRow(ctx, `SELECT document FROM architectures WHERE project_id = $1`, projectID).Scan(&doc)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		onCanvas, err := canvasItems(ctx, db, projectID)
+		if err != nil {
 			return err
-		}
-		onCanvas := map[string]bool{}
-		if doc != nil {
-			for _, c := range doc.Components {
-				onCanvas[c.ID] = true
-			}
-			for _, c := range doc.Connections {
-				onCanvas[c.ID] = true
-			}
 		}
 		for _, t := range targets {
 			if !onCanvas[t] {

@@ -38,9 +38,9 @@ Ops: `add_/update_/remove_component`, `add_/update_/remove_connection`, `add_/up
 
 Accepting is split across both sides:
 - **Client** (canvas ops): checks staleness, applies the Proposal to the canvas it holds, places new components, and POSTs the resulting document with its base version to `…/proposals/{seq}/accept` (see `docs/frontend.md`).
-- **Server** (one transaction, `architecture.Store.SaveWith` + `conversation.Accept(seq)`): version check → mark accepted (`ErrNotPending` if already resolved, or if no Proposal has that number any more) → `applyKnowledge` (Requirement/Decision/level ops) → save document → `PruneDecisions`.
+- **Server** (one transaction, `architecture.Store.SaveWith` + `conversation.Accept(seq)`): version check → mark accepted (`ErrNotPending` if already resolved, or if no Proposal has that number any more) → `applyKnowledge` (Requirement/Decision/level ops) → save document. It doesn't prune Decisions: one an earlier undo hid must survive the accept.
 
-`applyKnowledge` is lenient: ops on Requirements the User has since deleted are skipped, and Decisions on items no longer on the canvas get pruned. Reject only flips the status.
+`applyKnowledge` is lenient: ops on Requirements the User has since deleted are skipped, and Decisions on items not on the accepted canvas are hidden by `knowledge.Load` and deleted when the Project is next opened. The assistant sees Decisions only through `knowledge.Load`, so never a hidden one or a hidden target. Undoing an accept on the canvas is a canvas edit only: the Proposal stays accepted, with its Requirements and Experience Level. Reject only flips the status.
 
 ## Changing the prompt
 

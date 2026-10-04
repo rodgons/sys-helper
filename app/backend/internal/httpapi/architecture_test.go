@@ -15,7 +15,7 @@ type fakeArchitectures struct {
 	stored map[string]architecture.Versioned
 }
 
-func (f *fakeArchitectures) Get(_ context.Context, userID, suffix string) (architecture.Versioned, error) {
+func (f *fakeArchitectures) Open(_ context.Context, userID, suffix string) (architecture.Versioned, error) {
 	v, ok := f.stored[suffix]
 	if !ok || userID != octocat.ID {
 		return architecture.Versioned{}, projects.ErrNotFound

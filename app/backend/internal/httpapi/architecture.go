@@ -12,13 +12,16 @@ import (
 
 // ArchitectureStore keeps each Project's versioned Architecture document.
 type ArchitectureStore interface {
-	Get(ctx context.Context, userID, suffix string) (architecture.Versioned, error)
+	// Open reads the document a visit to the Project starts from, pruning Decisions whose items
+	// stayed off the canvas (see architecture.Store.Open).
+	Open(ctx context.Context, userID, suffix string) (architecture.Versioned, error)
 	Save(ctx context.Context, userID, suffix string, base int, doc architecture.Document) (int, error)
 }
 
+// handleGetArchitecture serves the canvas, which reads it once per visit to the Project.
 func handleGetArchitecture(store ArchitectureStore) http.HandlerFunc {
 	return withSuffix(func(w http.ResponseWriter, r *http.Request, suffix string) {
-		v, err := store.Get(r.Context(), userFrom(r.Context()).ID, suffix)
+		v, err := store.Open(r.Context(), userFrom(r.Context()).ID, suffix)
 		switch {
 		case errors.Is(err, projects.ErrNotFound):
 			writeError(w, http.StatusNotFound, "not_found")
