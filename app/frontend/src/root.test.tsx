@@ -2,7 +2,14 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { setThemeChoice } from './lib/theme';
 import { Root } from './root';
-import { LocationProbe, mockApi, renderWithQuery, signedIn, signedOut } from './test/render';
+import {
+  LocationProbe,
+  mockApi,
+  renderWithQuery,
+  setCompact,
+  signedIn,
+  signedOut,
+} from './test/render';
 
 describe('Root', () => {
   it('renders the UI kit page at /ui-kit', () => {
@@ -135,5 +142,49 @@ describe('Root', () => {
     expect(
       await within(screen.getByRole('banner')).findByRole('img', { name: 'octocat' }),
     ).toHaveTextContent('O');
+  });
+
+  describe.each([
+    ['desktop', false],
+    ['phone', true],
+  ])('at %s width', (_, compact) => {
+    it('offers visitors Sign in beside the theme switch, and the page links in the Menu', () => {
+      setCompact(compact);
+      renderWithQuery(<Root />, { route: '/ui-kit', auth: signedOut() });
+      const banner = within(screen.getByRole('banner'));
+
+      expect(banner.getByRole('button', { name: 'Theme' })).toBeInTheDocument();
+      expect(banner.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
+      fireEvent.click(banner.getByRole('button', { name: 'Menu' }));
+      const menu = within(screen.getByRole('navigation', { name: 'Mobile' }));
+      expect(menu.getAllByRole('link').map((l) => l.textContent)).toEqual(['Home']);
+    });
+
+    it('gives signed-in Users their avatar with Settings and Sign out, and no Menu', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(mockApi({ 'GET /api/me': { displayName: 'octocat', avatarUrl: '' } })),
+      );
+      setCompact(compact);
+      const auth = signedIn();
+      renderWithQuery(<Root />, { route: '/ui-kit', auth });
+      const banner = within(screen.getByRole('banner'));
+
+      fireEvent.click(await banner.findByRole('button', { name: 'Account' }));
+      expect(banner.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument();
+      fireEvent.click(banner.getByRole('menuitem', { name: 'Sign out' }));
+
+      expect(auth.signOut).toHaveBeenCalled();
+      expect(banner.queryByRole('button', { name: 'Menu' })).not.toBeInTheDocument();
+    });
+
+    it('shows no Sign in on the login page', () => {
+      setCompact(compact);
+      renderWithQuery(<Root />, { route: '/login', auth: signedOut() });
+
+      expect(
+        within(screen.getByRole('banner')).queryByRole('link', { name: 'Sign in' }),
+      ).not.toBeInTheDocument();
+    });
   });
 });

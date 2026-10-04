@@ -9,8 +9,9 @@ export type NavLink = { href: string; label: string };
 
 /**
  * Sticky top bar: brand left, pill nav links, then `tools` and `actions` right. Below `md` the
- * links move into a full-width menu with large display-type rows and the actions hide; `tools`
- * (e.g. the theme switch) show at every width. Without links there is neither nav nor menu.
+ * links move into a full-width menu with large display-type rows. `tools` (e.g. the theme switch)
+ * and `actions` (the avatar or Sign in) show at every width. Without links there is neither nav
+ * nor menu.
  */
 export function SiteHeader({
   links,
@@ -152,7 +153,7 @@ const styles = stylex.create({
     marginInlineStart: 'auto',
   },
   actions: {
-    display: { default: 'none', [media.md]: 'flex' },
+    display: 'flex',
     alignItems: 'center',
     gap: space['--space-2'],
   },
