@@ -6,7 +6,6 @@ import type { Review } from '../architecture/review';
 import { ChatPane } from '../conversation/chat-pane';
 import { color, layout, motion, radius, space } from '../design/tokens.stylex';
 import { SheetHead, SNAP_CSS, type Snap } from '../knowledge/bottom-sheet';
-import { PrototypeSwitcher } from '../knowledge/pattern-prototype';
 import { type PanelTab, SidePanel } from '../knowledge/side-panel';
 import { ApiError } from '../lib/api';
 import { useArchitecture } from '../lib/architecture';
@@ -88,7 +87,6 @@ function Workspace({ slug }: { slug: string }) {
         compact && styles.shellHeight(visibleHeight === null ? '100dvh' : `${visibleHeight}px`),
       )}
     >
-      <PrototypeSwitcher />
       {compact ? <WorkspaceBar key={project.data.slug} project={project.data} /> : null}
       <main {...stylex.props(styles.workspace, resizing && styles.resizing)}>
         <div

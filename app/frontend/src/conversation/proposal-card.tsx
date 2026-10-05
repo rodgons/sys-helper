@@ -2,7 +2,7 @@ import * as stylex from '@stylexjs/stylex';
 import { describeChange, type Proposal } from '../architecture/proposal';
 import type { Review } from '../architecture/review';
 import { color, radius, space, text } from '../design/tokens.stylex';
-import { PatternText } from '../knowledge/pattern-prototype';
+import { PatternText } from '../knowledge/explanation';
 import { Badge, type BadgeTone } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Label, Text } from '../ui/typography';
@@ -18,7 +18,15 @@ const STATUS: Record<Proposal['status'], [BadgeTone, string]> = {
  * A Proposal inside the AI message that made it: its changes in words, its status, and Accept /
  * Reject while it is pending. `review` comes from the canvas, which is where accepting happens.
  */
-export function ProposalCard({ proposal, review }: { proposal: Proposal; review: Review | null }) {
+export function ProposalCard({
+  slug,
+  proposal,
+  review,
+}: {
+  slug: string;
+  proposal: Proposal;
+  review: Review | null;
+}) {
   const [tone, status] = STATUS[proposal.status];
   const pending = proposal.status === 'pending';
   return (
@@ -36,7 +44,7 @@ export function ProposalCard({ proposal, review }: { proposal: Proposal; review:
             {c.op === 'add_decision' && c.pattern && (
               <>
                 {' · '}
-                <PatternText text={c.pattern} />
+                <PatternText slug={slug} text={c.pattern} patternId={c.patternId} />
               </>
             )}
           </li>

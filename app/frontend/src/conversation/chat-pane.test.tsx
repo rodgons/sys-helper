@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { useSetProposalStatus } from '../lib/conversation';
+import { EXPLANATIONS } from '../test/explanations';
 import { mockApi, renderWithQuery, signedIn, sseResponse } from '../test/render';
 import { Toaster } from '../ui/toaster';
 import { ChatPane } from './chat-pane';
@@ -320,6 +321,53 @@ describe('ChatPane', () => {
     expect(screen.getByText('Pending')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(review.accept).toHaveBeenCalled();
+  });
+
+  it("shows each recorded decision's pattern, with its explanation when the catalog has it", async () => {
+    const proposal = {
+      seq: 1,
+      summary: 'Add a cache',
+      status: 'accepted',
+      baseVersion: 0,
+      changes: [
+        { op: 'add_component', ref: 'cache', type: 'cache', name: 'Order Cache' },
+        {
+          op: 'add_decision',
+          title: 'Cache reads',
+          rationale: 'Reads dominate.',
+          pattern: 'Cache-aside',
+          patternId: 'cache-aside',
+          targets: ['cache'],
+        },
+        {
+          op: 'add_decision',
+          title: 'Redis',
+          rationale: 'Known.',
+          pattern: 'Redis cluster',
+          targets: ['cache'],
+        },
+      ],
+    };
+    setup(
+      {
+        [`GET ${API}/knowledge`]: { experienceLevel: 'expert', requirements: [], decisions: [] },
+        'GET /api/explanations': EXPLANATIONS,
+      },
+      [welcome, { role: 'assistant', body: 'Here is a cache.', createdAt: at, proposal }],
+    );
+
+    const line = (await screen.findByText(/Record decision “Cache reads”/)).closest(
+      'li',
+    ) as HTMLElement;
+    expect(line).toHaveTextContent('Record decision “Cache reads” on Order Cache · Cache-aside');
+    fireEvent.click(await within(line).findByText('What is Cache-Aside?'));
+    expect(await within(line).findByRole('tab', { name: 'Expert · yours' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    const plain = screen.getByText(/Record decision “Redis”/).closest('li') as HTMLElement;
+    expect(plain).toHaveTextContent('· Redis cluster');
+    expect(within(plain).queryByText(/What is/)).not.toBeInTheDocument();
   });
 
   it('marks an older pending proposal as replaced when a new one arrives', async () => {

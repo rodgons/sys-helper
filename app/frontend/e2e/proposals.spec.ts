@@ -119,3 +119,48 @@ test('undoing and redoing an accept takes its Decision with it', async ({ page, 
   await page.getByRole('tab', { name: /Decisions/ }).click();
   await expect(decision).toBeVisible();
 });
+
+test('a decision on a catalog Pattern explains it, and the Inspector explains Component Types', async ({
+  page,
+  signIn,
+}) => {
+  await signIn();
+  await askForProposal(page, 'Explain me');
+  const chat = page.getByRole('list', { name: 'Messages' });
+  const line = chat
+    .getByRole('listitem')
+    .filter({ hasText: /^Record decision “Cache reads in Redis”/ });
+  await expect(line).toContainText('· Cache-aside');
+
+  await line.getByText('What is Cache-Aside?').click();
+  await expect(line.getByRole('tabpanel')).toBeVisible();
+
+  await page
+    .getByRole('region', { name: 'Proposal' })
+    .getByRole('button', { name: 'Accept' })
+    .click();
+  // Accepting records the fake model's Beginner level, which the open explanation follows.
+  await expect(line.getByRole('tab', { name: 'Beginner · yours' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(line.getByRole('tabpanel')).not.toBeEmpty();
+
+  await page.getByRole('tab', { name: /Decisions/ }).click();
+  const decision = page.getByRole('article', { name: 'D1 Cache reads in Redis' });
+  await decision.getByText('What is Cache-Aside?').click();
+  await expect(decision.getByRole('tab', { name: 'Beginner · yours' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(decision.getByRole('link', { name: /Read more/ })).toHaveAttribute(
+    'href',
+    /cache-aside/,
+  );
+
+  await node(page, 'Fake Cache').click();
+  await node(page, 'Fake Cache').click();
+  const inspector = page.getByRole('region', { name: 'Inspector' });
+  await inspector.getByText('What is Cache?').click();
+  await expect(inspector.getByRole('tab', { name: 'Beginner · yours' })).toBeVisible();
+});

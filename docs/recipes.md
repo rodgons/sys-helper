@@ -9,6 +9,31 @@ Checklists of every place a change must reach. Several lists are duplicated acro
 3. `app/frontend/src/architecture/shapes.tsx`: `LOOKS` (Lucide icon + shape). Add a new shape to `SHAPES` only if none fits.
 4. `app/backend/internal/proposal/proposal.go`: `typeName` if the default name needs an acronym (like `api`, `cdn`, `dns`). The tool schema enum is generated from the catalog.
 5. Connection kind only: `architectureNote` in `internal/assistant/prompt.go` lists the kinds.
+6. Component Type only: its explanation, `app/backend/internal/explain/component-types/<type>.md`, in the Pattern layout below without `Aliases:`, and its `# Name` equal to the `COMPONENT_TYPES` label (and to the label table in `explain/catalog_test.go`). The explain tests fail until it exists. Custom has none.
+
+## Pattern
+
+Add `app/backend/internal/explain/patterns/<slug>.md` and run `make test`. Nothing else changes: the prompt's Patterns line, the matcher and the UI all read the catalog. The slug is the Pattern's permanent id; to rename a Pattern, change `# Name` and keep the old name as an alias.
+
+```markdown
+# Cache-Aside
+Aliases: lazy loading, lazy caching, look-aside cache, read-aside
+Gist: The app reads the cache first. On a miss it loads from the database and fills the cache.
+Reference: https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside
+
+## Beginner
+3–5 sentences in plain words with an everyday analogy, no jargon.
+
+## Intermediate
+4–6 sentences on how it works, the main trade-off and when to pick it.
+
+## Expert
+2–4 dense sentences on failure modes, variants and production trade-offs.
+```
+
+- Level texts are light Markdown (bold, inline code, short lists): no headings, no images. Trade-offs and when-not-to-use go inside them.
+- An alias may not repeat the name or another alias once normalized, and no name or alias may belong to two Patterns (`explain.Normalize`: lowercase; hyphens, dashes, underscores, slashes and spaces alike; a trailing "pattern" dropped). Settle collisions in the alias lists (`docs/research/pattern-catalog.md`); the matcher has no special cases.
+- `TestEmbeddedCatalogHasTheFirstBuildPatterns` lists the Pattern names: add the new one there.
 
 ## Requirement category or Experience Level
 

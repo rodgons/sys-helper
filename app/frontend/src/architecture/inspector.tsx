@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { color, media, motion, radius, space } from '../design/tokens.stylex';
 import { DecisionCard, DecisionForm } from '../knowledge/decisions';
+import { ComponentTypeExplanation } from '../knowledge/explanation';
 import { isLimit } from '../lib/api';
 import { useKnowledge, useKnowledgeActions } from '../lib/knowledge';
 import { Button } from '../ui/button';
@@ -65,6 +66,7 @@ export function Inspector({
       {single && node ? (
         <>
           <Header onClose={onClose}>{typeDef(node.data.type).label}</Header>
+          <ComponentTypeExplanation slug={slug} type={node.data.type} />
           <TextField
             label="Name"
             value={node.data.name}
