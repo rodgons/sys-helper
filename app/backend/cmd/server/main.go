@@ -16,6 +16,7 @@ import (
 	"sys-helper/backend/internal/config"
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/database"
+	"sys-helper/backend/internal/explain"
 	"sys-helper/backend/internal/httpapi"
 	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
@@ -83,6 +84,7 @@ func run() error {
 			Knowledge:        knowledgeStore,
 			Settings:         knowledgeStore, // the default Experience Level lives with the per-Project one
 			Accounts:         auth.Accounts{DB: db},
+			Explanations:     explain.Embedded{},
 			AllowedOrigins:   cfg.AllowedOrigins,
 			Allowlist:        allowlist(cfg),
 		}),

@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"unicode/utf8"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"sys-helper/backend/internal/explain"
 	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/projects"
 	"sys-helper/backend/internal/proposal"
@@ -35,6 +37,28 @@ type Proposal struct {
 	Changes     []proposal.Change `json:"changes"`
 	Status      ProposalStatus    `json:"status"`
 	BaseVersion int               `json:"baseVersion"`
+}
+
+// MarshalJSON adds, to each add_decision change, the id of the catalog Pattern its pattern names
+// (patternId, left out when it names none). It is matched on read: the proposals table keeps the
+// model's changes as written.
+func (p Proposal) MarshalJSON() ([]byte, error) {
+	type linked struct {
+		proposal.Change
+		PatternID string `json:"patternId,omitempty"`
+	}
+	changes := make([]linked, len(p.Changes))
+	for i, ch := range p.Changes {
+		changes[i].Change = ch
+		if ch.Op == "add_decision" {
+			changes[i].PatternID, _ = explain.Match(ch.Pattern)
+		}
+	}
+	type plain Proposal // without this method
+	return json.Marshal(struct {
+		plain
+		Changes []linked `json:"changes"`
+	}{plain(p), changes})
 }
 
 // maxModel is the longest model id stored on a Message (the messages.model check).

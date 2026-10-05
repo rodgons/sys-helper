@@ -19,8 +19,9 @@ import (
 
 // fakeReplier streams words and then returns err (if any) for octocat's project k3xa9q2m7p.
 type fakeReplier struct {
-	words []string
-	err   error
+	words    []string
+	proposal *conversation.Proposal
+	err      error
 }
 
 func (f fakeReplier) Reply(_ context.Context, userID, suffix string, onText func(string)) (conversation.Message, error) {
@@ -33,7 +34,7 @@ func (f fakeReplier) Reply(_ context.Context, userID, suffix string, onText func
 	if f.err != nil {
 		return conversation.Message{}, f.err
 	}
-	return conversation.Message{Role: conversation.RoleAssistant, Body: strings.Join(f.words, ""), CreatedAt: time.Unix(0, 0).UTC()}, nil
+	return conversation.Message{Role: conversation.RoleAssistant, Body: strings.Join(f.words, ""), CreatedAt: time.Unix(0, 0).UTC(), Proposal: f.proposal}, nil
 }
 
 type sseEvent struct {
@@ -84,6 +85,19 @@ func TestReply(t *testing.T) {
 		if events[2].name != "done" || events[2].data["body"] != "How many users?" || events[2].data["role"] != "assistant" {
 			t.Errorf("done event = %+v", events[2])
 		}
+	})
+
+	t.Run("links the decisions' patterns in the done event's proposal", func(t *testing.T) {
+		rec := call(t, deps(fakeReplier{words: []string{"Here"}, proposal: proposalWithDecisions()}), http.MethodPost, path, "")
+
+		events := readSSE(t, rec.Body.String())
+		done := events[len(events)-1]
+		raw, _ := done.data["proposal"].(map[string]any)["changes"].([]any)
+		changes := make([]map[string]any, len(raw))
+		for i, c := range raw {
+			changes[i] = c.(map[string]any)
+		}
+		checkPatternIDs(t, changes)
 	})
 
 	t.Run("ends the stream with an error event when the model fails midway", func(t *testing.T) {

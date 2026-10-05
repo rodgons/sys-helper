@@ -14,6 +14,7 @@ import (
 
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/conversation"
+	"sys-helper/backend/internal/explain"
 	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/proposal"
@@ -151,6 +152,7 @@ func (a *Assistant) Reply(ctx context.Context, userID, suffix string, onText fun
 		changes, problem := parseChanges(*call, arch.Document, known)
 		if problem == nil {
 			accepted = &changes
+			logUnknownPatterns(suffix, changes)
 			break
 		}
 		problems = append(problems, problem.Error())
@@ -232,6 +234,16 @@ func (a *Assistant) stream(ctx context.Context, req llm.Request, onText func(str
 	return b.String(), call, model, nil
 }
 
+// logUnknownPatterns logs each decision pattern that names no catalog Pattern, so the logs show
+// which aliases or Patterns to add. An unknown pattern is never an error.
+func logUnknownPatterns(suffix string, changes proposal.Changes) {
+	for _, ch := range changes.Changes {
+		if _, known := explain.Match(ch.Pattern); ch.Op == "add_decision" && ch.Pattern != "" && !known {
+			slog.Info("decision pattern matches no catalog Pattern", "project", suffix, "pattern", ch.Pattern)
+		}
+	}
+}
+
 // parseChanges reads a tool call as a Proposal and checks it. Calls to other tools are invalid
 // too, so the model hears about them instead of the reply ending empty.
 func parseChanges(call llm.ToolCall, doc architecture.Document, known knowledge.Knowledge) (proposal.Changes, error) {
@@ -255,7 +267,7 @@ func (a *Assistant) request(msgs []conversation.Message, doc architecture.Docume
 		MaxTokens: 4096,
 		// One system message: some chat templates (e.g. Gemma's) accept only one.
 		Messages: []llm.Message{
-			{Role: llm.RoleSystem, Content: systemPrompt + "\n\n" + describeKnowledge(known) + "\n\n" + architectureNote + canvas},
+			{Role: llm.RoleSystem, Content: systemPrompt + "\n" + patternsNote + "\n\n" + describeKnowledge(known) + "\n\n" + architectureNote + canvas},
 		},
 	}
 	why := mustNotPropose(msgs)

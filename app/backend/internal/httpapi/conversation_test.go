@@ -11,6 +11,7 @@ import (
 	"sys-helper/backend/internal/conversation"
 	"sys-helper/backend/internal/httpapi"
 	"sys-helper/backend/internal/projects"
+	"sys-helper/backend/internal/proposal"
 )
 
 // fakeConversations holds octocat's conversation for the suffix k3xa9q2m7p.
@@ -61,6 +62,20 @@ func TestConversation(t *testing.T) {
 		if len(msgs) != 1 || msgs[0].Role != "assistant" || msgs[0].Body != conversation.WelcomeMessage {
 			t.Errorf("messages = %+v", msgs)
 		}
+	})
+
+	t.Run("links the pattern of each decision a proposal records", func(t *testing.T) {
+		deps, store := newDeps()
+		store.msgs = append(store.msgs, conversation.Message{Role: conversation.RoleAssistant, Body: "Here",
+			CreatedAt: time.Unix(1, 0).UTC(), Proposal: proposalWithDecisions()})
+
+		msgs := decode[[]struct {
+			Proposal struct {
+				Changes []map[string]any `json:"changes"`
+			} `json:"proposal"`
+		}](t, call(t, deps, http.MethodGet, path, ""))
+
+		checkPatternIDs(t, msgs[1].Proposal.Changes)
 	})
 
 	t.Run("adds the user's message", func(t *testing.T) {
@@ -175,4 +190,35 @@ func TestNewConversation(t *testing.T) {
 			t.Errorf("status = %d, body = %s", rec.Code, rec.Body)
 		}
 	})
+}
+
+// proposalWithDecisions records a decision on a catalog Pattern, one on free text, and adds a
+// component.
+func proposalWithDecisions() *conversation.Proposal {
+	name := "Cache"
+	return &conversation.Proposal{Seq: 1, Summary: "Add a cache", Status: conversation.ProposalPending, Changes: []proposal.Change{
+		{Op: "add_component", Ref: "cache", Type: "cache", Name: &name},
+		{Op: "add_decision", Title: "Cache reads", Rationale: "R1", Pattern: "cache aside", Targets: []string{"cache"}},
+		{Op: "add_decision", Title: "Redis", Rationale: "R1", Pattern: "Redis cluster", Targets: []string{"cache"}},
+	}}
+}
+
+// checkPatternIDs checks proposalWithDecisions' changes as JSON: only the decision on a catalog
+// Pattern has a patternId, and every pattern is as the model wrote it.
+func checkPatternIDs(t *testing.T, changes []map[string]any) {
+	t.Helper()
+	if len(changes) != 3 {
+		t.Fatalf("changes = %v", changes)
+	}
+	if changes[1]["patternId"] != "cache-aside" || changes[1]["pattern"] != "cache aside" {
+		t.Errorf("decision on a Pattern = %v, want patternId cache-aside", changes[1])
+	}
+	for _, i := range []int{0, 2} {
+		if _, ok := changes[i]["patternId"]; ok {
+			t.Errorf("change %d = %v, want no patternId", i, changes[i])
+		}
+	}
+	if changes[2]["pattern"] != "Redis cluster" {
+		t.Errorf("free-text decision = %v", changes[2])
+	}
 }

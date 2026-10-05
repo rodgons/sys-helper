@@ -29,7 +29,7 @@ One element of an Architecture, such as a Load Balancer, Database, or Queue. Eve
 _Avoid_: Node, box, block
 
 **Component Type**:
-An entry in the fixed catalog of known kinds of Component, such as Client, CDN, Load Balancer, Service, Database, Cache, Queue, or Object Store. Each type defines the properties a Component of that type can have.
+An entry in the fixed catalog of known kinds of Component, such as Client, CDN, Load Balancer, Service, Database, Cache, Queue, or Object Store. Each type defines the properties a Component of that type can have, and has a short explanation for every Experience Level.
 _Avoid_: Node type, shape
 
 **Custom Component**:
@@ -63,6 +63,10 @@ _Avoid_: Skill level, persona
 **Decision**:
 A recorded design choice: a title, the rationale, the pattern it applies, the main alternative it rejected, and the Requirements it cites. It is attached to one or more Components or Connections, records whether the User or the AI wrote it, and is numbered D1, D2, … within its Project. It is hidden while none of the items it is attached to are on the canvas, and comes back if they return (for example by undo). It is deleted when the Project is next opened without them.
 _Avoid_: Rationale, note, explanation
+
+**Pattern**:
+An entry in the fixed catalog of known design patterns, such as Cache-aside, CQRS, Sharding, or Read Replicas. Each Pattern has a short explanation for every Experience Level. A Decision's pattern either names a Pattern, and links to its explanation, or is free text the catalog doesn't know.
+_Avoid_: Technique, glossary entry (the glossary is this file)
 
 **Needs Review**:
 The flag a Decision gets when a Requirement it cites changes or is removed. The User clears it by confirming the Decision is still valid, or by editing or deleting it.
