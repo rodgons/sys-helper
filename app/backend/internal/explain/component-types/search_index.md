@@ -3,7 +3,7 @@ Gist: A secondary store built for full-text search, relevance ranking and filter
 Reference: https://www.elastic.co/docs/manage-data/data-store/index-basics
 
 ## Beginner
-A search index helps users find things by typing words, like searching products or articles. It keeps a special list of which words appear in which items, so it can answer quickly and show the best matches first. It works like the index at the back of a book: you look up a word and get the pages where it appears. The **engine** is the product you use, such as Elasticsearch or OpenSearch.
+A search index helps users find things by typing words, like searching products or articles. It keeps a special list of which words appear in which items, so it can answer quickly and show the best matches first. It works like the index at the back of a book: you look up a word and get the pages where it appears. The **engine** is the software that runs the search.
 
 ## Intermediate
 The index stores an **inverted index**: text is split into terms (tokenised, lowercased, stemmed), and each term points to the documents that contain it. That makes keyword search, typo tolerance, relevance ranking and faceted filters fast in ways a normal database index is not. It is usually not the system of record: services write to the database and copy changes to the index, often through a queue or change data capture. The trade-off is a second copy of the data that lags behind and can drift, plus another cluster to run. For small data sets or simple filters, the database's built-in full-text search is often enough.

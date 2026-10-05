@@ -33,7 +33,6 @@ Reference: https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-a
 
 - Level texts are light Markdown (bold, inline code, short lists): no headings, no images. Trade-offs and when-not-to-use go inside them.
 - An alias may not repeat the name or another alias once normalized, and no name or alias may belong to two Patterns (`explain.Normalize`: lowercase; hyphens, dashes, underscores, slashes and spaces alike; a trailing "pattern" dropped). Settle collisions in the alias lists (`docs/research/pattern-catalog.md`); the matcher has no special cases.
-- `TestEmbeddedCatalogHasTheFirstBuildPatterns` lists the Pattern names: add the new one there.
 
 ## Requirement category or Experience Level
 

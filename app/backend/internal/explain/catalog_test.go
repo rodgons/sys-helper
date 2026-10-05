@@ -14,7 +14,7 @@ import (
 // alias shared by two Patterns, three levels, a gist and an https reference are Load's rules.
 func TestEmbeddedCatalogHasEveryComponentTypeButCustom(t *testing.T) {
 	var got []string
-	for _, ct := range explain.Default().ComponentTypes {
+	for _, ct := range (explain.Embedded{}).Explanations().ComponentTypes {
 		got = append(got, ct.Type)
 	}
 	want := slices.Sorted(maps.Keys(architecture.ComponentTypes))
@@ -31,15 +31,16 @@ func TestEmbeddedComponentTypesAreNamedLikeTheirLabels(t *testing.T) {
 		"service": "Service", "database": "Database", "cache": "Cache", "queue": "Queue / Stream",
 		"object_store": "Object Store", "search_index": "Search Index", "external_service": "External Service",
 	}
-	for _, ct := range explain.Default().ComponentTypes {
+	for _, ct := range (explain.Embedded{}).Explanations().ComponentTypes {
 		if ct.Name != labels[ct.Type] {
 			t.Errorf("%s is named %q, want %q", ct.Type, ct.Name, labels[ct.Type])
 		}
 	}
 }
 
-func TestEmbeddedCatalogHasTheFirstBuildPatterns(t *testing.T) {
-	want := []string{
+// More Patterns arrive as files of their own, so this checks only that the first build's are kept.
+func TestEmbeddedCatalogKeepsTheFirstBuildPatterns(t *testing.T) {
+	first := []string{
 		"API Gateway", "CDN Caching", "CQRS", "Cache-Aside", "Change Data Capture", "Circuit Breaker",
 		"Competing Consumers", "Consistent Hashing", "Denormalization", "Failover", "Fan-out on Read",
 		"Fan-out on Write", "Horizontal Scaling", "Idempotent Consumer", "Leader-Follower Replication",
@@ -47,11 +48,13 @@ func TestEmbeddedCatalogHasTheFirstBuildPatterns(t *testing.T) {
 		"Rate Limiting", "Read Replicas", "Retry with Backoff", "Saga", "Search Index Sync", "Sharding",
 		"Static Content Hosting", "Transactional Outbox", "Valet Key", "Write-Through",
 	}
-	got := slices.Sorted(slices.Values(explain.PatternNames()))
-	if !slices.Equal(got, want) {
-		t.Errorf("patterns = %v\nwant %v", got, want)
+	names := explain.PatternNames()
+	for _, name := range first {
+		if !slices.Contains(names, name) {
+			t.Errorf("the catalog lacks the Pattern %q", name)
+		}
 	}
-	for _, p := range explain.Default().Patterns {
+	for _, p := range (explain.Embedded{}).Explanations().Patterns {
 		if p.ID != strings.ToLower(p.ID) || strings.ContainsAny(p.ID, " _") {
 			t.Errorf("slug %q must be lowercase words joined by hyphens", p.ID)
 		}
@@ -65,6 +68,7 @@ func TestMatch(t *testing.T) {
 		{"Cache_Aside pattern", "cache-aside"},
 		{"cache–aside", "cache-aside"},
 		{"  Lazy  loading ", "cache-aside"},
+		{"cache\u2009aside", "cache-aside"}, // a thin space
 		{"read/write splitting", "read-replicas"},
 		{"replication", "leader-follower-replication"},
 		{"throttling", "rate-limiting"},

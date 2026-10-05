@@ -92,7 +92,11 @@ func TestReply(t *testing.T) {
 
 		events := readSSE(t, rec.Body.String())
 		done := events[len(events)-1]
-		raw, _ := done.data["proposal"].(map[string]any)["changes"].([]any)
+		p, ok := done.data["proposal"].(map[string]any)
+		if done.name != "done" || !ok {
+			t.Fatalf("last event = %+v, want done with a proposal", done)
+		}
+		raw, _ := p["changes"].([]any)
 		changes := make([]map[string]any, len(raw))
 		for i, c := range raw {
 			changes[i] = c.(map[string]any)

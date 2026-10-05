@@ -109,6 +109,7 @@ Three panes on desktop: project sidebar, canvas, side panel (Conversation / Requ
 
 - `PatternText` shows a pattern as written and, when it has a `patternId` the catalog knows, a native `<details>` "What is <Pattern>?" under it. It renders on the side panel's Decision card, the Inspector's condensed Decision card (a single Pattern line) and each `add_decision` line of the Proposal card ("… · <pattern>"). `ComponentTypeExplanation` puts "What is <type>?" under the Inspector's header for every Component Type but Custom. Connections get none.
 - Inside: the gist, a `tablist` "Explain for" with Beginner, Intermediate and Expert, a `tabpanel` rendered by the chat's `Markdown`, and "Read more" (new tab). The tabs follow the Project's level, marked "· yours", until the User picks one (Intermediate when none is recorded), so an explanation opened before the level loads, or before an accept records it, still lands on it.
+- The summary, the level tabs and "Read more" are 44px tall on `media.coarse`.
 - While the catalog loads, or if it fails, patterns stay plain and nothing errors. The Decision form's pattern field suggests the Pattern names through a `<datalist>`; any text is still allowed.
 
 ## Styling

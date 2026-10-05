@@ -11,6 +11,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // Levels holds an entry's text for each Experience Level, as light Markdown.
@@ -58,9 +59,6 @@ var defaultCatalog = func() Catalog {
 	return c
 }()
 
-// Default is the catalog embedded in the binary.
-func Default() Catalog { return defaultCatalog }
-
 // Embedded serves the catalog embedded in the binary (httpapi.ExplanationCatalog).
 type Embedded struct{}
 
@@ -93,7 +91,7 @@ func Normalize(text string) string {
 		case '-', '–', '—', '_', '/':
 			return true
 		}
-		return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == ' '
+		return unicode.IsSpace(r)
 	})
 	if len(words) > 1 && words[len(words)-1] == "pattern" {
 		words = words[:len(words)-1]
@@ -184,7 +182,7 @@ func parse(text string, withAliases bool) (entry, error) {
 	var levels [3][]string
 	level := -1 // the level section being read, -1 while in the header
 	for i, line := range lines {
-		unexpected := fmt.Errorf("line %d: unexpected %q", i+1, line)
+		unexpected := func() error { return fmt.Errorf("line %d: unexpected %q", i+1, line) }
 		switch {
 		case i == 0:
 			name, ok := strings.CutPrefix(line, "# ")
@@ -195,7 +193,7 @@ func parse(text string, withAliases bool) (entry, error) {
 		case level+1 < len(levelHeadings) && line == levelHeadings[level+1]:
 			level++
 		case strings.HasPrefix(line, "#"):
-			return e, unexpected
+			return e, unexpected()
 		case level >= 0:
 			levels[level] = append(levels[level], line)
 		case strings.TrimSpace(line) == "":
@@ -217,7 +215,7 @@ func parse(text string, withAliases bool) (entry, error) {
 		case slices.ContainsFunc(fields, func(f string) bool { return strings.HasPrefix(line, f) }):
 			return e, fmt.Errorf("missing %s", strings.TrimSuffix(fields[0], ": "))
 		default:
-			return e, unexpected
+			return e, unexpected()
 		}
 	}
 	switch {

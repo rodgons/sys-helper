@@ -116,6 +116,8 @@ const styles = stylex.create({
   stack: { display: 'flex', flexDirection: 'column', gap: space['--space-1'] },
   details: { minWidth: 0 },
   summary: {
+    minHeight: { default: null, [media.coarse]: 44 },
+    alignContent: 'center',
     cursor: 'pointer',
     fontSize: text['--text-xs'],
     color: color['--color-accent-strong'],
@@ -139,7 +141,7 @@ const styles = stylex.create({
   tab: {
     flexGrow: 1,
     minHeight: { default: null, [media.coarse]: 44 },
-    paddingBlock: 4,
+    paddingBlock: space['--space-1'],
     paddingInline: space['--space-2'],
     borderWidth: 0,
     borderRadius: radius['--radius-sm'],
@@ -158,6 +160,8 @@ const styles = stylex.create({
   reference: {
     display: 'inline-flex',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    minHeight: { default: null, [media.coarse]: 44 },
     gap: space['--space-1'],
     fontSize: text['--text-xs'],
     color: color['--color-accent-strong'],
