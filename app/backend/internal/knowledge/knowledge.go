@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"sys-helper/backend/internal/explain"
 )
 
 // Categories a Requirement can have.
@@ -90,6 +92,8 @@ func (r Requirement) MarshalJSON() ([]byte, error) {
 }
 
 func (d Decision) MarshalJSON() ([]byte, error) {
+	// The Pattern is matched on read, never stored, so catalog edits relink every Decision.
+	patternID, _ := explain.Match(d.Pattern)
 	reqs := make([]string, len(d.Requirements))
 	for i, n := range d.Requirements {
 		reqs[i] = RequirementID(n)
@@ -99,12 +103,13 @@ func (d Decision) MarshalJSON() ([]byte, error) {
 		Title        string   `json:"title"`
 		Rationale    string   `json:"rationale"`
 		Pattern      string   `json:"pattern"`
+		PatternID    string   `json:"patternId,omitempty"`
 		Alternative  string   `json:"alternative"`
 		Requirements []string `json:"requirements"`
 		Targets      []string `json:"targets"`
 		Author       Author   `json:"author"`
 		NeedsReview  bool     `json:"needsReview"`
-	}{DecisionID(d.Num), d.Title, d.Rationale, d.Pattern, d.Alternative, reqs, d.Targets, d.Author, d.NeedsReview})
+	}{DecisionID(d.Num), d.Title, d.Rationale, d.Pattern, patternID, d.Alternative, reqs, d.Targets, d.Author, d.NeedsReview})
 }
 
 // CheckRequirement validates a Requirement's fields; nil pointers are left unchecked (not changed).

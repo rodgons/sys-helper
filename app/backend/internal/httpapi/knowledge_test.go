@@ -129,6 +129,26 @@ func TestKnowledge(t *testing.T) {
 		}
 	})
 
+	t.Run("links each decision's pattern to the catalog Pattern it names", func(t *testing.T) {
+		deps, f := newDeps()
+		f.k.Decisions = append(f.k.Decisions,
+			knowledge.Decision{Num: 2, Title: "Cache", Rationale: "Reads", Pattern: "Cache-aside", Targets: []string{"c"}},
+			knowledge.Decision{Num: 3, Title: "Replicas", Rationale: "Reads", Pattern: "Primary-Replica relational database", Targets: []string{"db"}})
+
+		got := decode[struct {
+			Decisions []map[string]any `json:"decisions"`
+		}](t, call(t, deps, http.MethodGet, base+"/knowledge", ""))
+
+		if d := got.Decisions[1]; d["pattern"] != "Cache-aside" || d["patternId"] != "cache-aside" {
+			t.Errorf("matching decision = %v, want patternId cache-aside and the pattern as written", d)
+		}
+		for _, d := range []map[string]any{got.Decisions[0], got.Decisions[2]} {
+			if _, ok := d["patternId"]; ok {
+				t.Errorf("decision %v has a patternId, want none", d["id"])
+			}
+		}
+	})
+
 	t.Run("updates a requirement by its id", func(t *testing.T) {
 		deps, _ := newDeps()
 		call(t, deps, http.MethodPost, base+"/requirements", `{"category":"scale","statement":"10k rps"}`)

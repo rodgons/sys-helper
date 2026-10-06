@@ -484,7 +484,7 @@ func toolSchema() string {
           "statement": {"type": "string", "description": "Requirement as one line, e.g. '10k requests/s at peak' (add_requirement, update_requirement)."},
           "title": {"type": "string", "description": "Decision title, e.g. 'Redis read-through cache' (add_decision)."},
           "rationale": {"type": "string", "description": "Why this choice fits the requirements (add_decision)."},
-          "pattern": {"type": "string", "description": "The pattern or technique applied, e.g. 'Cache-aside' (add_decision)."},
+          "pattern": {"type": "string", "description": "The one design pattern applied, e.g. 'Cache-Aside' (add_decision). Use a name from the Patterns list in the instructions when one fits."},
           "alternative": {"type": "string", "description": "The main alternative rejected and why (add_decision)."},
           "requirements": {"type": "array", "items": {"type": "string"}, "description": "Requirement ids or refs the decision serves (add_decision)."},
           "targets": {"type": "array", "items": {"type": "string"}, "description": "Component or connection ids or refs the decision explains; at least one (add_decision)."},

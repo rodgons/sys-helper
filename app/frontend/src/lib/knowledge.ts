@@ -32,6 +32,8 @@ export type Decision = {
   title: string;
   rationale: string;
   pattern: string;
+  /** The catalog Pattern `pattern` names, if any (matched by the server). */
+  patternId?: string;
   alternative: string;
   requirements: string[];
   targets: string[];

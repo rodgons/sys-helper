@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import { color, font, radius, space, text } from '../design/tokens.stylex';
 import {
   type Decision,
@@ -13,6 +13,7 @@ import { Button } from '../ui/button';
 import { TextArea } from '../ui/text-area';
 import { TextField } from '../ui/text-field';
 import { Text } from '../ui/typography';
+import { PatternSuggestions, PatternText } from './explanation';
 import { requirementText } from './requirements-panel';
 
 /** The Decisions tab: every Decision, flagged ones first. `names` maps canvas ids to names. */
@@ -105,9 +106,20 @@ export function DecisionCard({
         </div>
       )}
       <Text size="sm">{d.rationale}</Text>
+      {compact && d.pattern && (
+        <dl {...stylex.props(styles.facts)}>
+          <Fact term="Pattern">
+            <PatternText slug={slug} text={d.pattern} patternId={d.patternId} />
+          </Fact>
+        </dl>
+      )}
       {!compact && (
         <dl {...stylex.props(styles.facts)}>
-          {d.pattern && <Fact term="Pattern">{d.pattern}</Fact>}
+          {d.pattern && (
+            <Fact term="Pattern">
+              <PatternText slug={slug} text={d.pattern} patternId={d.patternId} />
+            </Fact>
+          )}
           {d.alternative && <Fact term="Rejected">{d.alternative}</Fact>}
           <Fact term="Explains">{d.targets.map((t) => names[t] ?? t).join(', ')}</Fact>
           {cited.length > 0 && <Fact term="Serves">{cited.map(requirementText).join('; ')}</Fact>}
@@ -189,6 +201,7 @@ export function DecisionForm({
     initial ?? { title: '', rationale: '', pattern: '', alternative: '', requirements: [] },
   );
   const set = (patch: Partial<DecisionInput>) => setD((cur) => ({ ...cur, ...patch }));
+  const suggestions = useId();
   return (
     <form
       aria-label="Decision details"
@@ -213,11 +226,13 @@ export function DecisionForm({
       />
       <TextField
         label="Pattern"
-        placeholder="e.g. Cache-aside"
+        placeholder="e.g. Cache-Aside"
+        list={suggestions}
         value={d.pattern}
         maxLength={120}
         onChange={(e) => set({ pattern: e.target.value })}
       />
+      <PatternSuggestions id={suggestions} />
       <TextField
         label="Alternative rejected"
         value={d.alternative}

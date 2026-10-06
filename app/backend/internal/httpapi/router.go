@@ -27,6 +27,7 @@ type Deps struct {
 	Knowledge        KnowledgeStore
 	Settings         SettingsStore
 	Accounts         AccountStore
+	Explanations     ExplanationCatalog
 	AllowedOrigins   []string
 	// Allowlist admits Users to the beta. Its zero value admits nobody.
 	Allowlist auth.Allowlist
@@ -42,6 +43,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("DELETE /api/me", user(handleDeleteMe(deps.Accounts)))
 	mux.HandleFunc("GET /api/settings", user(handleGetSettings(deps.Settings)))
 	mux.HandleFunc("PUT /api/settings", user(handleSaveSettings(deps.Settings)))
+	mux.HandleFunc("GET /api/explanations", user(handleGetExplanations(deps.Explanations)))
 	mux.HandleFunc("GET /api/projects", user(handleListProjects(deps.Projects)))
 	mux.HandleFunc("POST /api/projects", user(handleCreateProject(deps.Projects)))
 	mux.HandleFunc("GET /api/projects/{slug}", user(handleGetProject(deps.Projects)))

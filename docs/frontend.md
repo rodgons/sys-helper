@@ -6,11 +6,11 @@ React SPA in `app/frontend/src`. Routes are in `root.tsx`: `/` (home), `/project
 
 | Folder | Holds |
 | --- | --- |
-| `lib/` | API hooks per resource (`projects`, `architecture`, `conversation`, `knowledge`, `settings`, `me`), `api.ts` (`apiFetch`, `ApiError`), `auth.tsx`, `sse.ts` |
+| `lib/` | API hooks per resource (`projects`, `architecture`, `conversation`, `knowledge`, `explanations`, `settings`, `me`), `api.ts` (`apiFetch`, `ApiError`), `auth.tsx`, `sse.ts` |
 | `pages/` | Route components. `RequireUser` gates signed-in pages. |
 | `architecture/` | Canvas (React Flow): `canvas.tsx` (Editor + Proposal review), `model.ts` (catalog, doc ↔ flow), `history.ts` (undo and redo), `proposal.ts`, `autosave.ts`, `layout.ts` (dagre), `nodes.tsx`, `shapes.tsx`, `dock.tsx`, `inspector.tsx` |
 | `conversation/` | Chat pane, markdown, Proposal card |
-| `knowledge/` | Right-pane tabs (`side-panel.tsx`), Requirements, Decisions |
+| `knowledge/` | Right-pane tabs (`side-panel.tsx`), Requirements, Decisions, Pattern and Component Type explanations |
 | `projects/`, `account/` | Sidebar, title (and its rename and delete dialogs), new-project form, the compact workspace bar and Project drawer; the account menu; Settings dialog (default Experience Level, and Delete account behind a second confirmation, which signs out on success) |
 | `ui/`, `design/` | Base components and StyleX tokens (the "design system") |
 
@@ -32,6 +32,7 @@ Each hook reads its token from `useToken()` (`lib/auth.tsx`) and is `enabled` on
 | `['architecture', suffix]` | `useArchitecture` | Read **once** per visit (`staleTime: ∞`, `gcTime: 0`). The canvas owns the document afterwards; never refetch it into an open canvas |
 | `['messages', suffix]` | `useMessages` | Updated by `setQueryData` (send, reply `done`, Proposal status, New Conversation), not refetches. `usePendingProposal` derives from it |
 | `['knowledge', suffix]` | `useKnowledge` | Invalidated after every knowledge edit, every canvas save (a save changes which Decisions are shown: those whose items are off the canvas are hidden) and every accept. Saving settings invalidates all `['knowledge']` |
+| `['explanations']` | `useExplanations` (`lib/explanations.ts`) | The global catalog of Pattern and Component Type explanations: `staleTime: ∞`, never invalidated |
 | `['settings']`, `['me', token]` | `useSettings`, `useMe` | `useMe` keeps the previous profile while a refreshed token refetches; otherwise `RequireUser` would unmount the workspace (aborting a streaming reply) every hour |
 
 ## Workspace (`pages/workspace.tsx`)
@@ -103,6 +104,13 @@ Three panes on desktop: project sidebar, canvas, side panel (Conversation / Requ
 - The server saves a completed reply even if the client went away. So when a stream ends without `done` or `error` (the connection dropped), or `POST reply` answers `nothing_to_reply`, the chat reloads `['messages', suffix]` instead of only offering a retry.
 - When the User reviews the pending Proposal that ends the Conversation, the chat starts a reply automatically. Reviews from before page load only get a "Get a reply" button.
 - **New Conversation:** the ghost icon button at the top of the Conversation tab asks in a `Dialog`, then `useNewConversation` POSTs `…/conversation` and **replaces** `['messages', suffix]` with the response (no refetch). Everything derived from the pending Proposal (canvas preview, review, auto-reply) follows by itself. On success the chat calls `useReply().reset()` (a stale Retry goes away), resets the send error and the Up/Down recall, and keeps the draft. `busy` → a toast, nothing changes. The button is disabled while a reply streams, a message sends, a review (`Review.busy`) or the reset is in flight, and when the Conversation is only the Welcome Message.
+
+### Explanations (`knowledge/explanation.tsx`)
+
+- `PatternText` shows a pattern as written and, when it has a `patternId` the catalog knows, a native `<details>` "What is <Pattern>?" under it. It renders on the side panel's Decision card, the Inspector's condensed Decision card (a single Pattern line) and each `add_decision` line of the Proposal card ("… · <pattern>"). `ComponentTypeExplanation` puts "What is <type>?" under the Inspector's header for every Component Type but Custom. Connections get none.
+- Inside: the gist, a `tablist` "Explain for" with Beginner, Intermediate and Expert, a `tabpanel` rendered by the chat's `Markdown`, and "Read more" (new tab). The tabs follow the Project's level, marked "· yours", until the User picks one (Intermediate when none is recorded), so an explanation opened before the level loads, or before an accept records it, still lands on it.
+- The summary, the level tabs and "Read more" are 44px tall on `media.coarse`.
+- While the catalog loads, or if it fails, patterns stay plain and nothing errors. The Decision form's pattern field suggests the Pattern names through a `<datalist>`; any text is still allowed.
 
 ## Styling
 

@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EXPLANATIONS } from '../test/explanations';
 import { mockApi, renderWithQuery, signedIn } from '../test/render';
 import { ArchitectureCanvas } from './canvas';
 import type { ArchitectureDocument } from './model';
@@ -486,5 +487,80 @@ describe('ArchitectureCanvas', () => {
     expect(body.requirements).toEqual(['R1']);
     expect(body.targets).toHaveLength(1);
     expect(body.targets[0]).toMatch(/^c-/);
+  });
+
+  describe('explanations in the Inspector', () => {
+    function setup(decisions: unknown[] = []) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          mockApi({
+            'PUT /api/projects/shop-k3xa9q2m7p/architecture': ({ json }: { json?: unknown }) => ({
+              version: (json as { version: number }).version + 1,
+            }),
+            'GET /api/projects/shop-k3xa9q2m7p/knowledge': {
+              experienceLevel: 'beginner',
+              requirements: [],
+              decisions,
+            },
+            'GET /api/explanations': EXPLANATIONS,
+          }),
+        ),
+      );
+      renderWithQuery(<ArchitectureCanvas slug="shop-k3xa9q2m7p" initial={initial} />, {
+        auth: signedIn(),
+      });
+    }
+
+    it("explains the selected component's type", async () => {
+      setup();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add API Gateway' }));
+      await act(() => vi.advanceTimersByTimeAsync(0));
+
+      const inspector = screen.getByRole('region', { name: 'Inspector' });
+      fireEvent.click(within(inspector).getByText('What is API Gateway?'));
+      expect(within(inspector).getByText('The front door for client calls.')).toBeInTheDocument();
+      expect(within(inspector).getByRole('tabpanel')).toHaveTextContent('A receptionist.');
+    });
+
+    it('offers no explanation for a Custom component', async () => {
+      setup();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add Custom' }));
+      await act(() => vi.advanceTimersByTimeAsync(0));
+
+      expect(screen.getByRole('region', { name: 'Inspector' })).not.toHaveTextContent(/What is/);
+    });
+
+    it("shows a decision's pattern with its explanation", async () => {
+      setup([
+        {
+          id: 'D1',
+          title: 'Postgres for orders',
+          rationale: 'Transactions.',
+          pattern: 'partitioning',
+          patternId: 'sharding',
+          alternative: 'DynamoDB',
+          requirements: [],
+          targets: ['db'],
+          author: 'ai',
+          needsReview: false,
+        },
+      ]);
+
+      fireEvent.click(screen.getByText('Orders DB'));
+      fireEvent.click(screen.getByText('Orders DB'));
+      await act(() => vi.advanceTimersByTimeAsync(0));
+
+      const decision = within(screen.getByRole('region', { name: 'Inspector' })).getByRole(
+        'article',
+        { name: 'D1 Postgres for orders' },
+      );
+      expect(decision).toHaveTextContent('partitioning');
+      expect(decision).not.toHaveTextContent('DynamoDB');
+      fireEvent.click(within(decision).getByText('What is Sharding?'));
+      expect(within(decision).getByRole('tabpanel')).toHaveTextContent('Shelves.');
+    });
   });
 });

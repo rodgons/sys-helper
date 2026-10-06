@@ -1,11 +1,13 @@
 package assistant_test
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"iter"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"sys-helper/backend/internal/architecture"
 	"sys-helper/backend/internal/assistant"
 	"sys-helper/backend/internal/conversation"
+	"sys-helper/backend/internal/explain"
 	"sys-helper/backend/internal/knowledge"
 	"sys-helper/backend/internal/llm"
 	"sys-helper/backend/internal/projects"
@@ -305,6 +308,33 @@ func TestReply(t *testing.T) {
 		// Only the history the model sees is read, however long the Conversation is.
 		if len(c.asked) != 1 || c.asked[0] != 4 {
 			t.Errorf("Recent asked for %v Messages, want [4]", c.asked)
+		}
+	})
+
+	t.Run("lists every catalog Pattern and asks for one listed name per decision", func(t *testing.T) {
+		var req llm.Request
+
+		if _, err := newAssistant(model{words: []string{"ok"}, got: &req}, conv("Welcome", "Hi")).Reply(context.Background(), "u", "s", func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+
+		system := req.Messages[0].Content
+		if !strings.Contains(system, "\nPatterns: "+strings.Join(explain.PatternNames(), ", ")+"\n") {
+			t.Errorf("system message lacks the Patterns line:\n%s", system)
+		}
+		for _, name := range []string{"Cache-Aside", "Leader-Follower Replication", "Valet Key"} {
+			if !strings.Contains(system, name) {
+				t.Errorf("system message lacks the Pattern %q", name)
+			}
+		}
+		for _, rule := range []string{
+			"In add_decision, `pattern` is one design pattern. When one in the Patterns list fits, write its name exactly as listed, alone.",
+			"Never write two patterns in one decision; record two decisions instead.",
+			"define a listed pattern in a sentence at most and spend the words on why it fits",
+		} {
+			if !strings.Contains(system, rule) {
+				t.Errorf("system message lacks the rule %q", rule)
+			}
 		}
 	})
 
@@ -668,6 +698,32 @@ func TestProposals(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("accepts a decision whose pattern the catalog lacks, and logs the pattern", func(t *testing.T) {
+		var logs bytes.Buffer
+		defer slog.SetDefault(slog.Default())
+		slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+		args := `{"summary": "Add a cache", "changes": [
+			{"op": "add_component", "ref": "cache", "type": "cache", "name": "Order Cache"},
+			{"op": "add_decision", "title": "Cache reads", "rationale": "Reads dominate", "pattern": "Primary-Replica relational database", "targets": ["cache"]},
+			{"op": "add_decision", "title": "Cache-aside", "rationale": "Reads dominate", "pattern": "Cache-aside", "targets": ["cache"]}]}`
+		m := &turns{turns: []turn{{text: "Here.", args: args}}}
+
+		msg, err := newAssistant(m, conv("Welcome", "Add a cache")).Reply(context.Background(), "u", "s", func(string) {})
+
+		if err != nil || msg.Proposal == nil || len(m.reqs) != 1 {
+			t.Fatalf("message = %+v, err = %v, model calls = %d; want the proposal saved on the first call", msg, err, len(m.reqs))
+		}
+		if !strings.Contains(logs.String(), `pattern="Primary-Replica relational database"`) || strings.Contains(logs.String(), `pattern=Cache-aside`) {
+			t.Errorf("logs = %s; want the unmatched pattern logged, and only it", logs.String())
+		}
+	})
+
+	t.Run("points the tool's pattern field at the Patterns list", func(t *testing.T) {
+		if !strings.Contains(string(proposal.Tool.Parameters), "Use a name from the Patterns list in the instructions when one fits.") {
+			t.Errorf("pattern description lacks the Patterns hint:\n%s", proposal.Tool.Parameters)
+		}
+	})
 
 	t.Run("takes a call named after an op as a proposal of that change", func(t *testing.T) {
 		// Nemotron 3 Super called set_experience_level as a tool and sent no text, which used to

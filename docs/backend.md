@@ -15,6 +15,7 @@ Go API in `app/backend`. Domain terms are defined in `CONTEXT.md`.
 | `internal/conversation` | Messages, Proposals stored with them, accept and reject. |
 | `internal/knowledge` | Experience Level, Requirements, Decisions, user settings. |
 | `internal/usage` | The daily AI caps: `Meter.Record` logs each model call in `ai_usage` and refuses past `AI_DAILY_REPLY_LIMIT` (check + insert under a per-User advisory lock); `Meter.Refund` uncounts a call no model answered (`llm.ErrExhausted`, or the global budget refused). `Budget.Spend` logs every request to OpenRouter, fallbacks included, in `ai_requests` and refuses past `AI_GLOBAL_DAILY_LIMIT` (`ErrGlobalLimit`, which is an `ErrDailyLimit`; one global advisory lock). |
+| `internal/explain` | The explanations catalog: one embedded Markdown file per Pattern (`patterns/<slug>.md`) and per Component Type (`component-types/<type>.md`), parsed strictly at start-up (a malformed file panics). `Match(text)` gives the Pattern a Decision's free-text pattern names: an exact match on the name or an alias after `Normalize`, never a substring. See `docs/recipes.md`. |
 | `internal/proposal` | Proposal ops, `Normalize`, `Validate`, the `propose_changes` tool schema. |
 | `internal/assistant`, `internal/llm` | The AI turn and the model clients (see `docs/ai.md`). |
 | `internal/testdb` | Integration helpers: `Pool(t)`, `User(t, pool, githubUsername, opts...)` (`""` = no GitHub identity; `WithGoogle(fullName)` links a Google one, so it makes GitHub-only, Google-only, linked and identity-less users). |
@@ -69,6 +70,7 @@ All under `/api`, all need a User.
 | --- | --- |
 | `GET /me` | `{displayName, avatarUrl}` (see Auth › Display) |
 | `DELETE /me` | Deletes the User's `auth.users` row (`auth.Accounts`), which cascades to their identities, sessions, Projects, settings and `ai_usage`; 204. Their token stops working at once (its session is gone). `ai_requests` belongs to nobody, so the global budget isn't refilled. |
+| `GET /explanations` | `{patterns: [{id, name, aliases, gist, reference, explanations: {beginner, intermediate, expert}}], componentTypes: [{type, name, gist, reference, explanations}]}`, Patterns by slug, Component Types by type. Global, not Project-scoped; `Cache-Control: private, max-age=3600` |
 | `GET, PUT /settings` | `{experienceLevel}`; `""` clears the default |
 | `GET, POST /projects` · `GET, PATCH, DELETE /projects/{slug}` | `{slug, name, updatedAt}`; list is newest first |
 | `GET, PUT /projects/{slug}/architecture` | `{version, document}`; PUT returns the new `version` |
@@ -77,10 +79,14 @@ All under `/api`, all need a User.
 | `POST /projects/{slug}/reply` | SSE `delta` / `done` / `error`; see `docs/ai.md` |
 | `POST /projects/{slug}/proposals/{seq}/accept` | body `{version, document}` = the canvas with the Proposal applied |
 | `POST /projects/{slug}/proposals/{seq}/reject` | |
-| `GET /projects/{slug}/knowledge` | `{experienceLevel, requirements, decisions}` |
+| `GET /projects/{slug}/knowledge` | `{experienceLevel, requirements, decisions}`; a Decision whose `pattern` names a catalog Pattern also has `patternId` |
 | `POST /projects/{slug}/requirements` · `PATCH, DELETE …/requirements/{id}` | `{id}` = `R1`; changing or removing one sets `needsReview` on Decisions citing it |
 | `POST /projects/{slug}/decisions` · `PATCH, DELETE …/decisions/{id}` | `{id}` = `D1`; any PATCH (even `{}`) clears `needsReview` |
 | `PUT /projects/{slug}/experience-level` | `{level}` |
+
+## Pattern links
+
+A Decision's `pattern` stays free text. `patternId` (`explain.Match`) is computed on read and never stored, so a catalog edit relinks existing Decisions at once and needs no migration. It is added in two `MarshalJSON`s, and left out when nothing matches: `knowledge.Decision` (the knowledge response) and `conversation.Proposal`, on each `add_decision` change (the messages list and the reply's `done` event). The `proposals` table keeps the model's changes as it wrote them.
 
 ## Database
 

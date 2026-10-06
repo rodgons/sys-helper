@@ -174,6 +174,7 @@ export function ChatPane({ slug, review = null }: { slug: string; review?: Revie
             )}
             {m.proposal && (
               <ProposalCard
+                slug={slug}
                 proposal={m.proposal}
                 review={review?.seq === m.proposal.seq ? review : null}
               />

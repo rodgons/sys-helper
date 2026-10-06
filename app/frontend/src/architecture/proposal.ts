@@ -37,6 +37,8 @@ export type ProposalChange = {
   title?: string;
   rationale?: string;
   pattern?: string;
+  /** add_decision: the catalog Pattern `pattern` names, if any (matched by the server). */
+  patternId?: string;
   alternative?: string;
   requirements?: string[];
   targets?: string[];
